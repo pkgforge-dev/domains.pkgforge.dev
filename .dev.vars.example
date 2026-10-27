@@ -1,0 +1,9 @@
+# The NAMES of every secret a local or deployed run can need. Values never go in
+# this repository: set them with `npx wrangler secret put <NAME>` for a deployed
+# Worker, or in a gitignored `.dev.vars` for `wrangler dev`. Fake values only.
+#
+# There are no names yet. CI holds no secret at all: a workflow writes to GHCR
+# with its own GITHUB_TOKEN, and the Worker is deployed from the operator's
+# machine with their wrangler login (HUMAN.md, docs/security/secrets.md). A name
+# is added here, in the same change as the code that reads it, only when a
+# Worker needs a value it cannot get another way.

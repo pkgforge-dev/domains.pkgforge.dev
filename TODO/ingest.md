@@ -1,0 +1,666 @@
+# Ingest
+
+Source adapters, the ingest workflows, the backfills and the measurements of sources. An adapter is a directory `adapters/<source-id>/` with a `source.json` and a module (docs/architecture.md section 5.6). It writes segments. It never writes the root. The measurement entries come first: they replace the estimates that the adapters budget against.
+
+Evidence tags. MEASURED names the command and the UTC time. READ names the URL or the file. "Design A" is `docs/research/2026-10-27-design-a.md` and "design B" is `docs/research/2026-10-27-design-b.md`. Their scripts are in `docs/research/2026-10-27-design-a/scripts/` and `docs/research/2026-10-27-design-b/scripts/`. The mirror is `https://github.com/pkgforge-dev/mirror-archlinux` at commit `669ac725f8081445c164113f2ed092533de112e2`. Read a mirror file at `https://raw.githubusercontent.com/pkgforge-dev/mirror-archlinux/669ac725f8081445c164113f2ed092533de112e2/<path>`.
+
+## DOM-004 — Measure Kafka from a GitHub runner
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** S
+- **Source:** design A section 3.1 and section 11 step 1, design B section 2.4 item 4, and the operator's ruling 8 of 2026-10-27 (measure the clock "ideally actions since its a real vm with near gigabit speed").
+- **Problem:** OpenINTEL's Kafka broker is the freshest source of this project. Every measurement so far ran from a residential network in Nepal. Nothing shows that a GitHub runner reaches the broker, how fast it reads, or that snappy batches decode there. An adapter built on a guess fails on its first run.
+- **Premise:**
+  - READ https://openintel.nl/data/zonestream/ names the broker `kafka.zonestream.openintel.nl` on port 9091.
+  - MEASURED 2026-10-27T05:28Z (design A M6) and 2026-10-27T06:17:18Z (design B M4): TCP 9091 times out from the operator's machine (`Test-NetConnection kafka.zonestream.openintel.nl -Port 9091` returns False). Port 9092 answers plain and with no credential: ApiVersions, Metadata, ListOffsets and Fetch all work. The broker advertises itself as `kafka.zonestream.openintel.nl:9092`.
+  - MEASURED 2026-10-27T05:30:36Z (design A M6, `kafka-offsets.mjs`, ListOffsets) topic by topic:
+
+    | Topic | Retained | Last 24 h | Last 1 h | Retention |
+    | --- | --- | --- | --- | --- |
+    | `newly_registered_domain` | 5,691,031 | 422,192 | 10,325 | about 11.6 d (earliest message 2026-10-15T14:00:50Z) |
+    | `newly_registered_fqdn` | 3,746,920 | 342,310 | 11,919 | about 11 d [E] |
+    | `confirmed_newly_registered_domain` | 2,522,762 | 235,327 | 6,153 | about 10.7 d [E] |
+    | `certstream_domains` | 80,983,139 | 72,699,511 | 3,020,946 | about 26.7 h |
+    | `newly_issued_certificates_measurements` | 169,014,696 | 166,477,316 | 6,752,042 | about 24 h |
+    | `certstream` | 1,792,063 | 1,792,063 | 1,792,063 | short, full certificates |
+
+    Design B counted 422,534, 235,406, 342,918 and 72.85 million in 24 h at 06:17Z, and a retention of 12 to 13 days for the NRD topic and 25 h for `certstream_domains`. The two readings agree within 0.1%.
+  - A server-side "offset at timestamp" query works (design B M4): ListOffsets v1 with a timestamp. So an ingester keeps only its stored offsets.
+  - Batches are snappy compressed (Kafka framing of snappy, `snappy.mjs` in design A). A `certstream_domains` message is about 326 B of JSON.
+  - MEASURED 2026-10-27 05:32Z (design A M8, `kafka-window.mjs 2026-10-26T12:00:00Z 2026-10-26T12:05:00Z`): the window held 194,303 messages and 63.3 MB of raw JSON. It took 59 s to read from Nepal. That is five times real time.
+  - READ the WebSocket fallback `wss://zonestream.openintel.nl/ws/<topic>` is live only, with no replay (design A section 3.1).
+  - The raw lane keeps what each Kafka fetch returns, still compressed (architecture section 3.4, ruling 5). Its size is not measured. Estimate [E]: 24 GB of JSON a day for `certstream_domains` (72.7 million messages of about 326 B) at a snappy ratio of 2 to 4 is 6 to 12 GB a day, and the three NRD topics add under 0.1 GB a day. The ratio is a guess for this data. This entry measures the compressed bytes a day.
+- **Approach:**
+  - **Seams.** `scripts/measure/kafka-runner.mjs`, `.github/workflows/measure-kafka.yml` (trigger `workflow_dispatch` only, `permissions: {}` at the top, one job `measure` with `permissions: {contents: read}`, `defaults.run.shell: bash`, `ubuntu-24.04`, `timeout-minutes: 40`), results in `docs/research/measure/DOM-004/`.
+  - **Pinned actions.** The job uses `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false` (the pin of mirror-archlinux's `ci.yml` at commit 669ac725f8081445c164113f2ed092533de112e2), `actions/setup-node` with `node-version-file: .node-version`, and `actions/upload-artifact` with `overwrite: true` for `result.json`. Resolve the last two to a 40-hex commit with the recipe of DOM-013 (`gh api repos/OWNER/NAME/releases/latest`, then `gh api repos/OWNER/NAME/git/ref/tags/TAG`) and keep the `# vX.Y.Z` comment. DOM-014's check refuses an unpinned `uses:`.
+  - **Copy** from `docs/research/2026-10-27-design-a/scripts/`: `kafka-conn.mjs` (TCP and TLS reach of 9091, 9092, 9093 and 443), `kafka-probe.mjs`, `kafka-offsets.mjs`, `kafka-sample.mjs`, `kafka-window.mjs` and `snappy.mjs`. Copy from `docs/research/2026-10-27-design-b/scripts/`: `kafkaprobe.mjs` (ApiVersions v0, Metadata v0, ListOffsets v1 for earliest, latest and the offset at now minus 24 h and 7 d) and `kafkafetch.mjs` (Fetch v4). **Their data directory.** The design A scripts resolve `../kafka/` against their own location, so `kafka-offsets.mjs` writes `../kafka/offsets.json`, `kafka-sample.mjs` writes `../kafka/samples.json` and `kafka-window.mjs` writes `../kafka/<name>.names.txt`, `.names.f64` and `.stat.json`. Moved to `scripts/measure/` they would write beside the scripts. Replace that path with a `--data DIR` flag whose default is `.tmp/measure/DOM-004/` (gitignored), and read no input from `../kafka/`: every file there is an output of a script, and the committed `docs/research/2026-10-27-design-a/kafka/offsets.json` is the 2026-10-27T05:30:36Z reading, kept for comparison only.
+  - **Steps.** (1) TCP reach of 9092 and 9091 with a 10 s timeout. (2) ApiVersions, Metadata and ListOffsets for every topic. (3) Consume 10 minutes of `certstream_domains` from the offset at now minus 15 minutes. (4) Consume 10 minutes of the three NRD topics from their earliest retained offsets and count messages, bytes, messages a second and megabytes a second. For every topic count two byte totals: `wire_bytes`, the record batches exactly as the broker returns them (still snappy compressed, the bytes the raw lane stores), and `raw_bytes`, the same messages after decoding. (5) Decode every snappy batch and count decode failures. (6) Run the 5-minute window of design A M8 and print the seconds it takes. (7) From step (2) take each topic's messages in the last 24 hours and compute `wire_bytes_per_day = wire_bytes / messages * messages_24h`, and the same for `raw_bytes_per_day`.
+  - **Output.** `result.json` with `reach_9092`, `reach_9091`, `topics`, `consume.{topic}.{messages,bytes,wire_bytes,raw_bytes,seconds}`, `wire_bytes_per_day` and `raw_bytes_per_day` per topic, `window_5min_seconds` and `snappy_failures`. Record `RUNNER_OS`, `RUNNER_ARCH` and the job's start time. Record no address of the runner. When this entry closes, write the measured `wire_bytes_per_day` into `docs/architecture.md` section 4.8 in place of the [E] raw-lane estimate.
+  - **Pass rule.** Port 9092 is reachable, no snappy failure, the 5-minute window reads in under 60 s (at least five times real time, as from Nepal), and `wire_bytes_per_day` is recorded for every topic. Port 9091 may fail: record it.
+- **Decision:** the client is the hand-rolled Fetch v4 reader of the two designs, in Node, with a stored offset. It needs no consumer group. `kcat` is the fallback only if this entry finds a decode gap. A client library would add a dependency for a protocol that needs four request types.
+- **Depends on:** none
+- **Prove:** `node scripts/measure/kafka-runner.mjs --verdict docs/research/measure/DOM-004/result.json` prints `PASS` or `FAIL` for the pass rule and exits 0 or 1.
+  - The run is started and then found by its start time, because `gh workflow run` prints no run id and `gh run watch` with no id asks a question that a script cannot answer: `SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ); gh workflow run measure-kafka.yml --repo pkgforge-dev/domains.pkgforge.dev; sleep 15; RUN=$(gh run list --repo pkgforge-dev/domains.pkgforge.dev --workflow measure-kafka.yml --event workflow_dispatch --limit 5 --json databaseId,createdAt --jq "map(select(.createdAt >= \"$SINCE\")) | .[0].databaseId"); gh run watch "$RUN" --repo pkgforge-dev/domains.pkgforge.dev --exit-status`. The last command exits 0 only when the job is green. Then `gh run download "$RUN" --repo pkgforge-dev/domains.pkgforge.dev --dir .tmp/measure/DOM-004` yields `result.json`. If `RUN` is empty, wait and repeat the `gh run list`.
+
+## DOM-005 — Measure Kafka from a Worker connect()
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** S
+- **Source:** design B section 11 Phase 0 item 4; the clock alternative in docs/architecture.md section 5.2.
+- **Problem:** if the clock verdict (DOM-003) is a Cloudflare cron Worker, the Kafka lane has to run inside a Worker. A Worker opens a TCP socket with `connect()` from `cloudflare:sockets`. Nobody has measured whether a Worker reaches port 9092, decodes snappy, or stays inside its CPU and memory limits.
+- **Premise:**
+  - READ (design B section 2.3, Cloudflare docs fetched 2026-10-27T05:38Z): a cron Worker has 15 minutes of wall time, CPU 30 s by default (15 min for crons of an hour or longer), up to 10,000 subrequests, 6 simultaneous connections waiting for headers, and 128 MB of memory.
+  - MEASURED (design A M6, DOM-004's premise): the broker answers on 9092 with no credential. A 5-minute window of `certstream_domains` is 63.3 MB of raw JSON.
+  - Not measured: any socket from a Worker to the broker; the CPU of a snappy decode in workerd (design B section 13).
+- **Approach:**
+  - Add the route `GET /kafka?topic=<t>&offset=<n>&max_bytes=<b>` to the probe Worker `probes/worker/` (created and deployed by DOM-061). It opens `connect({hostname: 'kafka.zonestream.openintel.nl', port: 9092})`, sends ApiVersions, then Fetch v4 for the topic and offset, decodes the snappy batches (port `snappy.mjs` of design A to TypeScript with no Node API), and answers `{messages, bytes, next_offset, decode_ms}`.
+  - Resume: the caller passes the stored offset; the route reads from it. The route keeps no state.
+  - Script `scripts/measure/kafka-worker.mjs` calls the route in a loop for 10 minutes against `certstream_domains` and the NRD topics, and records messages a second, bytes a second, failures and the HTTP status.
+  - CPU: read `cpuTime` of each invocation from `npx wrangler tail domains-probe --format json`. Report CPU per 1,000 messages at p50 and p99.
+  - Also record: whether the socket opens at all; whether a second concurrent socket opens (limit 6); the largest `max_bytes` that stays under 128 MB.
+- **Decision:** if the socket does not open, or CPU per 1,000 messages is above 50 ms, the Kafka lane stays on Actions whatever the clock verdict is. A hot tier then carries the other sources only. This entry records the fact. DOM-025 reads it.
+- **Depends on:** DOM-061, DOM-004
+- **Operator:** run `npx wrangler@4.150.0 whoami` first and record the account name it prints in this entry's Closed line (it must be the account of DOM-061). Then deploy the probe Worker after the route is added: `cd probes/worker && npx wrangler@4.150.0 deploy`.
+- **Prove:** `node scripts/measure/kafka-worker.mjs --url "$PROBE_URL" --minutes 10 --verdict` prints `PASS` when the socket opens, the stream decodes with no failure and the CPU per 1,000 messages is at most 50 ms, and `FAIL` with the reason otherwise.
+  - Result file `docs/research/measure/DOM-005/result.json`.
+
+## DOM-009 — Measure the THC daily job and the 54-day backfill
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** design A section 11 Phase 0 items 3 and 7; design B section 11 Phase 0 item 5. The sizes in docs/architecture.md section 4.8 and the ledger sizing of DOM-021 are estimates until this entry replaces them.
+- **Problem:** the daily THC dump is the largest names source (about 32.5 million distinct names a day). Nobody has run the whole job on a GitHub runner: download, normalise, sort, reverse, encode, verify. The true size of the corpus after 54 days is unknown. Every sizing in the design depends on it.
+- **Premise:**
+  - READ https://cs2.ip.thc.org/ lists `<date>.txt.gz` from 2026-10-01. MEASURED 2026-10-27T08:22:56Z (`curl -sS https://cs2.ip.thc.org/`): the file of 2026-10-26 is 319,917,410 B, listed 27-Oct-2026 00:04; 2026-10-25 is 302,517,087 B (26-Oct 00:05); 2026-10-24 is 292,241,187 B (25-Oct 00:04). A file appears at about 00:02 to 00:05 UTC on the next day. `cs1.ip.thc.org` answers 302 to cs2. A file supports Range (206).
+  - MEASURED 2026-10-27T08:25:12Z (`curl -sS 'https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/tree?recursive=true'`): 54 files, 35,765,972,194 B. The same listing was read again at 2026-10-27T09:34:52Z and gave the same 54 files and bytes. A path is `<year>/<month without a leading zero>/<date>.txt.gz`: the directory is the month of the file's own date, so `2026/9/` holds September only (`2026/9/2026-09-27.txt.gz`) and October starts in `2026/10/` (`2026/10/2026-10-01.txt.gz`). The days 2026-10-04 and 2026-10-09 are missing. September files run 843 to 986 MB a day. October is two regimes: 10-01 is 984 MB, 10-02 is 957 MB and 10-03 is 445 MB, and from 10-05 the files run 77 to 340 MB a day (summed per file from the 09:34:52Z listing). THC gives no reason (design A M2).
+  - MEASURED (design A M3, from Nepal): a full-day download takes 31 to 54 s (about 9 MB/s). A Range read of 20 MB runs at 2.9 MB/s from Hugging Face and 2.5 MB/s from cs2.
+  - MEASURED (design A M5, `thc-day.mjs`):
+
+    | Day | gz MB | Lines | Distinct names | Registrable (ICANN) | Sites (full PSL) |
+    | --- | --- | --- | --- | --- | --- |
+    | 2026-10-23 | 312.1 | 37,482,779 | 31,675,969 | 11,135,272 | 14,015,596 |
+    | 2026-10-24 | 292.2 | 35,419,639 | 29,915,552 | 10,693,326 | 13,578,791 |
+    | 2026-10-25 | 302.5 | 37,034,745 | 31,357,313 | 11,412,045 | 14,137,017 |
+    | 2026-10-26 | 319.9 | 38,474,309 | 32,554,702 | 11,162,436 | 14,157,567 |
+
+    On 2026-10-26: 9,503,378 wildcard lines (24.7%), an average name length of 33 B, 1,327,623,793 B uncompressed. The overlap of 10-26 with 10-25 is 6.8% for names and 14.1% for registrable domains. The union of the four days is 114,994,540 names (the days sum to 125,503,536) and 36,993,405 registrable domains (sum 44,403,079). 85.8% of 10-26's names and 70.9% of its registrable domains are absent from the three earlier days. Names per suffix on 10-26: `com` 14.97 M, `dev` 5.48 M, `net` 2.19 M, `com.np` 6,764, `se` 90,576, `ch` 145,721, `sk` 24,192, `ee` 10,213, `nu` 8,436, `li` 3,771.
+  - MEASURED (design B M2, `thcstat.mjs`, `gzip -dc | tr A-Z a-z | LC_ALL=C sort -u`): 217,443 lines (0.57%) hold upper case. The file is not bytewise sorted: its order is a locale collation with 10.3 million adjacent inversions. After lowercasing and merging wildcard rows there are 32,554,702 distinct names, 11,162,434 ICANN-registrable domains (14,142,438 with the PSL private section) and 1,002 TLDs. 25 registrable domains hold 35% of the names. 41% of registrable domains have exactly one name. Novelty of 10-26's names against one earlier day: 6.84% in 10-25 (lag 1), 6.67% in 10-19, 2.15% in 10-12, 1.04% in 10-05. Against the union of four earlier days (133.6 million distinct names), 86.6% are absent.
+  - MEASURED (design B M10, `blockenc.mjs`, reversed labels, front coded, deflate per block): 1,024 names a block cost 6.26 B a name and 31,792 blocks a day. 4,096 cost 6.04 B and 7,948 blocks. 16,384 cost 5.93 B and 1,987 blocks. Front coding alone costs 12.0 B. brotli 9 and zstd 12 stay within 1.5%.
+  - MEASURED (design A M5): a Node pass over one day took 527 s for hashing alone on a desktop. Design B guessed about 15 runner-minutes a day [I]. Neither ran on a runner.
+- **Approach:**
+  - **Seams.** `.github/workflows/measure-thc-day.yml` (dispatch only; inputs `day`, `matrix`; `permissions: {}` at the top; `defaults.run.shell: bash`; jobs `measure` for one day or one matrix leg, and `merge` for the final job; each `contents: read`; `ubuntu-24.04`; `timeout-minutes` on both), `scripts/measure/thc-day.mjs`, `scripts/measure/thc-union.mjs`, results in `docs/research/measure/DOM-009/`.
+  - **Pinned actions.** `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false` (the pin of mirror-archlinux's `ci.yml` at commit 669ac725f8081445c164113f2ed092533de112e2), `actions/setup-node` with `node-version-file: .node-version`, and `actions/upload-artifact` with `overwrite: true` and `retention-days: 1` for the hash files. Resolve the last two to a 40-hex commit with `gh api repos/OWNER/NAME/releases/latest` and then `gh api repos/OWNER/NAME/git/ref/tags/TAG` (the recipe of DOM-013), and keep the `# vX.Y.Z` comment.
+  - **Copy** from design A: `thc-day.mjs`, `psl.mjs`, `f64cmp.mjs`, `union4.mjs`. From design B: `thcstat.mjs`, `revlabel.mjs`, `blockenc.mjs`, `regdoms.mjs`, `groups.mjs`, `psl.mjs`. The PSL is `https://publicsuffix.org/list/public_suffix_list.dat` (338,012 B, MEASURED by design A M4). **Their inputs.** `thc-day.mjs` and `miss.mjs` of design A read the PSL from `../psl/psl.dat` beside the script, and `union4.mjs` reads `out-thc/<day>.<kind>.f64` from the working directory. Moved to `scripts/measure/`, the PSL path becomes a `--psl FILE` flag. The measurement job downloads the file once into `RUNNER_TEMP` from the URL above, checks that it holds both section markers, and passes that path; once DOM-015 exists, `node scripts/ref/fetch-psl.mjs` (DOM-015) does the same and prints the sha256 to record. The `out-thc/*.f64` files are outputs of `thc-day.mjs`: each matrix leg writes them and the `merge` job reads them from the artifacts. Design B's `thcstat.mjs`, `revlabel.mjs`, `blockenc.mjs` and `regdoms.mjs` take their paths as arguments. `groups.mjs` fixes two paths, `psl/public_suffix_list.dat` and `rev/r26.sorted` (the output of `revlabel.mjs` after `LC_ALL=C sort`), so it gets the same `--psl FILE` flag and an `--input FILE` flag.
+  - **One day, timed by stage** on `ubuntu-24.04` (4 vCPU, 16 GB): download to a pipe from cs2 (fall back to the Hugging Face URL of the day, `https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/resolve/<year>/<month without a leading zero>/<date>.txt.gz?download=true`, for example `.../resolve/2026/10/2026-10-26.txt.gz?download=true`; take the path from the bucket listing and never build it from the date alone), lowercase and strip `*.` with the wildcard flag, `LC_ALL=C sort -u`, reverse labels, PSL split, encode at 4,096 names a block, decode and verify. Print seconds per stage, peak resident memory, and the pack size in bytes and bytes a name.
+  - **Backfill matrix.** Run the 54 days of the Hugging Face listing, at most 20 at once (the whole organisation shares 20 concurrent jobs; use 6 when `mirror-archlinux` is busy). Each job emits a sorted unique 64-bit hash file of its names and of its registrable domains (as `union4.mjs` reads them) and uploads it with `actions/upload-artifact` (`overwrite: true`, `retention-days: 1`). A final job merges the files and prints: distinct names, distinct registrable domains, the share of each day's names that no earlier day holds (the novelty curve), and the pack bytes a name. The curve decides the claim "name-level newness is censored for about 200 days" (docs/architecture.md section 9).
+  - **Gaps.** Record the two missing days. They go into the root's `gaps` in DOM-029.
+  - Update the `[E]` sizes of docs/architecture.md section 4.8 and section 4.3 with the measured values in the same commit.
+- **Depends on:** none
+- **Prove:** `node scripts/measure/thc-day.mjs --verdict docs/research/measure/DOM-009/result.json` prints the stage seconds, the 54-day union counts and `PASS` when one day takes under 30 minutes of wall time on a runner. It prints `FAIL` otherwise.
+  - `gh workflow run measure-thc-day.yml --repo pkgforge-dev/domains.pkgforge.dev -f matrix=true` ends green, and `result.json` holds `distinct_names_54d`, `distinct_registrable_54d`, `bytes_per_name` and `novelty_curve`.
+
+## DOM-010 — Measure THC's monthly database: columns, CNAMEs and stream speed
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** S
+- **Source:** the operator's ruling 7 of 2026-10-27: reverse IP and CNAME answers come from THC's data mirrored in GHCR, "not direct to thc itself"; and its rider that this entry measures the columns and whether the dump carries CNAME targets.
+- **Problem:** the reverse routes (DOM-043, DOM-044) are built on THC's monthly database. The dump's columns were not known. If it holds no CNAME targets, `GET /v1/cnames/{target}` has no source. The mirror (DOM-042) also needs the stream speed to budget a 37 GB read.
+- **Premise:**
+  - READ https://ip.thc.org/docs/bulk-data-access (fetched 2026-10-27T08:21:38Z, 17,823 B of HTML; the page needs a browser User-Agent: MEASURED 2026-10-27T09:38:43Z, `curl` with its default User-Agent got 404 with 609 B and the same request with a `Mozilla/5.0` User-Agent got 200 with 17,823 B): THC publishes its whole database at the end of each month. "Data for: September 2026. Released On: October 4th 2026. Records: 6.36 Billion." Parquet is 50 GB compressed and 75 GB uncompressed. CSV is 35 GB compressed and 252 GB uncompressed. The page recommends Parquet because it is smaller uncompressed.
+  - READ the page's links: `https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.{csv,parquet}.gz?download=true` (fast) and `https://dns.team-teso.net/2026/rdns-sept.{csv,parquet}.gz` (slow: a 1 MB Range read did not answer within 120 s at 2026-10-27T08:03Z). The daily CT dumps are linked from the same page.
+  - MEASURED 2026-10-27T08:21:52Z (`curl -sSIL 'https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true'`): 302 to a signed CDN URL, then 200 with `accept-ranges: bytes`, `content-length: 37046639482`, `Last-Modified: Fri, 02 Oct 2026 16:25:18 GMT`.
+  - MEASURED 2026-10-27T08:25:12Z (`curl -sS 'https://huggingface.co/api/buckets/IP-THC-ORG/Datasets/tree?recursive=true'`): four files. `2026/10/rdns-sept.csv.gz` 37,046,639,482 B. `2026/10/rdns-sept.parquet.gz` 53,171,863,868 B. `2026/9/rdns-aug.csv.gz` 36,029,717,282 B. `2026/9/rdns-aug.parquet.gz` 52,525,961,595 B. So August exists too. The CSV is 5.82 B a record compressed (37,046,639,482 / 6.36 billion).
+  - MEASURED 2026-10-27T08:21:59Z (`curl -sSL -r 0-1048575 -o head1m.csv.gz 'https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true'`, status 206, 1,048,576 B in 2.96 s; then `gzip -dc head1m.csv.gz | head -c 3000000`): 72,834 lines.
+    - Every line has exactly two comma-separated fields, `ip,name`. There is no header and no third column.
+    - IPv4 and IPv6 addresses come in blocks. The first IPv6 line is line 5,486 (`2a00:c00:f060:1::204,staging.ext.login-sg.isso.intranet.db.com`) and the sample ends on an IPv4 address (`141.0.17.192`). The file is not sorted by address (`sort -c` fails at line 2: `47.0.0.28` then `47.0.0.23`).
+    - 41,973 distinct addresses in 72,834 lines. One address (`190.0.0.1`) has 4,993 names.
+    - No first field is anything but an IPv4 or an IPv6 address.
+    - 46 lines contain the text `cname`. All are host names such as `8717a2e7.yunai.tech.cname.edgenextcname.com` that resolve to the address in column 1. None is a CNAME target column.
+    - The sample averages 41.2 B a line. The page's 252 GB for 6.36 billion records gives 39.6 B a record. So the whole file has the same two-column shape.
+  - So the monthly database is a list of `address,name` pairs: names that resolve to an address. It holds no CNAME targets, as far as the first megabyte shows. This entry confirms it over the whole stream.
+  - READ (`docs/research/web-pkgforge-2026-10-27/ct.md` section 1): THC's live routes are `POST /lookup`, `/lookup/subdomains` and `/lookup/cnames`. It publishes no bulk dump of the subdomain table or the CNAME table.
+- **Approach:**
+  - **First megabyte.** `docs/research/2026-10-27-record/scripts/thc-monthly-head.sh` made the MEASURED rows above. Keep it as the quick check and run it first.
+  - **Seams.** `.github/workflows/measure-thc-monthly.yml` (dispatch only, `permissions: {}` at the top, `defaults.run.shell: bash`, one job `measure` with `permissions: {contents: read}`, `ubuntu-24.04`, `timeout-minutes: 360`), `scripts/measure/thc-monthly.mjs`, results in `docs/research/measure/DOM-010/`. Pinned actions as in DOM-004 (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false`, `actions/setup-node`, and `actions/upload-artifact` with `overwrite: true` for `result.json`). The Hugging Face file URLs answered a plain `curl` (MEASURED 2026-10-27T08:21:52Z); only the documentation page needs the browser User-Agent.
+  - Stream the whole September CSV from the Hugging Face URL through `gzip -dc` into one `awk -F,` pass. Never write the file to disk. Count records, count lines by number of fields, count IPv4 and IPv6 lines, record the first and last address and the first line with a field count other than 2.
+  - Record the download speed in MB/s over the first 2 GB and over the whole stream, and the CPU split between `curl`, `gzip` and `awk`. DOM-042 budgets its job from this speed.
+  - Read the first 1 MiB of the August CSV the same way and compare the shape.
+  - Print the verdict line `cnames: absent` or `cnames: present`. A line with three fields, or a first field that is not an address, makes it `present`: keep the first 20 such lines in the result.
+  - If the verdict is `absent`, DOM-046 waits on DOM-058 and DOM-047, as ruling 10 says (`TODO/RULES.md` §5). The route `GET /v1/cnames/{target}` answers 501 `unsupported-by-source` (docs/architecture.md section 6).
+- **Depends on:** none
+- **Prove:** `node scripts/measure/thc-monthly.mjs --verdict docs/research/measure/DOM-010/result.json` prints the field-count histogram, the record count (expected near 6.36 billion), the speed and one line `cnames: absent` or `cnames: present`, and exits 0 when the stream ended without a gzip error.
+  - `gzip -t` of the stream status is read from the process, never from the end of a pipe (AGENTS.md absolute 5): the script spawns `gzip` itself and reads its exit code.
+
+## DOM-011 — Measure names-tile availability per log, Geomys's window and the overlap
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** design A section 3.1 and section 11 Phase 0 item 2; `docs/research/web-pkgforge-2026-10-27/ct.md` section 4; the findings of 2026-10-27T08:23Z to 08:25Z recorded below.
+- **Problem:** our own CT reader (DOM-037) depends on which logs serve names tiles. Design A found that availability differs per log and may change. Geomys answered 429, so its window was never read. The overlap of the four-log union with THC and Kafka was never measured.
+- **Premise:**
+  - READ the Sunlight static CT API: a log's monitoring URL serves `checkpoint` (line 2 is the tree size) and `tile/names/<N>`. `<N>` is the tile number in three-digit groups, each group but the last prefixed `x` (`x004/x074/091`). The body is JSONL: `{"Timestamp":<ms>,"Subject":{...},"DNS":[...]}`. A tile holds 256 entries. `Cache-Control: public, max-age=604800, immutable`. Gzip applies when requested.
+  - MEASURED 2026-10-27T08:23:28Z (`curl -sS https://www.gstatic.com/ct/log_list/v3/log_list.json`): 62,375 B, `log_list_timestamp` 2026-10-26T13:45:16Z. Usable tiled logs of the four operators: Let's Encrypt Sycamore and Willow for 2026h2, 2027h1 and 2027h2; Geomys Tuscolo 2026h2, 2027h1 and 2027h2; IPng Gouda and Halloumi (2026h2a for Halloumi) 2026h2, 2027h1 and 2027h2. GoDaddy Aquamarine is `qualified`, not `usable`. Monitoring URLs: `https://mon.sycamore.ct.letsencrypt.org/2026h2/`, `https://mon.willow.ct.letsencrypt.org/2026h2/`, `https://tuscolo2026h2.skylight.geomys.org/`, `https://gouda2026h2.mon.ct.ipng.ch/`, `https://halloumi2026h2a.mon.ct.ipng.ch/`, `https://ct-log-api.godaddy.com/aquamarine2027h1/` (the other shards follow the same pattern).
+  - MEASURED 2026-10-27T08:23:41Z to 08:24:07Z (a Node probe of tile 0 and of the last full tile of every usable log; three requests a log):
+
+    | Log | Size | Tile 0 | Last full tile |
+    | --- | --- | --- | --- |
+    | Let's Encrypt Sycamore2026h2 | 1,043,271,183 | 200, 76,288 B | 200 |
+    | Sycamore2027h1 | 799,539,339 | 200 | 200 |
+    | Sycamore2027h2 | 20,341 | 200 | 200 |
+    | Willow2026h2 | 1,000,688,499 | 200, 75,776 B | 200 |
+    | Willow2027h1 | 794,328,834 | 200 | 200 |
+    | Willow2027h2 | 20,361 | 200 | 200 |
+    | Geomys Tuscolo2026h2 | 1,020,996,491 | 200, 74,427 B | 429 |
+    | Tuscolo2027h1 | 368,652,882 | 200, 74,752 B | 429 |
+    | Tuscolo2027h2 | 86,256 | 429 | 429 |
+    | IPng Halloumi2026h2a | 1,271,010,032 | 404 (nginx page) | 404 |
+    | Halloumi2027h1 | 276,308,178 | 404 | 404 |
+    | Halloumi2027h2 | 20,175 | 404 | 404 |
+    | IPng Gouda2026h2 | 1,231,385,663 | 404 (`404 page not found`, 19 B) | 200, 42,348 B |
+    | Gouda2027h1 | 236,785,796 | 404 | 200, 33,815 B |
+    | Gouda2027h2 | 20,396 | 404 | 200 |
+    | GoDaddy Aquamarine2027h1 | 145,036,086 | 200, 27,693 B | 200, 27,135 B |
+
+    Design A saw a 404 at the tail of Gouda2027h1 and of Aquamarine2027h1 at 05:26Z. The difference may be which tile design A called the tail (the partial tile `<N>.p/<W>` instead of the last full tile) or a change of the host. This entry probes both.
+  - MEASURED 2026-10-27T08:24:26Z (`curl -sS -D - -A 'curl/8' -H 'accept-encoding: gzip' https://tuscolo2026h2.skylight.geomys.org/tile/names/x003/x988/266`): the Geomys host sends the header `Skylight-Rate-Limited: Please add an email address to your User-Agent.` With curl's default User-Agent the first request got 200 and the next three got 429. With a User-Agent holding an email address (`probe (contact: nobody@example.invalid)`), four of four got 200 and no header. A Node `fetch` with its default User-Agent got 200 and the header. So the 429 of design A M10 and of ct.md ("Geomys returned 429 after roughly 40 quick requests") is a missing contact address. It is not a volume limit.
+  - MEASURED 2026-10-27T08:24:45Z (binary search for the lowest served names tile, assuming a monotone log): IPng Gouda2026h2 serves tiles 366,929 to 4,810,099 (4,443,171 tiles, about 1.137 billion entries, 22 probes). Gouda2027h1 serves tiles 100,748 to 924,943 (824,196 tiles, 210,994,176 entries, 19 probes). So IPng serves a recent contiguous range, not the whole log.
+  - MEASURED (design A M10, `ct-rates.mjs 120000`, 2026-10-27T05:24Z to 05:26Z, two reads 120 s apart), entries a day: Let's Encrypt Sycamore2027h1 15.22 M, Willow2027h1 15.17 M, Sycamore2026h2 2.54 M, Willow2026h2 2.58 M. Geomys Tuscolo2027h1 13.48 M, Tuscolo2026h2 1.75 M. IPng Gouda2026h2 0.95 M, Gouda2027h1 7.21 M, Halloumi2026h2a 1.48 M, Halloumi2027h1 8.1 M. GoDaddy Aquamarine2027h1 0.65 M. The reliable set (Let's Encrypt four shards, Geomys two, Gouda2026h2) is about 51.7 M entries a day, about 202,000 tiles a day (2.3 a second) and about 1.37 GB a day gzipped (26.4 B an entry). Google, Sectigo, DigiCert and TrustAsia hold 220.5 M entries a day across 82 logs and serve no names tiles.
+  - MEASURED (design A M10): one 256-entry tile of Sycamore2026h2 is 38,368 B raw, 5,869 B gzipped, 371 names. A window read (2026-10-26T12:00 to 12:05Z): Sycamore2027h1 54,357 entries (181 a second) in 218 tiles after 21 binary-search probes, 1,433,454 gzipped bytes, 70,624 distinct names. Willow2027h1: 52,501 entries, 211 tiles, 68,604 names. The Geomys window failed (429).
+  - MEASURED (design A M9): THC's 10-26 dump holds 68,994 of the 70,624 Sycamore names (97.7%) and 67,275 of the 68,604 Willow names (98.1%). The overlap of Willow and Sycamore is 83.5% of Willow and 81.1% of Sycamore. 71.0% of Sycamore names are in the Kafka window. THC holds 39.8% (95,130 of 239,171) of the Kafka window.
+  - READ (ct.md section 4): Sycamore and Willow overlap only 74% in a 43 s window, so one log is not enough.
+- **Approach:**
+  - **Seams.** `.github/workflows/measure-tiles.yml` (a chain of long jobs, no cron: see "The sample clock"), `scripts/measure/tiles-availability.mjs`, `scripts/measure/tiles-window.mjs`, `scripts/measure/ct-logs.mjs`, results in `docs/research/measure/DOM-011/`.
+  - **The sample clock.** The rounds are taken from inside a job that loops, never from a `schedule`: a cron of this kind ran every 229 min at the median, not every 15 (DOM-001's premise), so a `3,33 * * * *` cron would not give 48 rounds in 24 hours. `measure-tiles.yml` has `on: workflow_dispatch` with the input `until` (a UTC instant), `permissions: {}` at the top, `defaults.run.shell: bash`, the concurrency group `measure-tiles` with `queue: max` and `cancel-in-progress: false`, and one job `measure-chain` (`ubuntu-24.04`, `timeout-minutes: 350`, `permissions: actions: write, contents: read`, a table name of DOM-014). The job (1) starts its successor with `gh workflow run measure-tiles.yml --ref main -f until=$UNTIL` while the time is before `UNTIL`, first, as DOM-001's chain does, so a crash in the middle cannot break the chain; (2) loops for 340 minutes: one round (`tiles-availability.mjs --once`), one JSON line appended to `rounds.jsonl` with the round's own start time, then a sleep to the next 30 minute mark counted from the job's own start; (3) uploads `rounds.jsonl` with `actions/upload-artifact` (`overwrite: true`, name `tiles-<run id>`, `if: always()`). `UNTIL` reaches the job through `env`, never through the `run:` string (rule 7 of DOM-014). A job lasts at most 6 hours, so the chain has a seam every 5 h 50 min; `tiles-availability.mjs` prints the gap at each seam, and a chain that breaks is a gap in the series, restarted by hand. Start it with `gh workflow run measure-tiles.yml -f until=<the start plus 24 hours, as a UTC instant>`.
+  - **Pinned actions.** `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false`, and `actions/setup-node` and `actions/upload-artifact` pinned as in DOM-004.
+  - **Copy** `ct-rates.mjs` and `ct-window.mjs` from design A, and `tiles-probe.mjs` and `first-names-tile.mjs` from `docs/research/2026-10-27-record/scripts/`, which made the MEASURED rows above (their output is in `docs/research/2026-10-27-record/results.md`). **Their inputs.** `ct-rates.mjs` reads `../ct/logs.json` beside the script and writes `../ct/rates.json`. `logs.json` is not kept: it is the CT log list reshaped, an array of `{op, desc, kind, state, mon, url}` where `op` is the operator name, `desc` the log's description, `kind` is `tiled` for an entry of `tiled_logs` (its `monitoring_url` becomes `mon`) or `rfc6962` for an entry of `logs` (its `url`), and `state` is the key of the log's `state` object. `scripts/measure/ct-logs.mjs` writes it from `https://www.gstatic.com/ct/log_list/v3/log_list.json`, and the copied scripts take `--logs FILE` and `--out FILE` instead of the `../ct/` paths. `ct-window.mjs` writes `ct/<name>.names.txt` and `.names.f64` relative to the working directory: give it `--data DIR`, default `.tmp/measure/DOM-011/` (gitignored). `ct-window.mjs` and `f64cmp.mjs` read no other file.
+  - **User-Agent.** Send `domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)` on every request. The contact is `domains@pkgforge.dev` (operator, 2026-10-27), a constant in the tree beside the User-Agent, not a secret and not a variable.
+  - **Every round, 30 minutes apart for 24 hours:** read the log list (note changes of `log_list_timestamp` and of states), and for every usable log record the checkpoint, tile 0, the last full tile, the partial tile, and the status and size of each. Record any 404 or 429 with the headers.
+  - **Binary search** the first served tile of every log where tile 0 is 404.
+  - **Geomys window.** Read 2026-10-26T12:00:00Z to 12:05:00Z from Tuscolo2027h1 with the contact User-Agent: tiles, entries, gzipped bytes, distinct names.
+  - **Overlap.** For the same 5-minute window compute the four-log union (Sycamore, Willow, Tuscolo, Gouda2026h2) and its overlap with THC's 2026-10-26 dump and with DOM-004's Kafka window of the same minutes (`kafka-window.mjs`). Print a matrix of shares with `f64cmp.mjs`.
+  - **Rates.** Re-measure entries a day per log from two checkpoints 10 minutes apart.
+  - Update the "reliable set" of DOM-037 from the table.
+- **Depends on:** DOM-004
+- **Prove:** `node scripts/measure/tiles-availability.mjs --verdict docs/research/measure/DOM-011/result.json` prints one row per log (statuses over 24 h, first served tile, entries a day), the Geomys window counts and the overlap matrix, and `PASS` when Geomys answers 200 for every probe with the contact User-Agent, the usable list is non-empty, and at least 44 of the 48 rounds exist (the rounds come from `gh run download` of the chain's artifacts, and the largest gap is printed).
+  - `node scripts/measure/tiles-window.mjs --log tuscolo2027h1 --from 2026-10-26T12:00:00Z --to 2026-10-26T12:05:00Z` prints the entry and name counts.
+
+## DOM-012 — Measure when ISC and WhoisDS publish
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** S
+- **Source:** design B section 2.4 items 6 and 7, section 13 (publication times not measured); design A section 3.1 "NRD lists".
+- **Problem:** the new-domain feed (DOM-027, DOM-028) needs to know when each daily file is complete, so that a run reads it once and an alert fires when it is late. The design guesses "no new file for 6 h" and "no file by 03:00 UTC". Nothing measured the times.
+- **Premise:**
+  - READ (design B section 2.4 item 6, https://isc.sans.edu/feeds_doc.html): ISC serves `https://isc.sans.edu/feeds/domaindata.json.gz` and dated files `domaindata.<date>.json.gz`. At least 5 prior days stay. It updates hourly. Fields: `domainname`, `ip` (integer, present for about 32%), `firstseen` (a date), `score`, `scorereason`. 466 TLDs. Its own text says the domains "may not be new, but new to us". Per day: 250,940 (2026-10-26), 251,054 (10-25), 340,972 (10-24), 418,062 (10-20) domains, about 2.3 MB gzipped and 28 MB as JSON. The publisher is the SANS Technology Institute, Internet Storm Center.
+  - MEASURED 2026-10-27T08:22:56Z (`curl -sSI` of `https://isc.sans.edu/feeds/domaindata.json.gz`, `.../domaindata.2026-10-26.json.gz`, `.../domaindata.2026-10-27.json.gz`): the first two are the same 2,320,810 B with `Last-Modified: Tue, 27 Oct 2026 07:41:32 GMT` and `ETag: "2369aa-65ecd93449cda"`. The file of the current day (2026-10-27) is 55 B (an empty array). So the latest file is the last complete day, and a day's file reaches its final content in the morning of the next day. One reading is not a distribution.
+  - READ (design B section 2.4 item 7): WhoisDS serves `https://www.whoisds.com/whois-database/newly-registered-domains/<base64 of YYYY-MM-DD.zip>/nrd`. Each zip holds exactly 70,000 domains. The site's own September counts are 250,000 to 400,000 a day for the whole world. The zip dated D matches ISC's day D minus 1: 79.8% of WhoisDS-10-26 is in ISC-10-25, 66.2% of WhoisDS-10-25 is in ISC-10-24, and about 0% for the same date (design B M6).
+  - MEASURED 2026-10-27T08:23:18Z (`curl -sSIL -A 'Mozilla/5.0'` of the path for 2026-10-27, 10-26 and 10-25): 10-27 answers 200 with `Content-Length: 0` and `text/html` (not published); 10-26 is 566,869 B and 10-25 is 593,216 B (`application/octet-stream`, no `Last-Modified`). So the time of publication cannot be read from a header: poll for the first non-empty answer.
+  - READ (design A M12): `cenk/nrd` publishes `nrd-last-{10,20,30,45,60}-days.txt`; the 10-day file is 11.6 MB with 699,321 lines (about 70,000 a day) and its last commit was 2026-10-26T13:57:05Z. Read it from raw GitHub only: the copy at `dl.cenk.app` carried `Last-Modified 2026-10-22` on 10-27 (Cloudflare HIT), five days stale. `hagezi/nrd` `domains/nrd7.txt` is 47,794,272 B with 2,773,880 lines (about 396,000 a day), header `Last modified: 26 Oct 2026 06:56 UTC`, `Expires: 8 hours`, "including possible subdomains"; its base data come from Stamus Labs and "can sometimes lag a few days". Siblings: `nrd14-8`, `nrd21-15`, `nrd28-22`, `nrd35-29`.
+- **Approach:**
+  - **Seams.** `.github/workflows/measure-feeds.yml` (a chain of long jobs, no cron), `scripts/measure/feed-times.mjs`, `scripts/measure/feed-poll.mjs`, results in `docs/research/measure/DOM-012/`.
+  - **The sample clock** is the one of DOM-011 ("The sample clock"), not a cron: a `*/10 * * * *` cron would give a poll every 229 min at the median (DOM-001's premise), and the publication times this entry measures are a matter of minutes. `measure-feeds.yml` has `on: workflow_dispatch` with the input `until`, `permissions: {}` at the top, `defaults.run.shell: bash`, the group `measure-feeds` with `queue: max` and `cancel-in-progress: false`, and one job `measure-chain` (`timeout-minutes: 350`, `permissions: actions: write, contents: read`) that dispatches its successor first, then loops 34 polls 10 minutes apart counted from the job's start, then uploads `polls.jsonl` with `actions/upload-artifact` (`overwrite: true`, name `feeds-<run id>`, `if: always()`). Start it with `gh workflow run measure-feeds.yml -f until=<the start plus 7 days, as a UTC instant>`. About 30 jobs run in turn.
+  - **Pinned actions.** `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false` (the pin of mirror-archlinux's `ci.yml` at commit 669ac725f8081445c164113f2ed092533de112e2), and `actions/setup-node` and `actions/upload-artifact` pinned as in DOM-004.
+  - Every poll, 10 minutes apart, sends: a HEAD to the ISC latest file and to the dated file of today and yesterday (record `ETag`, `Last-Modified`, `Content-Length`); a HEAD to the WhoisDS path of today and yesterday (record the length); a conditional GET to the cenk and hagezi raw files (`If-None-Match` with the last `ETag`); and `gh api 'repos/cenk/nrd/commits?per_page=1'` and the same for `hagezi/nrd` (the last commit time), with `GH_TOKEN` from `github.token` through `env`. Append one JSON line to `polls.jsonl` with the poll's own start time. The seam between two jobs is a gap of a few minutes, which `feed-times.mjs` reports.
+  - `feed-times.mjs` reads the artifacts (`gh run download`, one per run of the workflow) and prints per feed and per day: the first time a non-empty file appears, the last time its length or ETag changes, and the lag after UTC midnight. Print the distribution over 7 days (median, max).
+  - The result sets the late thresholds of DOM-027 and DOM-028 and the `stale-<source>` rule of DOM-034.
+- **Depends on:** none
+- **Prove:** `node scripts/measure/feed-times.mjs --days 7 --verdict docs/research/measure/DOM-012/result.json` prints the table for ISC, WhoisDS, cenk and hagezi and `PASS` when each of the four feeds has at least 6 observed days.
+  - `gh run list --workflow measure-feeds.yml --limit 5 --repo pkgforge-dev/domains.pkgforge.dev` shows one run in progress and the next one queued behind it.
+
+
+## DOM-024 — The state cursors and the ingest workflow skeleton
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** docs/architecture.md section 5.2 to section 5.4 and section 5.9; design A section 5.3; design B section 5.1 and section 5.2; the mirror's index writer and `upstream-watch.yml`.
+- **Problem:** every adapter needs a cursor (a Kafka offset, a next tile index, a last day, an ETag), a place to run, and a rule that makes a re-run harmless. Without one shared skeleton each adapter invents its own state and its own workflow, and two writers can move the same cursor.
+- **Premise:**
+  - READ docs/architecture.md section 5.4: a segment is `(source, window, cursor_before, cursor_after)`. A re-run with the same inputs writes the same bytes, so the tag exists with the same digest and the push is a no-op. The lanes of a run (Kafka, tiles, feeds) run in parallel and each produces its segments and a cursor proposal. Only the one `promote` job, in the concurrency group `root-writer` (section 4.7 rule 3), advances a cursor: it pushes `state` last, and only when the live `state` is the one it read.
+  - READ the mirror's writer guard (`docs/design.md`, "The guards", and `scripts/index-write`): the job reads the live tag just before the push and pushes only when it is the one the job read. Anything else keeps the live tag with a warning. A re-run of an older run (`GITHUB_RUN_ATTEMPT` above 1) reads the live state first.
+  - READ the mirror's `upstream-watch.yml`: it keeps its state in the Actions cache with `restore-keys`. GitHub removes a cache entry that no run used for 7 days (mirror `docs/measurements.md`, 2026-10-16). This project does not use the cache for state: it uses the `state` package.
+  - READ the mirror's concurrency rule (`docs/operations.md`, "Concurrency"): a group holds one running run and one pending run, and a newer run cancels the pending one. `queue: max` keeps up to 100 pending runs (GitHub refuses it with `cancel-in-progress: true`). actionlint 1.7.12 does not know the key `queue`.
+  - READ the clock rule (docs/architecture.md section 5.2): the chain starts its successor with `gh workflow run` and `GITHUB_TOKEN`. A run started by `workflow_dispatch` is the exception to "events by `GITHUB_TOKEN` start no run". The measured runner start is a median of 2 s (design B M8). DOM-003 writes `config/clock.json`.
+  - READ GHCR (mirror `docs/measurements.md`): pushes get 429 at 2,000 requests a minute for one token. A run pushes a few dozen requests.
+- **Approach:**
+  - **Seams.** `packages/state/` (types, read, propose, advance, guard), `scripts/ingest/run.mjs` (runs one adapter by id: reads the cursor, calls `run(cursor, ctx)`, verifies the segments with DOM-018's verifier, pushes the segments and the raw lane objects of architecture section 3.4 with DOM-019's tool, and writes a cursor proposal; it never writes `state`), `scripts/ingest/chain.mjs` (starts the successor and sleeps to the next boundary), `.github/workflows/ingest-live.yml`.
+  - **State.** The `state` package holds `state:latest`, an OCI manifest of kind `state` with one layer `state.json`: `{format: "domains.state.v1", updated, cursors: {"<source>": {...}}}`. Cursor shapes: Kafka `{topics: {"<topic>": {"<partition>": offset}}, through}`; tiles `{logs: {"<log>": {next_tile, tree_size, first_served}}}`; a day source `{last_day, gaps: []}`; a file source `{etag, last_modified, sha12}`. A snapshot `state-<YYYYMMDD>` is pushed once a day and never rewritten.
+  - **Cursor proposals, and one writer.** A lane never touches `state`. Its adapter run ends with a proposal `{source, before, after, segments}` (the cursor it read, the cursor it reached, and the tags of the segments and raw objects it pushed), and the lane uploads its proposals as the artifact `proposals-<lane>` (`actions/upload-artifact`, `overwrite: true`). Two lanes in parallel therefore race on nothing: they write different tags of `obs`. The `promote` job downloads every proposal and calls `advance(proposals)`: for each proposal it checks that every named tag exists (an anonymous HEAD) and that the live cursor of the source equals `before`; a proposal that fails a check is dropped with a warning, and the source is read again from its old cursor next run, which regenerates the same segment (write-once tags: same digest skip, other digest fault). `advance` reads the live digest of `state:latest`, applies every accepted proposal, and pushes `state` once, only if the digest is still the one it read. A mismatch keeps the live state, prints a warning and exits 1. This is architecture section 4.7 rule 3: every job that moves `state` or `root:latest` runs in the group `root-writer`.
+  - **Workflow `ingest-live.yml`.** `permissions: {}` at the top, `defaults.run.shell: bash`, `ubuntu-24.04`. Jobs: `kafka`, `tiles` and `feeds` (parallel; each runs `scripts/ingest/run.mjs` for the sources of its lane; `permissions: {contents: read, packages: write, issues: write}`, the last for `anomaly-<source>` and `visibility-<package>`; `timeout-minutes: 30`; they push segments and raw lane objects and write proposals, nothing else), then `promote` (`needs` the three lanes, `if: !cancelled()`, group `root-writer`, `queue: max`, no cancel; downloads the proposals, advances `state`, builds the hour pack when an hour has closed, then calls DOM-020's promotion; `packages: write`, `contents: read`). A fourth job `chain` runs beside the lanes (next bullet). Group `ingest-live` with `queue: max` for the whole workflow. Inputs: `sources` (a list), `from`, `to`; they reach a job through `env`, never through a `run:` string.
+  - **Chain.** The job `chain` (`permissions: {actions: write, contents: read}`, `timeout-minutes: 15`, a name of DOM-014's table) runs when `config/clock.json` says `actions-chain`. Its first step runs `chain.mjs start`: it dispatches the successor with `gh workflow run ingest-live.yml --ref main` (permission `actions: write`) unless another run of this workflow is already queued, so the successor waits in the group until this run ends. Its last step sleeps until the next boundary of the interval in `config/clock.json` (default 10 minutes), so a run lasts at least one interval and the chain does not spin. When the file says `actions-schedule`, only the cron runs. When it says `worker`, the Worker (DOM-025) runs the hot lanes and this workflow runs the heavy ones hourly.
+  - **Backstop.** The cron `7,22,37,52 * * * *` (the workflow also has `workflow_dispatch:`) starts a run, and that run's `chain` job dispatches a successor only when none is queued: a live chain keeps a queued successor, so the backstop never starts a second chain, and a dead chain has none, so the backstop restarts it. DOM-034's `dispatch-overdue` (copy it here now if DOM-034 has not landed, with the same file) makes the same decision from outside: a run in progress or pending counts as fresh.
+  - **Segment tags.** `<source>.<window start>.<window end>` with `YYYYMMDDTHHMMSSZ` times for a windowed source, and `<source>.<date>.<sha12>` for a file source. All lowercase.
+  - **Failure.** A failed source fails its own job. The other lanes and `promote` still run (their `if` condition is the function `!cancelled()`) and promote what exists. No job reads a Cloudflare credential.
+  - **Test.** `packages/state/test/guard.test.ts` with a mock registry: a stale read refuses the push; a re-run regenerates the same tag with no write; a crash between segment and state leaves a state the next run repairs; two lanes that each propose a cursor are both applied by one `advance`; a proposal whose `before` is not the live cursor is dropped; a proposal that names a missing tag is dropped.
+- **Decision:** the successor is dispatched at the START of a run, not at its end. A crash in the middle of a run then cannot break the chain: the successor is already pending in the group. The cost is one pending run at all times. The alternative, dispatching at the end, loses the chain on any crash and leaves only the cron backstop to restart it.
+- **Depends on:** DOM-003, DOM-016, DOM-019
+- **Prove:** `node scripts/test.mjs packages/state --name guard` passes, and `node scripts/test.mjs scripts/ingest --name chain` passes (the chain test plants a failing job and asserts the successor was dispatched before the failure).
+  - After the first run: `gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev` then `gh run list --workflow ingest-live.yml --limit 3 --repo pkgforge-dev/domains.pkgforge.dev` shows a successor queued.
+  - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/state/manifests/latest | jq -r .artifactType` prints `application/vnd.pkgforge.domains.state.v1`.
+
+## DOM-026 — oi-nrd: OpenINTEL's newly registered topics
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** design A section 3.1 and section 3.2; design B section 2.4 items 4 and 5, section 3 rows `oi-nrd` and `oi-confirmed`.
+- **Problem:** the new-domain feed needs a fresh stream of "newly seen in a certificate" claims. OpenINTEL publishes three topics for it. The raw stream marks a domain "new" when its first certificate shows in CT. That is not a registration date, and 38% of its events carry an old certificate. The adapter must label each event with the certificate age and mark old ones `suspect`.
+- **Premise:**
+  - MEASURED (DOM-004 premise, design A M6): `newly_registered_domain` has 422,192 messages in 24 h, 5,691,031 retained (about 11.6 days). `newly_registered_fqdn` has 342,310 in 24 h and `confirmed_newly_registered_domain` 235,327. The earlier research's 239,000 a day was a short sample. A WebSocket sample (design A M7, 2026-10-27T05:17:32Z to 05:40:34Z) read 4,184 messages (3.0 a second, 262,000 a day at that night rate), so the offset count is the better daily figure.
+  - MEASURED (design A section 3.1): a `newly_registered_domain` payload is `{"domain":"creatorwide.com.","cert_index":...,"ct_name":"DigiCert 'Wyvern2026h2'","timestamp":1792069250,"submission_timestamp":1788554798.785}`. The domain has a trailing dot. Times are epoch seconds. `timestamp` is the emission time (receive time minus `timestamp` is at most 1 s). `submission_timestamp` is the SCT time (design B M3, 800 messages in 180 s).
+  - MEASURED (design B M3, M5): 61.6% of events carried a certificate under 6 h old. 38% carried one older than 30 days, with p90 at 144 days. Against Verisign RDAP, 25 of 25 `.com` and `.net` events with a fresh certificate were registered within 1 day (median 0.1 day). Of 25 events with a certificate older than 30 days, 14 were not found and 11 were registered 35 to 5,157 days earlier. None was a new registration. Scripts: `docs/research/2026-10-27-design-b/scripts/zs.mjs`, `zsan.mjs`, `rdapval.mjs`, `rdapsum.mjs`; results in `docs/research/2026-10-27-design-b/results/` (`zsan.txt`, `rdapval.json`, `rdapval_summary.txt`).
+  - READ (https://openintel.nl/data/zonestream/, design A section 3.1): the `confirmed_newly_registered_domain` topic adds `confidence` from 1 to 10, the closeness of the CT first appearance to the RDAP registration date. Level 1 is within 5 minutes. Level 10 is 18 to 24 hours. The topic mixes in zone rows (`ct_name: "zone_data"`, `cert_index: -1`, 9% of a sample; design B section 2.4 item 5).
+  - The registry (docs/architecture.md section 3.5): `oi-nrd` bit 1, `oi-nrd-fqdn` bit 2, `oi-nrd-confirmed` bit 3. Precision `second`. Family `ct` for the first two, `registry+ct` for the third. Basis `nrd-ct`, and `nrd-ct+rdap` with the confidence for the third.
+- **Approach:**
+  - **Seams.** `adapters/oi-nrd/source.json` (three sources in one adapter directory), `adapters/oi-nrd/index.ts`, `adapters/oi-nrd/fixtures/` (recorded answers: 50 messages of each topic from the files above), `adapters/oi-nrd/test/*.test.ts`.
+  - **Transport.** Kafka `kafka.zonestream.openintel.nl:9092` with the Fetch v4 reader of DOM-004 (copy `kafkafetch.mjs` and `snappy.mjs`). The cursor is `{topics: {"<topic>": {"<partition>": offset}}}` in `state`. Port 9091 is not used. The first run reads from the earliest retained offset (about 11 days; 5.69 million messages of `newly_registered_domain`). A later gap longer than the retention is recorded in the root's `gaps` and not repaired.
+  - **Fallback.** If port 9092 does not answer for 30 minutes, read `wss://zonestream.openintel.nl/ws/<topic>` for the rest of the run. The WebSocket has no replay. The segment's annotation `transport` is `ws` and the window start is the connect time. A WebSocket window is marked as a possible gap.
+  - **Normalise.** Run the names package (DOM-015) on `domain`: it removes the trailing dot. `oi-nrd` and `confirmed` carry registrable domains: key by the reversed registrable domain. `oi-nrd-fqdn` carries names: key by the reversed name.
+  - **Time.** `t_first` and `t_last` are `submission_timestamp` in whole seconds. Certificate age is `timestamp` minus `submission_timestamp`. An event whose certificate is older than 7 days is `suspect`. The flag is kept by taking the minimum of the age over the segment's events for the domain (a fresh event clears it).
+  - **Confirmed.** Keep `confidence` (1 to 10). A zone row (`ct_name` equal to `zone_data`) writes evidence tier T1 with basis `zone` and no certificate age. Verify the mapping against the 9% sample before trusting it: if the rows hold no registration date, use T2.
+  - **Output.** One `domains` segment per topic per run (key reversed registrable domain; first and last second; flags `suspect`; confidence for the confirmed topic) and one `names` segment for `oi-nrd-fqdn`. Tag `oi-nrd.<start>.<end>`, `oi-nrd-fqdn.<start>.<end>` and `oi-nrd-confirmed.<start>.<end>`. A segment is at most 10 minutes of messages or 200,000 messages. **Raw lane.** The record batches of each fetch are kept as received, still snappy compressed, with their topic, partition and offsets, in the raw lane of docs/architecture.md section 3.4: one object per source and window, tag `raw-oi-nrd.<start>.<end>`, `raw-oi-nrd-fqdn.<start>.<end>` and `raw-oi-nrd-confirmed.<start>.<end>`, pushed before the segment that names it. Ruling 5 keeps raw data always. The three topics are small (under 0.1 GB a day together, an estimate [E] that DOM-004 replaces).
+  - **Volume band.** 422,000 messages a day is about 17,600 an hour. The band is half to double the median of the last 7 days (docs/architecture.md section 5.8).
+  - **Tests.** Fixtures through the adapter harness (DOM-016): trailing dot removed; an old-certificate event is `suspect`; a fresh event after it clears the flag; a zone row maps to T1; a re-run from the same cursor writes the same bytes; the offset advances only after the push.
+- **Decision:** the default feed hides `suspect` events (docs/architecture.md section 2). The adapter still writes them, flagged, so a caller can ask for `suspect=include`. Dropping them at ingest would lose evidence that the RDAP check showed to be mostly old domains.
+- **Depends on:** DOM-004, DOM-016, DOM-017, DOM-022, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/oi-nrd` passes.
+  - After the live run (`gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev -f sources=oi-nrd`): `node scripts/ghcr/tags.mjs obs --prefix oi-nrd. --min 3` prints segment tags and exits 0 when at least 3 exist, read with no credential and through the registry's `Link` pages, so it holds past 1,000 tags. `node scripts/ghcr/tags.mjs obs --prefix raw-oi-nrd. --min 3` does the same for the raw lane.
+  - `node scripts/verify-pack.mjs --repo obs --tag <TAG>` (DOM-018) exits 0 on the newest tag.
+
+## DOM-027 — isc-new: the ISC new-domain feed
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** S
+- **Source:** design B section 2.4 item 6 and section 3 row `isc-new`; DOM-012's measurement.
+- **Problem:** ISC publishes a free daily list of domains that are new to ISC. It is a second family of evidence, independent of CT. THC's dump held only 12% to 55% of it (design B M6). The feed needs an adapter that reads each day once, dates it by the feed's own `firstseen`, and keeps the file.
+- **Premise:**
+  - READ https://isc.sans.edu/feeds_doc.html and design B section 2.4 item 6: `https://isc.sans.edu/feeds/domaindata.json.gz` plus `domaindata.<date>.json.gz`. At least 5 prior days stay, by the documentation; MEASURED in `docs/research/2026-10-27-gtld-without-czds.md`: the dated archive runs back to 2025-10-26, up to 366 files. Updated hourly. Fields: `domainname`, `ip` (an integer, present for about 32%), `firstseen` (a date), `score`, `scorereason`. 466 TLDs. Each file is about 2.3 MB gzipped and 28 MB as JSON. Per day: 250,940 (2026-10-26), 251,054 (10-25), 340,972 (10-24), 418,062 (10-20). ISC's own text: the domains "may not be new, but new to us".
+  - MEASURED 2026-10-27T08:22:56Z (DOM-012 premise): `domaindata.json.gz` and `domaindata.2026-10-26.json.gz` are both 2,320,810 B, `Last-Modified: Tue, 27 Oct 2026 07:41:32 GMT`, `ETag: "2369aa-65ecd93449cda"`. `domaindata.2026-10-27.json.gz` is 55 B (the current day, empty).
+  - MEASURED (design B M6, `iscan.mjs`, `results/iscan.txt`): ISC's domains first seen 2026-10-26 are in THC's 10-26 dump at 25.5% and in its 10-25 dump at 54.8%. Those first seen 10-25 are in THC-26 at 12.4% and in THC-25 at 22.2%.
+  - Provenance: publisher SANS Technology Institute, Internet Storm Center; URL as above; the fetch time. This is provenance, not a licence field.
+  - The registry (docs/architecture.md section 3.5): `isc-new` bit 8, family `isc`, precision `day`, kind `claimed_new`, basis `nrd-list` (tier T2).
+- **Approach:**
+  - **Seams.** `adapters/isc-new/source.json`, `adapters/isc-new/index.ts`, `adapters/isc-new/fixtures/` (a 200-row slice of a real file plus a 55 B empty file), tests.
+  - **Read.** Each live run sends a conditional GET of `domaindata.json.gz` with `If-None-Match` set to the stored ETag. On 304 write nothing. On 200 compute the sha256 of the body. If the body is under 1 KB, ignore it (an empty current day). Otherwise parse the JSON array.
+  - **Date.** The data day is the largest `firstseen` date in the file. Each row's `first_seen` is its own `firstseen` date (day precision), never the file date and never the fetch date.
+  - **Write.** A `domains` segment (key reversed registrable domain from `domainname` after DOM-015 normalisation; first and last day) and the raw file as the layer `raw`. Tag `isc-new.<data day as YYYYMMDD>.<sha12>`. Keep `ip`, `score` and `scorereason` in the raw layer only: the pack record holds the day and the source bit.
+  - **Late rule.** After DOM-012 measures the publication times, set `late` when the ETag has not changed for 6 hours, or when no file for the previous UTC day exists by 03:00 UTC (replace by the measured values).
+  - **Backfill.** On the first run read every dated file back to 2025-10-26 (`domaindata.<date>.json.gz`), oldest first; DOM-051 relies on it.
+  - **Tests.** A 304 writes nothing; a 55 B file is ignored; a changed file under the same data day writes a new tag with another `sha12`; two runs on the same body write the same bytes; `firstseen` is never replaced by the fetch date.
+- **Depends on:** DOM-012, DOM-016, DOM-017, DOM-022, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/isc-new` passes.
+  - After the live run: `node scripts/ghcr/tags.mjs obs --prefix isc-new. --min 300` prints at least 300 tags (the year's backfill) and exits 0, paging through the registry's `Link` header (DOM-019).
+
+## DOM-028 — whoisds, cenk-nrd and hagezi-nrd: the daily lists
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** M
+- **Source:** design A section 3.1 "NRD lists" (M12); design B section 2.4 item 7 and section 3.
+- **Problem:** three free lists of newly registered domains add T2 claims that need no CT. They are samples or derived lists with known defects: WhoisDS caps its free file at 70,000, `cenk/nrd` republishes it, and hagezi derives from Stamus Labs data. Each has its own date convention. The adapters must date each row correctly and count related lists as one family.
+- **Premise:**
+  - READ/MEASURED (design B M6 and DOM-012's premise): WhoisDS serves `https://www.whoisds.com/whois-database/newly-registered-domains/<base64 of YYYY-MM-DD.zip>/nrd`. Each zip holds exactly 70,000 domains. The zip dated D matches ISC's day D minus 1 (79.8% and 66.2%) and about 0% for the same date. MEASURED 2026-10-27T08:23:18Z: the zip of 10-26 is 566,869 B and of 10-25 is 593,216 B; the path of 10-27 answers 200 with no body. Back-dated zips exist by date (design B checked 2026-09-30).
+  - MEASURED (design A M12): `cenk/nrd` has `nrd-last-{10,20,30,45,60}-days.txt`, generated from WhoisDS's free database. The 10-day file is 11.6 MB with 699,321 lines (about 70,000 a day). Its last commit was 2026-10-26T13:57:05Z. Design B found the files last modified 2026-10-22 at the CDN. Read it from raw GitHub only: `https://raw.githubusercontent.com/cenk/nrd/main/<file>`. The copy at `dl.cenk.app` carried `Last-Modified 2026-10-22` on 10-27 (Cloudflare HIT), five days stale. Some lists carry Unicode names that must be converted to punycode and validated (design B section 13).
+  - MEASURED (design A M12): `https://raw.githubusercontent.com/hagezi/nrd/main/domains/nrd7.txt` is 47,794,272 B with 2,773,880 domain lines for 7 days (about 396,000 a day). Header `Last modified: 26 Oct 2026 06:56 UTC`, `Expires: 8 hours`, "including possible subdomains". It says its base data come from Stamus Labs and "can sometimes lag a few days". Siblings: `nrd14-8`, `nrd21-15`, `nrd28-22`, `nrd35-29` and `dga*`.
+  - Not read, with the reasons from design A M12: `shreshta-labs/newly-registered-domains` (a 10,000-name sample), `WhoisFreaks/daily-newly-registered-domains` (about 10,000 free), `maaaaz/dnsdumps` (its README calls the repository broken), `dontcrash/NRD` (a splitter of hagezi's lists). Candidates for later adapters: `cbuijs/nrd` (windows 1d to 30d) and `networkhound/dot-in` (daily `.IN` snapshots).
+  - The registry (docs/architecture.md section 3.5): `whoisds` bit 9 and `cenk-nrd` bit 10, one family `whoisds`; `hagezi-nrd` bit 11, family `stamus`. Precision `day`. Basis `nrd-list`, tier T2.
+- **Approach:**
+  - **Seams.** `adapters/whoisds/`, `adapters/cenk-nrd/`, `adapters/hagezi-nrd/` (each with `source.json`, `index.ts`, fixtures, tests), and a shared `packages/adapter/src/list.ts` for the text-list reader (one name a line, skip `#` lines, parse the header comments).
+  - **whoisds.** Poll the zip path of each date D from D minus 1 day to today. An answer with an empty body means "not published": do not write. The observation day of a zip dated D is D minus 1. Mark every row `sample` (annotation `sample: true`, `cap: 70000`) so the API can say the list is a sample. Keep the zip as the layer `raw`. Tag `whoisds.<observation day as YYYYMMDD>.<sha12>`. Back-fill the dates the site still serves, from 2026-09-01 as far as it answers.
+  - **cenk-nrd.** Read `nrd-last-10-days.txt` from raw GitHub with a conditional GET. The file is a rolling window with no per-row date: date the rows by diffing against the last read (new rows get the date of the first read that shows them, day precision, and are marked `claimed_new` with that date as an upper bound). Convert Unicode names to punycode with the names package, and count refused rows in the stats. Check the commit time with `gh api 'repos/cenk/nrd/commits?per_page=1'`: if it is older than 48 h, mark the source `late`.
+  - **hagezi-nrd.** Read `domains/nrd7.txt` (and `nrd14-8` once, for backfill) with a conditional GET. Parse the header: `Last modified` is the list's time, `Expires` its life. "Possible subdomains": reduce every line to its registrable domain with the PSL and keep the line's name in the raw layer. The list's day is the `Last modified` day; a row seen in the window but not before is first seen on that day. The list "can lag a few days" (Stamus): set the `stale` mark when `Last modified` is older than 2 days.
+  - **Family rule.** `whoisds` and `cenk-nrd` carry the same data, so they count as one family when the API computes `corroborated`. `hagezi-nrd` is its own family `stamus`.
+  - **Tests.** Fixtures from each file: a Unicode name converts to punycode; an empty WhoisDS body writes nothing; the observation day is D minus 1; a hagezi subdomain reduces to its registrable domain; a repeated read writes no new tag.
+- **Decision:** `cenk-nrd` is kept although it republishes WhoisDS. Design B marked it stale and "not primary". Design A found its raw GitHub copy current while its CDN copy was stale. The adapter reads raw GitHub only and counts it with WhoisDS as one family, so the duplicate adds no false corroboration.
+- **Depends on:** DOM-012, DOM-016, DOM-017, DOM-022, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/whoisds`, `node scripts/test.mjs adapters/cenk-nrd` and `node scripts/test.mjs adapters/hagezi-nrd` pass.
+  - After the live run: `node scripts/ghcr/tags.mjs obs --prefix whoisds. --min 1`, `node scripts/ghcr/tags.mjs obs --prefix cenk-nrd. --min 1` and `node scripts/ghcr/tags.mjs obs --prefix hagezi-nrd. --min 1` each exit 0 (DOM-019's tool follows the `Link` header, so the check holds past 1,000 tags).
+
+## DOM-029 — thc-ct: THC's daily dumps and the 54-day backfill
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** design A section 3.1 and section 5.2 to section 5.4; design B section 2.4 items 1 and 2, section 3 row `thc-dump`; DOM-009's measurements.
+- **Problem:** THC's daily CT dump is the largest source of names. It is not sorted, has mixed case, changes volume without notice and misses two days. It lands at 00:04 UTC and must be turned into a names segment, a domains segment and a kept raw file every day. The corpus also needs the 54 days already published so that "new" has a horizon from 2026-09-01.
+- **Premise:**
+  - MEASURED 2026-10-27T08:22:56Z: `https://cs2.ip.thc.org/` lists `<date>.txt.gz` from 2026-10-01. A file for day D appears at about 00:02 to 00:05 UTC on D plus 1. The file of 10-26 is 319,917,410 B (listed 27-Oct 00:04); `Last-Modified 2026-10-27T00:04:12Z` (design A M1). Range works (206). `https://cs1.ip.thc.org/` answers 302 to cs2.
+  - MEASURED 2026-10-27T08:25:12Z: the Hugging Face bucket `IP-THC-ORG/Daily-Cerstream-Dumps` has 54 files, 35,765,972,194 B (2026-09-01 to 10-26). Days 2026-10-04 and 2026-10-09 are missing. A file's path is `<year>/<month without a leading zero>/<date>.txt.gz`: the directory is the month of the file's own date, so `2026/9/` holds September only and October starts in `2026/10/` (MEASURED 2026-10-27T09:34:52Z, the same listing: `2026/10/2026-10-01.txt.gz`, `2026/9/2026-09-30.txt.gz`). The resolve URL is `https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/resolve/<that path>?download=true`, for example `.../resolve/2026/10/2026-10-26.txt.gz?download=true`. The adapter takes each file's path from the listing and never builds it from the date. The bytes of the first 20 MB are identical to cs2's (design B M1).
+  - MEASURED (design A M5 and design B M2): a day holds about 38.5 million lines of which 24.7% are `*.` wildcard lines, and 32,554,702 distinct names after lowercasing. 0.57% of lines hold upper case. The order is not bytewise sorted. THC's own page says "sorted"; that is wrong in practice. 4 of 38.5 million lines are public suffixes. 0 lines fail the charset rule. September files run 843 to 986 MB. October files are 984 MB on 10-01 and 957 MB on 10-02, 445 MB on 10-03, and 77 to 340 MB from 10-05 (MEASURED 2026-10-27T09:34:52Z, summed per file from the Hugging Face listing), with no stated reason.
+  - MEASURED (design B M10): the names of one day cost about 6.04 B a name at 4,096 names a block, so about 200 MB for the pack.
+  - READ the registry (docs/architecture.md section 3.5): `thc-ct` bit 0, family `ct`, precision `day`, kind `ct_name`, basis `ct-first`.
+  - Sizes to budget against until DOM-009 measures them: a Node pass over one day took 527 s for hashing alone on a desktop (design A M5); design B estimated about 15 runner-minutes a day [I]. A push of 0.5 to 0.6 GB at 34 MB/s (mirror, 2026-10-13) takes about 20 s.
+- **Approach:**
+  - **Seams.** `adapters/thc-ct/source.json`, `adapters/thc-ct/index.ts`, `adapters/thc-ct/fixtures/` (a 2,000-line slice of a real file, with upper case, wildcards, a trailing blank line and an IDN name), `.github/workflows/ingest-thc.yml`.
+  - **Workflow.** `ingest-thc.yml` runs on cron `20 0 * * *`, then on `20 1-6 * * *` until the day's segment exists (a step reads the tag first and exits 0 when it is there), and on `workflow_dispatch` with inputs `day`, `from`, `to`. `permissions: {}` at the top; `defaults.run.shell: bash`; the inputs reach the job through `env`, never through a `run:` string; the job `ingest` (a matrix leg for the backfill) has `contents: read, packages: write, issues: write` (the last for `anomaly-thc-ct` and `visibility-obs`); `timeout-minutes: 90`; group `ingest-thc` with `queue: max`. A final job `promote` in group `root-writer` advances `state` from the legs' cursor proposals (DOM-024) and promotes the root; it holds `contents: read` and `packages: write`.
+  - **Read.** HEAD the file on cs2 (`Last-Modified`, length, `Accept-Ranges`). If cs2 answers 404, read the Hugging Face bucket. If both fail, mark `thc-ct` `late` and let the hourly retry run. Stream the body into the normaliser: never write the whole file to disk.
+  - **Normalise.** Use the names package (DOM-015): lowercase, strip `*.` with the flag `wild`, convert IDN, refuse bad bytes and count them, refuse a name that is a public suffix. Sort by the reversed key with `LC_ALL=C sort -u` or an in-process external merge sort under 16 GB of memory.
+  - **Output.** Three things per day: the raw file as fetched, the gzip bytes, as the layer `raw` of the names segment (kept forever, ruling 5, 319.9 MB for 10-26); a `names` segment (DOM-017 pack, key reversed name, source bit 0, first and last day equal to the data day, `wild` flag); a `domains` segment (key reversed registrable domain, same fields) that feeds the ledger (DOM-021). Tags: `thc-ct.<YYYYMMDD>.<sha12>` for the names segment and `thc-ct.<YYYYMMDD>.<sha12>-d` for the domains segment, where `sha12` is the first 12 hex digits of the sha256 of the raw file. Verify both with DOM-018 before the push.
+  - **Anomaly.** A day under 40% of the median of the last 7 accepted days is quarantined: pushed with the annotation `quarantine: true`, left out of `new` computations, and an issue `anomaly-thc-ct` opens (docs/architecture.md section 5.8). THC's volume fell from about 900 MB a day to a third of that in early October, so the band is relative to recent history, not to September. **Step change.** A baseline made of accepted days alone would quarantine every day after a lasting drop: all 21 observed days from 2026-10-05 to 10-26 sit below the floor of 379 MB (40% of 947 MB, the median of the last 7 accepted days before 10-05) with files of 77 to 340 MB (computed from the 09:34:52Z listing). So 3 consecutive observed days below the floor reset the baseline to their median, and the third is accepted (a missing day neither counts nor breaks the run). The backfill runs in date order and applies the rule: 2026-10-05 and 10-06 are quarantined, 10-07 is accepted and resets the baseline to 294 MB, and 10-15 (77 MB against a median of 276 MB) is quarantined. The rule is `checkBand` of DOM-016 and the planted test of DOM-055 replays this sequence.
+  - **Gaps.** A day with no file after 36 hours is a gap in the root and in `state` (`gaps`). The two known gaps are 2026-10-04 and 2026-10-09.
+  - **Backfill.** `ingest-thc.yml` with `from=2026-09-01 to=2026-10-26` runs a matrix of one day each over the Hugging Face listing, `max-parallel: 6` (up to 20 when the organisation's 20 job slots are free). Each job pushes its two segments. No job promotes: one final job in `root-writer` adds all of them to the root. `corpus_since` for `names` and `domains` is 2026-09-01.
+  - **Tests.** Fixture slice: an upper-case line equals its lower-case twin; `*.x` and `x` give one name with `wild` set; a public-suffix line is refused and counted; the same input writes the same bytes; a 40%-volume day is quarantined; a 404 on cs2 falls back to Hugging Face.
+- **Decision:** read cs2 first and the Hugging Face bucket second. cs2 is THC's own host and lists the newest day first. The bucket has the same bytes and covers older days, so it is the backfill source. A volume anomaly is quarantined, not dropped: raw data is kept (TODO/RULES.md section 5).
+- **Depends on:** DOM-009, DOM-016, DOM-017, DOM-021, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/thc-ct` passes.
+  - `gh workflow run ingest-thc.yml --repo pkgforge-dev/domains.pkgforge.dev -f from=2026-09-01 -f to=2026-10-26` ends green; then `node scripts/ghcr/tags.mjs obs --prefix thc-ct. --count` prints at least 108 (54 days, two segments each, counted through the registry's `Link` pages so the count holds past 1,000 tags; DOM-019 builds the tool). `node scripts/ghcr/tags.mjs obs --prefix thc-ct. --min 108` exits 0.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/sources' | jq '.data[] | select(.id=="thc-ct") | .through'` prints `"2026-10-26"` or later once DOM-033 is live.
+
+## DOM-036 — oi-cs: OpenINTEL's certstream names
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** design A section 3.1 (M6, M8); design B section 2.4 item 4, section 3 row `oi-certstream`.
+- **Problem:** the `certstream_domains` topic carries CT names with second precision, for logs that THC and the names tiles hold only in part. It is the way to see Google, Sectigo, DigiCert and TrustAsia names the same hour. Its retention is only about 26 hours, and it carries 72.7 million messages a day. The adapter has to read it often enough that nothing expires, and keep a segment of distinct names, not messages.
+- **Premise:**
+  - MEASURED 2026-10-27T05:30:36Z (design A M6): `certstream_domains` retains 80,983,139 messages, 72,699,511 in 24 h, 3,020,946 in the last hour. Retention is about 26.7 h (design B: about 25 h, 74.1 million retained). Port 9092 only (DOM-004).
+  - MEASURED (design A section 3.1): a payload is `{"certIndex":...,"domain_list":["*.x.example","x.example"],"fingerprint":"...","seen":1793079082,"sld_list":["x.example"],"source":"DigiCert Sphinx2027h1","submission_timestamp":...,"updateType":"PrecertLogEntry"|"X509LogEntry"}`. Batches are snappy compressed. A message is about 326 B of JSON, so a day is about 24 GB of JSON. A 30-minute slice is about 1.5 million messages, about 490 MB.
+  - MEASURED 2026-10-26T12:00Z to 12:05Z (design A M8, `kafka-window.mjs`): 194,303 messages, 63.3 MB, 239,171 distinct names, 122,154 distinct `sld_list` entries, 111,183 precerts and 83,120 certificates. Only 15 log sources appear: DigiCert, Sectigo, TrustAsia and Google. There is no Let's Encrypt, Geomys or IPng log. Reading took 59 s from Nepal.
+  - MEASURED (design A M8, `miss.mjs`): THC's 10-26 dump holds 95,130 of these 239,171 names (39.8%). Of the 144,041 names it lacks, many are cloud and machine names (`aws.dev` 10,356; `dyingbirds.com` 4,638; `amazonaws.com` 4,570; `sfdc.net` 2,484; `azure.com`; `cloudflarestorage.com`; `sslip.io`; `chatgpt.site`) and many are ordinary (`www.jingia.com`, `nuplast.sk`, `mahartport.hu`, `5703885.com`). Registrable domains with any name in THC: 37,972 of 90,373.
+  - Not measured (design A section 13): whether the feed is a 1:1 mirror of each log. Per-log counts did not track the log growth rates. Treat the feed as a source of unknown per-log completeness.
+  - The registry (docs/architecture.md section 3.5): `oi-cs` bit 4, family `ct`, precision `second`, kind `ct_name`, basis `ct-first`.
+- **Approach:**
+  - **Seams.** `adapters/oi-cs/source.json`, `adapters/oi-cs/index.ts`, `adapters/oi-cs/fixtures/` (200 recorded messages), tests. It shares the Kafka reader with DOM-026 (`packages/adapter/src/kafka.ts`, created by whichever entry lands first from the DOM-004 scripts).
+  - **Read.** From the stored offset to the high-water mark. The first run starts at the offset of now minus 20 hours. A run is every 10 to 30 minutes (the chain interval of `config/clock.json`). If a run falls more than 20 hours behind, alert: the 26-hour retention is near.
+  - **Extract.** For each message take the names of `domain_list` and `seen` (epoch seconds). Normalise each name with DOM-015 (the `*.` prefix sets `wild`). Take `sld_list` as a cross-check: recompute the registrable domain with our PSL and count disagreements in the stats (the disagreement rate is published in the coverage record, DOM-035).
+  - **Segment.** Per run, a `names` pack of distinct names with the minimum `seen` as `t_first` and the maximum as `t_last` (seconds), and a `domains` pack of registrable domains. Segment size follows distinct names, not messages. Tag `oi-cs.<start>.<end>`. Annotations: `cursor.before`, `cursor.after` (offsets per partition), the message count, the count per log `source` (a statistic, not a record field: docs/architecture.md section 3.6).
+  - **Raw lane.** The record batches of every fetch are kept exactly as the broker returned them, still snappy compressed, with a members index of topic, partition, base offset, last offset, byte offset and length. They go to the raw lane of docs/architecture.md section 3.4 under the tag `raw-oi-cs.<start>.<end>` (the same window as the segment), pushed before the segment that names it, and kept always (ruling 5). The topic itself expires after about 26 hours, so these batches are the only copy of the stream once it expires: a later change of the extractor re-reads them. Size [E]: 24 GB of JSON a day at a snappy ratio of 2 to 4 is 6 to 12 GB a day, 2 to 4 TB a year; DOM-004 measures `wire_bytes_per_day` and replaces the estimate. A run of 10 minutes is about 40 to 80 MB, inside the 10-minute upload limit of DOM-006.
+  - **Band.** About 3.0 million messages an hour. The band is half to double the median of the last 7 days.
+  - **Transport fallback.** None for this topic: the WebSocket has no `certstream_domains` replay in this design. If 9092 fails, mark `oi-cs` `late`. The names tiles (DOM-037) cover Let's Encrypt, Geomys and IPng in the meantime.
+  - **Tests.** Fixture messages: a precert and its certificate give one name; a wildcard sets `wild`; `sld_list` disagreement is counted; the same offsets write the same bytes; a gap larger than the retention is recorded.
+- **Depends on:** DOM-004, DOM-016, DOM-017, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/oi-cs` passes.
+  - After the live run: `node scripts/ghcr/tags.mjs obs --prefix oi-cs. --min 3` exits 0 after 30 minutes of the chain (it follows the registry's `Link` pages, DOM-019), and `node scripts/ghcr/tags.mjs obs --prefix raw-oi-cs. --min 3` exits 0 for the raw lane.
+  - `node scripts/ingest/run.mjs --source oi-cs --from-offset latest --max-messages 50000 --dry-run` prints the distinct-name count and the `sld` disagreement rate.
+
+## DOM-037 — ct-tiles: names tiles of Let's Encrypt, Geomys and IPng
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** design A section 3.1 (M7, M9, M10), design B section 2.4 item 9, ct.md section 4; DOM-011's measurements.
+- **Problem:** THC's dump arrives a day late, and Kafka carries no Let's Encrypt, Geomys or IPng log. Their names tiles are plain HTTPS, about 1.4 GB a day. Reading them gives same-hour names with second precision for the logs that issue most certificates. Availability differs per log and changes, one host refuses a client with no contact address, and shards roll over twice a year.
+- **Premise:**
+  - READ the tile API and the measured availability of 2026-10-27T08:23Z to 08:25Z in DOM-011's premise (tile path grammar, the table of statuses, the Geomys `Skylight-Rate-Limited` header, IPng's first served tile). Re-read DOM-011's result in `docs/research/measure/DOM-011/` before you build: it replaces these numbers.
+  - MEASURED (design A M10, 05:24Z to 05:26Z): the reliable set is Let's Encrypt Sycamore and Willow 2026h2 and 2027h1, Geomys Tuscolo 2026h2 and 2027h1, and IPng Gouda2026h2. It is about 51.7 million entries a day, about 202,000 tiles a day (2.3 a second) and about 1.37 GB a day gzipped. A 20-minute slice is about 2,800 tiles, about 19 MB gzipped. A tile is immutable (`Cache-Control: public, max-age=604800, immutable`).
+  - MEASURED (design A M9): THC held 97.7% and 98.1% of the names of two Let's Encrypt shards. So tiles are the redundant path for Let's Encrypt, not the primary one for names. They are primary for freshness (second precision) and for Geomys and IPng.
+  - READ (design A section 3.1): shard choice follows the certificate's expiry. Today's 90-day Let's Encrypt issuance goes to the 2027h1 shards. The ingester re-reads the log list daily and follows the shard that is `usable` or `qualified`. The list is `https://www.gstatic.com/ct/log_list/v3/log_list.json` (62,375 B at 2026-10-26T13:45:16Z).
+  - The registry (docs/architecture.md section 3.5): `ct-le` bit 5, `ct-geomys` bit 6, `ct-ipng` bit 7, `ct-godaddy` bit 17 (later). Family `ct`. Precision `second` (the entry's `Timestamp` is in milliseconds). Basis `ct-first`.
+  - Binary search by timestamp finds a window start in about 21 probes (design A M10). A 7-day backfill of Sycamore2027h1 alone is about 110 million entries, about 2.9 GB gzipped.
+- **Approach:**
+  - **Seams.** `adapters/ct-tiles/source.json` (three sources), `adapters/ct-tiles/index.ts`, `adapters/ct-tiles/fixtures/` (3 recorded tiles, one per operator, plus a 429 and a 404), tests. `ref-refresh.yml` (DOM-019) pins the log list by sha256 in `ref`.
+  - **User-Agent.** Every request sends `domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)`. The Geomys host throttles a client with no email in the User-Agent (MEASURED 2026-10-27T08:24:26Z). The contact is `domains@pkgforge.dev` (operator, 2026-10-27), a constant in the tree.
+  - **Availability probe on every run.** For each usable log read the checkpoint, the last full tile and the first served tile. A 404 or 429 is a state, not an error: record it in the stats, skip the log for this run, and keep its cursor. A log that serves from tile F starts its cursor at F, not at 0.
+  - **Cursor.** `{logs: {"<log>": {next_tile, tree_size, first_served}}}` in `state`. Read tiles from `next_tile` to the last full tile (`tree_size / 256` rounded down, minus one). Never read the partial tile for the cursor: read it only for the freshest names and do not advance past it.
+  - **Fetch.** `Accept-Encoding: gzip`. At most 6 requests at once. Honour `Retry-After` on a 429 with a cap (docs/conventions/forbidden-patterns.md: retry a rate limit with its stated delay and a cap).
+  - **Extract.** For each JSONL line take `DNS` (the SAN names) and the subject common name, and `Timestamp` (milliseconds, turned into seconds). Normalise with DOM-015. Distinct names per segment, minimum and maximum time.
+  - **Shards.** A shard is read while its log-list state is `usable` or `qualified` and its interval covers today. When the 2027h2 shards start to take issuance (their log list intervals begin 2027-06-17 and 2027-06-18), the adapter picks them up from the list, with no code change.
+  - **Segment.** Per run and per operator: a `names` pack and a `domains` pack, tag `ct-le.<start>.<end>`, `ct-geomys.<start>.<end>` or `ct-ipng.<start>.<end>`. Annotations hold the tile ranges per log and the per-log statistics (names, entries, 404s, 429s).
+  - **Raw lane.** Every tile body is kept as fetched: the gzip bytes of the response (`Accept-Encoding: gzip`), not the decoded JSONL. A run's tiles of one operator go to the raw lane of docs/architecture.md section 3.4 as one object under the tag `raw-ct-le.<start>.<end>`, `raw-ct-geomys.<start>.<end>` or `raw-ct-ipng.<start>.<end>` (the segment's window), pushed before the segment, with a members index of log, tile number, byte offset, length and sha256. Kept always (ruling 5). Size: about 1.37 GB a day for the reliable set (MEASURED, design A M10, 26.4 B an entry), so about 10 MB a 10-minute run, and about 0.5 TB a year.
+  - **Backfill.** The first run reads 24 hours back for each log by binary search on entry timestamps (copy the search of `docs/research/2026-10-27-design-a/scripts/ct-window.mjs`), then up to 7 days over the next runs. The window of 7 days stays optional: a longer backfill is not needed because THC covers the earlier days.
+  - **Band.** 2.3 tiles a second for the reliable set. A run that reads fewer than half the expected tiles marks the source `late`.
+  - **Tests.** Fixtures: a tile with 256 lines gives its names once; a 429 keeps the cursor and the next run resumes; a 404 on tile 0 starts at the first served tile; a rollover to a new shard reads from the list; the same tile range writes the same bytes.
+- **Decision:** one source per operator (`ct-le`, `ct-geomys`, `ct-ipng`), not one per log. A source bit is scarce (64) and per-log bits would fill the registry. The per-log counts live in the segment's statistics, which the coverage table (DOM-035) reads.
+- **Depends on:** DOM-011, DOM-016, DOM-017, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/ct-tiles` passes.
+  - After the live run: `node scripts/ghcr/tags.mjs obs --prefix ct-le. --min 1`, `node scripts/ghcr/tags.mjs obs --prefix ct-geomys. --min 1` and `node scripts/ghcr/tags.mjs obs --prefix ct-ipng. --min 1` each exit 0, and the same three with the prefixes `raw-ct-le.`, `raw-ct-geomys.` and `raw-ct-ipng.` exit 0 for the raw lane. The tool follows the registry's `Link` pages (DOM-019), so the check holds past 1,000 tags.
+  - `node scripts/ingest/run.mjs --source ct-geomys --dry-run --max-tiles 50` prints 50 tiles read with status 200 and no 429.
+
+
+## DOM-042 — Mirror THC's monthly database into GHCR
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** the operator's ruling 7 of 2026-10-27 (reverse IP and CNAME from THC's data mirrored in this project's GHCR, never from THC's live API), ruling 5 (raw data kept always) and ruling 6 (no tokens); DOM-010's measurements.
+- **Problem:** the reverse routes need THC's September and August databases in GHCR. Each file is about 37 GB gzipped and 252 GB uncompressed. A runner has 14 GB of guaranteed disk. GHCR takes at most 10 GB a layer and 10 minutes an upload. The mirror has to stream the file, never hold it whole, push it in layers, and keep it forever with a checksum.
+- **Premise:**
+  - MEASURED 2026-10-27T08:25:12Z (`curl -sS 'https://huggingface.co/api/buckets/IP-THC-ORG/Datasets/tree?recursive=true'`): `2026/10/rdns-sept.csv.gz` 37,046,639,482 B and `2026/9/rdns-aug.csv.gz` 36,029,717,282 B (and two Parquet files of 53,171,863,868 B and 52,525,961,595 B, which this project does not mirror: gzipped Parquet needs a full decompression before its footer can be read, and gzipped CSV streams). The directory is the release month, the file name is the data month (`rdns-sept`, `rdns-aug`).
+  - MEASURED 2026-10-27T08:21:52Z (`curl -sSIL 'https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true'`): 302 to a signed CDN URL, then 200 with `accept-ranges: bytes` and `content-length: 37046639482`. The signed URL's `Expires` parameter is 3,600 s after the request. A long single stream outlives the URL only if the connection drops: then ask the resolve URL again and continue with `Range`.
+  - READ https://ip.thc.org/docs/bulk-data-access (it answers only a request with a browser User-Agent: `curl` with its default User-Agent got 404, MEASURED 2026-10-27T09:38:43Z; the file URLs below need none): September 2026, released 2026-10-04, 6.36 billion records, CSV 35 GB compressed and 252 GB uncompressed. The slow host `https://dns.team-teso.net/2026/rdns-sept.csv.gz` did not answer a 1 MB Range read within 120 s at 2026-10-27T08:03Z.
+  - MEASURED (DOM-010 premise): the CSV has two fields, `ip,name`. It is 5.82 B a record compressed.
+  - READ (mirror `docs/measurements.md`, GHCR): 10 GB a layer and a 10-minute upload (documented); a single push ran at up to 34 MB/s (2026-10-13); 2,000 requests a minute for one token; a blob is scoped to its repository; a runner has 14 GB guaranteed and about 87 GB free in practice, 120 GB after `scripts/debloat-runner` (85 GiB became 120 GiB in 45 s).
+  - READ (mirror `docs/design.md`, "Shards" and "Disk"): a job needs room only for the files in flight; delete each file once it is pushed.
+  - READ docs/architecture.md section 4.2: the manifest kind `rawchunk` has layers `chunk.000` and up, each at most 4 GiB. section 6: the mirror keeps the CSV as fetched.
+  - A 4 GiB layer is 4,294,967,296 B. September is 8.63 chunks (9 layers). August is 8.39 chunks (9 layers).
+- **Approach:**
+  - **Seams.** `adapters/thc-rdns/source.json` (id `thc-rdns`, family `dns`, dataset `rev`, no source bit), `adapters/thc-rdns/index.ts`, `scripts/rdns/mirror.mjs`, `scripts/rdns/mirror.test.ts`, `.github/workflows/rev-monthly.yml` (this entry adds the `mirror` job and the `workflow_dispatch` inputs `month` and `stage`; DOM-043 adds the `rev` job; DOM-045 adds the schedule and the `check` job). `permissions: {}` at the top, `defaults.run.shell: bash`, the `mirror` job with `contents: read, packages: write, issues: write` (the last for `anomaly-thc-rdns` and `visibility-obs`), `timeout-minutes: 360`, group `rev-monthly`. The inputs reach the job through `env`, never through a `run:` string.
+  - **List.** Read the bucket listing, parse `rdns-<mon>.csv.gz` with a month table that accepts `sept` and `sep`, and map the data month to the file. The data month comes from the file name; its year is the directory's year (the year before it when the file is `dec` in a January directory).
+  - **Stream.** `curl --fail --location --retry 5 --retry-connrefused` from the Hugging Face resolve URL into a Node stream that does three things at once: cut chunks of at most 4 GiB (4,294,967,296 B) onto disk, compute the sha256 of the whole file and of each chunk, and count bytes. Keep at most two chunks on disk: push chunk N in the background while chunk N plus 1 downloads. Delete a chunk when its push is read back. If the job needs room, run `scripts/debloat-runner` (copy from the mirror, `scripts/debloat-runner`).
+  - **Push.** Each chunk is pushed with DOM-019's tool as its own manifest `thc-rdns.<YYYYMM>.c<NN>` (kind `rawchunk`, one layer), write-once, with a 429 pause (docs/architecture.md section 4.7). After the last chunk, push the month manifest `thc-rdns.<YYYYMM>` with `oras manifest push`: its layers are the same blob digests (blobs are scoped to the repository `obs`, so they resolve). Annotations: `source`, `url` (the resolve URL without the signed part), `fetched`, `host` (`huggingface` or `team-teso`), `content-length`, `sha256` of the whole file, `chunks`, `records` (from DOM-010 or the line count).
+  - **Check.** The sum of bytes equals the `content-length` of the HEAD. A gzip integrity pass runs on the same stream (`gzip -t` as a spawned process whose exit code the script reads; AGENTS.md absolute 5). Count the lines of the decompressed stream (expected near 6.36 billion for September): this reads 252 GB through `gzip -dc` once and costs CPU, not disk.
+  - **Month idempotence.** A month is mirrored once. If the tag exists, compare the HEAD `content-length` and `Last-Modified` with its annotations: equal means skip, different means a new tag `thc-rdns.<YYYYMM>-r2` and an issue `anomaly-thc-rdns`. Nothing is deleted.
+  - **Fallback host.** `dns.team-teso.net` only if Hugging Face fails for 3 attempts, labelled `host: team-teso`, with a 6-hour cap.
+  - **Root.** The `promote` job adds the month to `datasets.dumps.rdns` in the root (DOM-020) so that `GET /v1/dumps/rdns/{month}` (DOM-044) lists the chunks by digest.
+  - **Backfill.** August, then September.
+  - **Not done.** No route and no job calls THC's live API at `https://ip.thc.org/api/v1`.
+  - **Budget.** DOM-010 records the stream speed. The job limit is 6 hours. At 100 MB/s the download is about 6 minutes plus the push at 34 MB/s about 18 minutes, overlapped. The gzip pass over 252 GB is the long part: measure it.
+  - **Test.** `scripts/rdns/mirror.test.ts` with a fake 20 MB gzip served by a local server in 3 MB chunks: the chunk boundaries, the sha256 of each chunk, the whole-file sha256, the disk bound (never more than two chunks), a dropped connection that resumes with `Range`, and an existing tag that is skipped.
+- **Decision:** mirror the CSV, not the Parquet. The CSV streams; Parquet needs the whole file decompressed before its footer can be read, which a 75 GB decompression on a runner makes slow and fragile. The two files hold the same records. Parquet would save 30% of the bytes at a high cost in complexity.
+- **Depends on:** DOM-010, DOM-019, DOM-024
+- **Prove:** `node scripts/test.mjs scripts/rdns` passes.
+  - After the live run (`gh workflow run rev-monthly.yml --repo pkgforge-dev/domains.pkgforge.dev -f month=2026-09 -f stage=mirror`): `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/obs/manifests/thc-rdns.202609 | jq '[.layers[].size] | add'` prints `37046639482`, and `... | jq '.layers | length'` prints `9`.
+
+## DOM-045 — The monthly watcher
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** S
+- **Source:** docs/architecture.md section 5.3 (`rev-monthly.yml`, cron `30 6 * * *`); the operator's ruling 7.
+- **Problem:** THC releases its database once a month at an unannounced time. Someone has to notice a new month, start the mirror and the build, and raise an alarm if none comes.
+- **Premise:**
+  - READ https://ip.thc.org/docs/bulk-data-access (a request needs a browser User-Agent, as DOM-010 records; the watcher reads the bucket listing, which needs none): "We publish our database in its entirety at the end of each month". September 2026 was released October 4th 2026.
+  - MEASURED 2026-10-27T08:25:12Z (bucket listing): the August file's upload time is 2026-10-04T10:39:09Z and the September file's is 2026-10-03T14:10:06Z; the September file's `Last-Modified` is Fri, 02 Oct 2026 16:25:18 GMT. One release has been seen, so the cadence is a guess [E]. October's release (expected early November 2026) is the second reading.
+  - READ (mirror `docs/operations.md`, "Issues the automation raises"): one issue per problem, kept by `scripts/track-issue`; a `stale-<target>` issue opens when a target stops following upstream.
+- **Approach:**
+  - **Seams.** The `check` job and the schedule in `.github/workflows/rev-monthly.yml` (the workflow keeps `workflow_dispatch:` beside the cron, rule 12 of DOM-014), `scripts/rdns/watch.mjs`, `scripts/rdns/watch.test.ts`. The `check` job holds `actions: write` (it starts the run that holds the `mirror` and `rev` jobs with `gh workflow run rev-monthly.yml -f month=<month> -f stage=all`), `issues: write` (`anomaly-thc-rdns` and `stale-thc-rdns`) and `contents: read`; `check` is a name in DOM-014's table.
+  - **Daily check.** Cron `30 6 * * *`. One request to the bucket listing `https://huggingface.co/api/buckets/IP-THC-ORG/Datasets/tree?recursive=true`. Parse the months. Compare with `state` (`{months_built: [...]}`). A month that is not built starts the `mirror` job (DOM-042), then the `rev` job (DOM-043), by `workflow_dispatch` with `GITHUB_TOKEN`.
+  - **Check against the last month.** After a build, compare record count and compressed size with the previous month. A change over 20% (August 36,029,717,282 B to September 37,046,639,482 B is 2.8%) holds the root promotion and opens `anomaly-thc-rdns`.
+  - **Late.** If no new month appears 45 days after the last release, open `stale-thc-rdns` with `scripts/track-issue raise` (copy it from the mirror: `scripts/track-issue`). The 45 days are an estimate. Replace it after October's release.
+  - **Test.** A fake listing with a new month starts one dispatch; the same listing twice starts one; an old month is ignored; a size jump holds the promotion.
+- **Depends on:** DOM-042, DOM-043
+- **Prove:** `node scripts/test.mjs scripts/rdns --name watch` passes.
+  - `node scripts/rdns/watch.mjs --dry-run` prints the months found, the months built and `would start: none` (when September and August are built).
+
+## DOM-046 — A mirrored source of CNAME targets
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** M
+- **Source:** the operator's ruling 7 (CNAME answers come from THC's data mirrored in this project's GHCR); DOM-010's measurement that the monthly database has no CNAME column.
+- **Problem:** `GET /v1/cnames/{target}` is a THC parity route. The monthly database holds `ip,name` pairs only, so the route answers 501 `unsupported-by-source` (docs/architecture.md section 6). A route that always answers "unsupported" needs a source to become useful.
+- **Premise:**
+  - MEASURED 2026-10-27T08:21:59Z (DOM-010 premise): 72,834 lines of the first megabyte of the September CSV, every line `ip,name`. No third column. No CNAME target.
+  - READ (`docs/research/web-pkgforge-2026-10-27/ct.md` section 1): THC's CNAME table is reachable only by its live route `POST /lookup/cnames` (for `github.com` 89 names, `pkgforge.dev` 0, `phrack.org` 1) and its CSV route. There is no bulk dump of the CNAME table. The operator ruled that no route calls THC's live API.
+  - READ (`docs/research/web-pkgforge-2026-10-27/landscape.md`): OpenINTEL's fDNS Parquet (zone based) carries A, AAAA, NS, MX, TXT, CNAME, DS and DNSKEY records plus `country`, `as` and `ip_prefix`, for `.se .fr .ch .nu .sk .ee .li` and `.gov` (S3 `https://object.openintel.nl/openintel-public`, prefix `fdns/basis=zonefile/source=<tld>/`). That is a CNAME source for those TLDs only. gTLDs are not in the open set.
+  - READ (design A section 3.1): the Kafka topic `newly_issued_certificates_measurements` (166,477,316 messages in 24 h, about 780 B each) holds "DNS answers and IPs per new certificate name" in a binary form nobody has decoded. DOM-058 decodes it.
+- **Approach:**
+  - As ruled (`TODO/RULES.md` §5, ruling 10): the route answers `unsupported-by-source` until a candidate is measured. Then take, in this order: (1) OpenINTEL's measurement topic if DOM-058 finds CNAME answers in it; (2) the CNAME records of OpenINTEL's fDNS Parquet for the open TLDs (the adapter of DOM-047 already reads the same files); (3) a source the operator names.
+  - When a source is chosen: write the adapter in `adapters/<id>/`, a `cname` dataset (key reversed target name, value the names that point at it, with first and last seen), and fill `GET /v1/cnames/{target}` (DOM-044). The answer states which sources it holds and says that gTLDs outside them are not covered.
+- **Decision:** ruled by the operator on 2026-10-27 (ruling 10): measure OpenINTEL first; no new source before one is shown to carry CNAME records.
+- **Depends on:** DOM-010, DOM-047, DOM-058
+- **Prove:** `curl -sS -o /dev/null -w '%{http_code}\n' https://domains.pkgforge.dev/v1/cnames/github.com` prints `501` while the route is unsupported, and `200` once a source is mirrored.
+  - `curl -sS https://domains.pkgforge.dev/v1/cnames/github.com | jq -r '.reason'` prints `unsupported-by-source` in the first case.
+
+## DOM-047 — oi-zone: OpenINTEL's open ccTLD zones
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** L
+- **Source:** design A section 3.2 (`oi-zone-*`), design B section 3 row `zone-*`; `docs/research/web-pkgforge-2026-10-27/landscape.md` section 3.
+- **Problem:** registration evidence of tier T1 comes only from a registry's zone. For the ccTLDs whose zones are open, OpenINTEL publishes the daily delegation data. The first day a domain appears in a zone is registry-level evidence of a registration. Without it every `registered` answer rests on third-party claims.
+- **Premise:**
+  - READ (landscape.md): OpenINTEL's public S3 bucket is keyless and supports Range. `https://object.openintel.nl/openintel-public?list-type=2&prefix=...` lists objects. The zone-based prefix is `fdns/basis=zonefile/source=<tld>/year=/month=/day=/`. Listing works with no credential. HTTP 206 Range works (the tail of a Parquet file reads `PAR1`).
+  - READ (landscape.md, latest day at the time): `.se` 2,536,134,732 B (3 objects, day 25), `.fr` 4,114,913,184 B (4), `.ch` 2,701,888,990 B (3, day 26), `.nu` 277,437,457 B, `.sk` 608,858,305 B, `.ee` 102,063,091 B, `.li` 49,771,499 B, `.gov` 10,007,362 B. A day of the seven ccTLDs is about 10.4 GB.
+  - READ (https://openintel.nl/data/dictionary/ via landscape.md): fields A, AAAA, NS, MX, TXT, CNAME, DS, DNSKEY plus `country`, `as`, `ip_prefix`. The delegated name is in the `query_name` column [E: read the Parquet footer first and confirm the column name and whether it keeps a trailing dot].
+  - READ: gTLD zones (`.com`, `.net`, `.org`) are not in the open set. DOM-051 covers them on an operator account.
+  - The registry (docs/architecture.md section 3.5): `oi-zone` bit 12, family `registry`, precision `day`, kind `zone_add`, basis `zone` (tier T1).
+- **Approach:**
+  - **Seams.** `adapters/oi-zone/source.json`, `adapters/oi-zone/index.ts`, `adapters/oi-zone/fixtures/` (a 2,000-row Parquet slice per TLD, written with the same reader), tests, a job `zones` in `ingest-thc.yml`'s sibling `ingest-zones.yml` (cron `25 3 * * *` with `workflow_dispatch:` beside it, group `ingest-zones`, `permissions: {}` at the top, the job with `contents: read, packages: write, issues: write`).
+  - **Parquet.** Use a pure JavaScript Parquet reader that reads through Range requests (for example `hyparquet`; pin an exact version at build time and check that it reads these files). Fallback: the DuckDB command-line tool on the runner. Read only the `query_name` column chunks, not the whole 2.5 GB.
+  - **Set.** For each TLD and day take the set of distinct delegated registrable names (normalise with DOM-015, drop the trailing dot). Compare with the previous day's set (kept in `state` as a sorted hash file or re-read from the previous day's object). A name in day D and not in day D minus 1 is a zone add on D.
+  - **Baseline.** The first day read has no previous day, so it writes nothing as an add: it writes the baseline `domains` segment (first seen = that day for names already there, marked `baseline`). Backfill the prior 7 days from the bucket to start with adds.
+  - **Segment.** A `domains` segment per TLD per day: key reversed registrable domain, first and last day, evidence T1 `zone` for adds. Tag `oi-zone.<YYYYMMDD>.<tld>`. Record the object keys and sizes in the annotations.
+  - **Honest limits.** A zone add is the first day the registry's data shows the delegation. It is not a registration timestamp. Drops are not tracked. `.np` and every non-open ccTLD stay T2 or T3.
+  - **Tests.** Fixtures: a name present on day 2 and not day 1 gives an add; a name on both days gives none; the baseline day gives no adds; the same files give the same bytes; a missing day is recorded as a gap.
+- **Decision:** read Range slices of the Parquet through the S3 endpoint on a runner. A Worker could do it, but a day is 10 GB and the lane has no freshness need beyond one day. The alternative, the weekly ccTLD name lists (`https://openintel.nl/data/domain-lists/cctld-names/`, behind a terms-acceptance redirect that design B did not cross), is not a delegation set.
+- **Depends on:** DOM-021, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/oi-zone` passes.
+  - `curl -sS 'https://object.openintel.nl/openintel-public?list-type=2&prefix=fdns/basis=zonefile/source=ee/&max-keys=3' | head -c 400` lists keys (the bucket answers).
+  - After the live run: `curl -sS 'https://domains.pkgforge.dev/v1/new?since=2d&suffix=ee&basis=zone&limit=5' | jq '.data | length'` prints a number above 0 when a `.ee` zone add exists.
+
+## DOM-048 — sk-nic: the .sk registry list
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** S
+- **Source:** `docs/research/web-pkgforge-2026-10-27/landscape.md` section 3 (`sk_domains`); design A section 3.2 row `sk-nic`.
+- **Problem:** `.sk` publishes its live registrations with expiry dates in a plain daily file. A daily diff gives registry-level adds for a ccTLD that OpenINTEL's zone data also covers: a second, independent registry source.
+- **Premise:**
+  - MEASURED (landscape.md, 2026-10-27): `https://sk-nic.sk/subory/domains.txt` is 47,797,077 B with 493,544 live domains, each with registrar id, holder id, the name server list and the expiry date. It was generated 2026-10-26 ("26.10.2026"). It is plain HTTPS. The same ccTLD counts 2,719,592 names in the cumulative `domains-project` list: that count is not live registrations (a factor of 5.5).
+  - MEASURED (design A M5, 2026-10-26): THC's dump holds 24,192 `.sk` names that day.
+  - The registry (docs/architecture.md section 3.5): `sk-nic` bit 13, family `registry`, precision `day`, kind `zone_add`, basis `zone-list` (tier T1).
+- **Approach:**
+  - **Seams.** `adapters/sk-nic/source.json`, `adapters/sk-nic/index.ts`, fixtures (200 rows of the real file and its header), tests; the job `zones` lives in `ingest-zones.yml` (created by DOM-047; create the file here if this entry lands first, with the shape DOM-047 gives it).
+  - **Read.** Daily, conditional GET (the file has no stated cadence; the header text carries the generation date: parse it). Keep the raw file as the layer `raw` (47.8 MB). Tag `sk-nic.<generation day as YYYYMMDD>.<sha12>`.
+  - **Parse.** Read the header to learn the column order before trusting it. Normalise the domain, keep expiry in the raw layer only.
+  - **Diff.** The set of domains today minus the set of the last file gives adds with the generation day as `first_seen` (an upper bound for the registration day). Baseline the first read like DOM-047. Names that disappear are not tracked.
+  - **Tests.** A fixture pair of two days gives the right adds; the same file twice writes one tag; a changed header is a fault, not a guess.
+- **Depends on:** DOM-021, DOM-024
+- **Prove:** `node scripts/test.mjs adapters/sk-nic` passes.
+  - `curl -sSI https://sk-nic.sk/subory/domains.txt | grep -i '^content-length'` prints a length near 47,797,077 (the live file moves daily).
+  - After two live days: `curl -sS 'https://domains.pkgforge.dev/v1/new?since=2d&suffix=sk&basis=zone' | jq '.meta.sources_used'` includes `"sk-nic"`.
+
+## DOM-049 — oi-zonediff: Zonestream zone diffs
+
+- **Status:** open
+- **Priority:** P3
+- **Effort:** S
+- **Source:** design A section 3.1 and section 13; `docs/research/web-pkgforge-2026-10-27/landscape.md` section 3.
+- **Problem:** OpenINTEL documents a `zone_diff` stream for 12 ccTLDs. It has never been seen to carry a message. If it does speak, it is the freshest registry-level evidence there is. It costs one probe to find out.
+- **Premise:**
+  - READ (https://openintel.nl/data/zonestream/ via design A section 3.1): `zone_diff` covers `.cd .ch .ee .fj .gp .li .mp .mw .ni .nu .sl .se`.
+  - MEASURED (design A M7, 2026-10-27T05:17:32Z to 05:40:34Z, about 23 minutes of the WebSocket): 4,184 `newly_registered_domain` messages, 5,383 `newly_registered_fqdn` messages and 0 `zone_diff` messages. The Kafka topic list (DOM-004) does not show a `zone_diff` topic.
+  - The registry (docs/architecture.md section 3.5): `oi-zonediff` bit 14, family `registry`, precision `second`, kind `zone_add`, basis `zone` (tier T1).
+- **Approach:**
+  - Probe first. Run `scripts/measure/zonediff-probe.mjs` for 48 hours from inside long jobs, never from a cron: a `5 * * * *` cron would start a run every 229 min at the median (DOM-001's premise), and a silent stream is only proved silent by an unbroken listen. `measure-zonediff.yml` is the chain of DOM-011 ("The sample clock"): `on: workflow_dispatch` with the input `until`, `permissions: {}` at the top, `defaults.run.shell: bash`, one job `measure-chain` (`actions: write`, `contents: read`, `timeout-minutes: 350`) that dispatches its successor first and then holds `wss://zonestream.openintel.nl/ws/zone_diff` open for 340 minutes, counts messages per hour and keeps the first 20, and reads the Kafka topic list every hour for a `zone_diff` topic; it uploads its counts with `actions/upload-artifact` (`overwrite: true`, `if: always()`). Pinned actions as in DOM-004 (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` with `persist-credentials: false`). The seam between two jobs is a few seconds of deaf time, which the probe counts and reports.
+  - If 48 hours show 0 messages, close this entry as done with the counts recorded: the source does not speak. Do not build an adapter for a silent stream.
+  - If it speaks, write `adapters/oi-zonediff/` (source.json, index, fixtures, tests) that reads the topic (or the WebSocket with a recorded gap) and writes `domains` segments with T1 `zone` adds and the message time.
+- **Decision:** build only on evidence. A silent stream earns no code.
+- **Depends on:** DOM-004, DOM-021, DOM-024
+- **Prove:** `node scripts/measure/zonediff-probe.mjs --hours 48 --verdict docs/research/measure/DOM-049/result.json` prints the message count per hour and `SILENT` or `SPEAKS`.
+  - If `SPEAKS`, `node scripts/test.mjs adapters/oi-zonediff` passes too.
+
+## DOM-051 — gTLDs without CZDS: ISC's year of dated files, DNS Coffee's daily counts, .gov and the zone walks
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** M
+- **Source:** the operator, 2026-10-27, asked whether CZDS's data can be had elsewhere ("dispatch a subagent to research if we can get this data elsewhere"); the research `docs/research/2026-10-27-gtld-without-czds.md`; ruling 13 (`TODO/RULES.md` §5): CZDS is not used.
+- **Problem:** `.com`, `.net` and the other gTLDs are most registrations. ICANN's CZDS gives their zone files but needs an account, a per-TLD approval and a login, and this project holds no credential (ruling 6). The new-domain feed needs gTLD coverage from sources that need none, and a check of how complete it is.
+- **Premise:** all from `docs/research/2026-10-27-gtld-without-czds.md`, which carries each command and its UTC time:
+  - MEASURED: ISC's dated archive `https://isc.sans.edu/feeds/domaindata.<date>.json.gz` runs back to 2025-10-26, up to 366 files, not the 5 days its documentation implies. It is gTLD-only: 463 to 514 TLDs a day, no ccTLD, 242,596 to 489,341 rows a day. It answers 403 to the default `Python-urllib` User-Agent.
+  - MEASURED: ISC's rows are 0.905 to 0.963 of DNS Coffee's daily "new" count on 16 of 18 days. ISC's `.com` totals for June and September are 0.86 to 0.87 of the CZDS-based `.com` zone adds that appraise.net publishes. ISC's June rows over ICANN's monthly net adds are 1.10 for `.com` and 1.07 across 15 TLDs. So about 90% of a day's names entering gTLD zones are in ISC.
+  - MEASURED: precision. 19 of 20 ISC `.com` and `.net` rows were new by RDAP. For non-`.com` rows that no CT source corroborated, 16 of 40 were new, and 0 of 5 for each of `.shop`, `.vip` and CentralNic's TLDs.
+  - MEASURED: OpenINTEL's newly-registered stream reaches a registration in a median of 1.8 h (21 names), against 30 to 56 h for ISC. It holds 88 to 94% of ISC's names.
+  - MEASURED: DNS Coffee's public `/feeds` page gives 90 days of daily gTLD counts (new, removed, moved, and "truly new"), with no names. It is the only keyless source of removal counts. The page's script and its signed token are fragile.
+  - MEASURED: `cisagov/dotgov-data` publishes the complete `.gov` list (16,953 rows), with a commit a day. `flotwig/zone-walks` publishes daily NSEC walks of about 25 small gTLDs; they are partial (`.lol` is 19% of its registry total).
+  - MEASURED: all 116 RDAP answers from nine registry servers carried a registration event. Four registries (CentralNic, GMO, PIR, Google) refused a plain Worker `fetch`. Per-address limits are unmeasured: the research stopped at 30 requests a server.
+  - Not available without a login: full gTLD zones, the names removed, and nameserver changes. AXFR of open zones was not measured, because outbound TCP 53 was blocked where the research ran.
+- **Approach:**
+  - **ISC's year.** DOM-027's backfill reads every dated file from 2025-10-26, not 5 days. Its corpus horizon (`corpus_since`) for `isc-new` is the first file read. Every request sends the project's User-Agent (ruling 11).
+  - **`dnscoffee-counts`**, a monitor, not a source of names. Once a day it reads DNS Coffee's daily counts into `coverage.json` beside the sources' own counts. `/v1/coverage` shows ISC's rows over DNS Coffee's "new", and DOM-034 files an issue when that ratio stays under 0.85 for 3 days, or the page cannot be read for 3 days.
+  - **`dotgov`**, source bit 15 (it was `czds`'s): `cisagov/dotgov-data`'s current list, read daily from raw GitHub and diffed against the previous day like DOM-047. Family `registry`, kind `zone_add`, basis `zone-list`, precision day.
+  - **`zone-walks`**, source bit 21: `flotwig/zone-walks`'s daily files, diffed the same way, each answer marked `partial: true`. Family `nsec-walk`, kind `zone_add`, basis `zone-walk`, precision day.
+  - **RDAP first for weak candidates.** DOM-049's sample takes ISC rows in non-`.com` TLDs that no CT source corroborated before any other row, because 24 of 40 such rows were not new.
+  - The adapters live under `adapters/dotgov/` and `adapters/zone-walks/`, with fixtures and tests. Their jobs run in `ingest-zones.yml` (DOM-047's workflow) under DOM-014's job table.
+- **Decision:** credential-free sources instead of CZDS (ruling 13). They cover the names entering gTLD zones at about 90%, at the cost of removals, full snapshots and the about 600 small gTLDs ISC never lists. CZDS returns only if the operator overturns ruling 13.
+- **Depends on:** DOM-021, DOM-024, DOM-027, DOM-047
+- **Prove:** `node scripts/test.mjs adapters/dotgov adapters/zone-walks` passes on recorded files: a day's diff names the adds; a walk's answer says `partial: true`.
+  - After the first live day, `curl -sS 'https://domains.pkgforge.dev/v1/sources' | jq -r '.data[] | select(.id=="dotgov" or .id=="zone-walks") | .status'` prints `ok` twice.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/coverage' | jq '.monitors["dnscoffee-counts"].isc_ratio'` prints a number.
+  - `node scripts/ghcr/tags.mjs obs --prefix isc-new. --min 300` exits 0 after the ISC backfill.
+
+## DOM-052 — crt.sh and Cert Spotter: validation and gap-fill off the hot path
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** M
+- **Source:** design A section 3.2 row `crtsh-verify`, design B section 3 row `crtsh`, `docs/research/web-pkgforge-2026-10-27/ct.md` section 3.
+- **Problem:** the corpus is a union of partial CT sources. Nothing checks it against an independent CT index, and a name that every source missed stays missing. crt.sh and Cert Spotter are slow and unreliable, so they cannot answer a request. They can check a sample once a day and fill gaps.
+- **Premise:**
+  - MEASURED (ct.md section 3, 2026-10-27): crt.sh JSON succeeded on 19 of 22 calls from the research machine and on 2 of 3 through Worker egress. The failures were one 404 and two 502. A warm call took 1.2 to 18 s. The first call on a domain took 85 to 108 s. A response was 256 KB for 835 certificates and 420 KB for 1,235 certificates. The public PostgreSQL service (port 5432, user `guest`) answered with a pooler error `max_client_conn` on about 27 of 30 attempts, and trivial queries took 15 to 29 s. Do not use it.
+  - MEASURED (ct.md section 3): Cert Spotter without a key allows 10 requests an hour (unexpired issuances only, 100 results a page, 1 to 2.5 s a call). Its full-domain index is paid.
+  - MEASURED (ct.md section 1): THC's dump lacks about 51 real CT names for `github.com` (for example `camo.`, `cla.`, `codespaces.github.com`) while it holds 4,293 others, because of its own name filter. crt.sh held 118 names for `github.com`.
+  - MEASURED (design A M8): THC holds 39.8% of the Kafka window. Coverage differs widely between sources (docs/architecture.md section 8).
+- **Approach:**
+  - **Seams.** `scripts/validate/ct-sample.mjs`, `scripts/validate/ct-sample.test.ts`, `.github/workflows/validate-ct.yml` (cron `55 2 * * *` with `workflow_dispatch:` beside it, group `validate-ct`, `permissions: {}` at the top, one job `validate` with `permissions: {contents: read, packages: write, issues: write}` and `timeout-minutes: 120`), `adapters/crtsh/` for the gap-fill segment.
+  - **Sample.** Each day draw 200 registrable domains from the day's `domains` tier (stratified by source: 50 that only one source saw, 50 that two or more saw, 50 from `.com.np` and ccTLD suffixes, 50 random). For each, ask `https://crt.sh/?q=<domain>&output=json` with a 120 s timeout, at most 2 at a time, one retry, and the contact User-Agent of DOM-011.
+  - **Check 1, precision.** For each name our corpus holds for the domain, was a certificate found in crt.sh? Report the share found, per source.
+  - **Check 2, recall.** For each crt.sh name of the day under the domain, does our corpus hold it? Report the share held, per source family. A name crt.sh has and we lack is a gap candidate.
+  - **Gap-fill.** Gap candidates go to a `names` segment of the source `crtsh` (this entry uses source bit 20 of the registry of DOM-016 (id `crtsh`), family `ct`, precision `second` from the certificate's log time or `not_before` when no log time is given, kind `ct_name`, basis `ct-first`; add its row to `docs/sources.md` in the same change). The job writes at most 50,000 names a day.
+  - **Cert Spotter.** Use it only when crt.sh fails 3 times in a row, at most 10 requests an hour, as the emergency check for the sample. It writes no segment.
+  - **Report.** The numbers go to the coverage table (DOM-035) as `validation.crtsh` and to `/v1/coverage`. A drop of more than 20 points in a source's recall opens `anomaly-<source>`.
+  - **Never on the query path.** No Worker route calls crt.sh or Cert Spotter. A static check in DOM-014 refuses their hostnames in `apps/`.
+- **Decision:** a sample, not a crawl. crt.sh answers a domain in seconds to minutes and fails often: 200 domains a day fits one job and tells whether a source's coverage moved. A full gap-fill would need a CT reader of our own.
+- **Depends on:** DOM-029, DOM-038
+- **Prove:** `node scripts/test.mjs scripts/validate` passes.
+  - `gh workflow run validate-ct.yml --repo pkgforge-dev/domains.pkgforge.dev` ends green and `curl -sS https://domains.pkgforge.dev/v1/coverage | jq '.data.validation.crtsh.sample_size'` prints 200.
+  - `grep -rn 'crt.sh' apps/ | wc -l` prints `0`.
+
+## DOM-057 — The external writer path for a VPS
+
+- **Status:** open
+- **Priority:** P3
+- **Effort:** S
+- **Source:** docs/architecture.md section 5.7; design A section 5.5; design B section 5.6; the mirror's `docs/design.md` "Running outside GitHub Actions"; the operator's ruling 6 (`TODO/RULES.md` section 5): no tokens.
+- **Problem:** if a core source shuts down, or the operator wants full CT data, a machine outside GitHub will ingest it. That machine must add the same segments, under the same rules, and hold no token: ruling 6 forbids one, and the mirror's push-from-outside path needs a classic token that can write every package of its owner. Nothing in the repository says how an outside writer joins without one.
+- **Premise:**
+  - READ (mirror `docs/design.md`, "Running outside GitHub Actions"): the mirror lets another host push with `REGISTRY_USER` and `REGISTRY_TOKEN`, a dedicated account's classic token, because GHCR accepts only classic tokens for pushes from outside. That is the path this project does not take. Its two facts still bind: a workflow must create each GHCR repository first, with the workflow token, which links the package to the repository (a package first pushed from outside is not linked, and the workflow token can never write to it); and a push must stay inside GHCR's 10-minute upload limit.
+  - A pull model needs no token on the outside host. The VPS writes its segments to its own disk and serves them over HTTPS (a plain static file server, no credential). An Actions job fetches them, runs the verifier, and pushes them with its own `GITHUB_TOKEN`, as it pushes a segment of any other source. The VPS holds nothing that can write GHCR. The job needs nothing from the VPS but a public URL.
+  - READ (design B section 5.6) the triggers: `thc-ct` missed 3 consecutive days; `oi-nrd` and `isc-new` both stale over 24 hours; own-CT coverage under an agreed SLO (for example under 60% of a validation sample); the operator wants full certificate data. They are all readable from `GET /v1/sources` and `GET /v1/coverage`.
+  - The registry (docs/architecture.md section 3.5): bit 18 is reserved for `vps-ct`.
+  - This project holds no token, and the VPS path adds none (docs/architecture.md section 5.7, ruling 6).
+- **Approach:**
+  - **Seams.** `adapters/vps-ct/source.json` (status `reserved`, no module yet), `scripts/external/pull-segments.mjs`, `scripts/external/pull-segments.test.ts`, `.github/workflows/ingest-vps.yml`, `docs/operations.md` section "An outside writer" (DOM-056 creates the file; add the section there).
+  - **What the VPS serves.** A static HTTPS directory: `index.json` (a list of `{tag, bytes, sha256, window.start, window.end, count}` in window order, append-only) and one directory per tag holding the segment's parts, `idx` and its manifest annotations as `annotations.json`. No listing is generated from a request, no write endpoint exists, and no credential is checked or sent. The operator names the base URL in the `source.json` of `vps-ct` (a constant in the tree, as the User-Agent contact is).
+  - **The puller** `scripts/external/pull-segments.mjs` reads `index.json`, and for each tag that the `obs` package does not hold (an anonymous read of the tag), downloads its files, checks every `sha256`, runs the verifier (DOM-018: schema, sortedness, charset, the volume band of `checkBand`), and pushes the segment with DOM-019's tool using the job's own `GITHUB_TOKEN` and the write-once rules (same digest skips, another digest is a fault). A segment that fails any check is refused, named in the job summary, and raises `anomaly-vps-ct`. The puller reads no environment variable that holds a credential, and a test asserts that it fails when one is set in its place.
+  - **Workflow** `ingest-vps.yml`: cron `3,23,43 * * * *` with `workflow_dispatch:` beside it, `permissions: {}` at the top, `defaults.run.shell: bash`, group `ingest-vps`, one job `ingest` (`contents: read`, `packages: write`, `issues: write`, `timeout-minutes: 30`). Its segments are listed by the `promote` job of `ingest-live.yml` (a job in `root-writer`), which validates them again before they count. The first push of every package already comes from a workflow, so each package is linked to the repository. The cron is the default clock of a source with no freshness need beyond a window; when DOM-003's verdict is `actions-chain`, the pull is a lane of `ingest-live.yml` (DOM-024) instead and this file keeps only `workflow_dispatch:`.
+  - **Rules it keeps.** Write-once tags, 429 pauses, upload bound, read-back (the same tool as DOM-019).
+  - **Never** touches `root:latest` or `state`: only a job in `root-writer` does.
+  - **Triggers** are written as a check in `scripts/external/should-build.mjs` that reads `/v1/sources` and prints which trigger holds. It is a report, not an action.
+- **Decision:** a pull model, not a push. A push from outside GHCR needs a classic token of a dedicated account that can write every package of its owner (the mirror's own finding), and ruling 6 holds that this project has no token. Pulling puts the only credential in the one place that already has it: the workflow's own `GITHUB_TOKEN`. The VPS then holds nothing worth stealing, and a compromised VPS can offer a segment that the verifier refuses and cannot move the root or `state`. The cost is that the VPS must serve its segments and the job must reach it: up to a window's delay, and a window the job cannot reach is a gap, as for any source.
+- **Depends on:** DOM-019, DOM-024
+- **Operator:** only when a trigger holds. Set up the machine, serve its segment directory over HTTPS, and tell the session the base URL. Nothing else: no account, no token.
+- **Prove:** `node scripts/test.mjs scripts/external` passes (a segment with a wrong `sha256` is refused; a missing tag is pulled once and a present tag is skipped; a bad segment is refused and named; the puller fails when a credential variable is set; a package that does not exist stops with the message that a workflow must create it first).
+  - `node scripts/external/should-build.mjs --url https://domains.pkgforge.dev` prints `no trigger holds` or the triggers that hold.
+
+## DOM-058 — OpenINTEL's measurement topic: decode and sample
+
+- **Status:** open
+- **Priority:** P3
+- **Effort:** M
+- **Source:** design A section 3.1 and section 13 (binary schema undecoded); DOM-046 (a possible CNAME source).
+- **Problem:** the topic `newly_issued_certificates_measurements` carries DNS answers and addresses for each name in a new certificate. It would give forward DNS and maybe CNAME chains for free. Nobody has decoded its binary messages, so nobody knows what it holds.
+- **Premise:**
+  - MEASURED 2026-10-27T05:30:36Z (design A M6): 169,014,696 messages retained, 166,477,316 in the last 24 h, 6,752,042 in the last hour. About 780 B a message. Retention about 24 h. A binary format that looks like Avro: "Avro-like binary with DNS answers and IPs" (design A section 3.1). Design B section 2.4 item 4 lists the topic among those found.
+  - READ (design A section 13): "The Kafka measurement topics' binary schema" was not measured.
+  - READ docs/architecture.md section 6 and DOM-046: if the topic carries CNAME answers it is a candidate CNAME source.
+  - The registry (docs/architecture.md section 3.5): `oi-measure` bit 19, family `dns`, kind `dns`.
+- **Approach:**
+  - **Seams.** `scripts/measure/oi-measure-decode.mjs`, `packages/adapter/src/oi-measure.ts` (the decoder), fixtures of 50 recorded messages, `docs/research/measure/DOM-058/schema.md`.
+  - **Sample.** With the Kafka reader of DOM-004 fetch 1,000 messages from `newly_issued_certificates_measurements` and print the first 128 bytes of each in hex. Look for the magic bytes of an Avro container (`Obj` followed by `0x01`) or for a schema fingerprint. Check the OpenINTEL documentation pages for a schema (https://openintel.nl/data/zonestream/ and its links).
+  - **Decode.** Write the decoder: Avro-style zigzag varints, length-prefixed strings, unions. Verify it on all 1,000 messages with no trailing bytes.
+  - **Measure.** Print the field list, how many messages carry A, AAAA and CNAME answers, the share of names with a CNAME chain, and the share with an address.
+  - **Adapter, only if the decode works and the data is worth it.** `adapters/oi-measure/` samples one minute of each hour (about 112,000 messages, about 88 MB) and writes a segment of `(name, address)` and `(name, cname target)` pairs, with the sampled record batches kept as received in the raw lane (docs/architecture.md section 3.4, ruling 5). The segment goes to a dataset chosen with DOM-046's decision. Write nothing before that decision.
+- **Depends on:** DOM-004, DOM-024
+- **Prove:** `node scripts/measure/oi-measure-decode.mjs --sample 1000 --verdict docs/research/measure/DOM-058/result.json` prints the field histogram, the line `cname_answers: <n> of 1000` and `PASS` when all 1,000 messages decode with no trailing bytes.
+  - `node scripts/test.mjs packages/adapter --name oi-measure` passes on the recorded fixtures.

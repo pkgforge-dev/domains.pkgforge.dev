@@ -1,0 +1,126 @@
+#!/bin/sh
+# commit-msg - refuse a commit message that credits a tool, BEFORE it exists.
+#
+# ⛔ THE RULE (AGENTS.md absolute 1, docs/conventions/git.md section 1): every
+# commit is attributed to the operator alone. No co-author trailer naming a
+# model, a vendor or a tool. No "generated with" line. No tool name in the
+# message. A human co-author is allowed: a person's trailer passes.
+#
+# ⚠ A TOOL'S OWN DEFAULT ASKS FOR SUCH A TRAILER, and several do. The failure
+# arrives from a setting nobody chose, on every commit of a session. This hook
+# is the one instrument that speaks before the commit exists: it refuses, and
+# nothing is written.
+#
+# ⛔ INSTALL IT. Hooks are not cloned, so a fresh checkout has none until:
+#
+#   git config core.hooksPath .githooks
+#
+# ⚠ git runs a hook directly, not through an interpreter, so the file must be
+# tracked with the executable bit. A Windows checkout does not carry the bit
+# on disk, so set it in the index:
+#
+#   git update-index --chmod=+x .githooks/commit-msg
+#
+# ⛔ IT REFUSES WHEN IT CANNOT RUN. git treats any non-zero exit as a rejection,
+# so the only two honest answers a hook has are "checked and allowed" and "not
+# allowed". A hook that exits 0 because it could not read the message has
+# reported success over a message it never read.
+#
+# Exit codes: 0 the message is allowed, 1 it is refused, 2 the check could not run.
+#
+# SPDX-License-Identifier: 0BSD
+
+set -u
+
+[ $# -ge 1 ] || { printf 'commit-msg: git passes the message file as $1 and did not\n' >&2; exit 2; }
+MSGFILE="$1"
+[ -f "$MSGFILE" ] || { printf 'commit-msg: no such message file: %s\n' "$MSGFILE" >&2; exit 2; }
+command -v awk >/dev/null 2>&1 || { printf 'commit-msg: awk not found, so the message was NOT checked\n' >&2; exit 2; }
+
+# The tokens that make a line a CREDIT rather than prose: vendor and product
+# names, matched case-insensitively on a word boundary, anywhere in the message.
+#
+# ⚠ A LIST IS A THING TO FORGET, and this one is short on purpose. What a name
+# nobody listed still trips: a "generated with" line, and a Co-authored-by
+# trailer from a no-reply address (the shape every tool's trailer takes; see
+# below). What it does NOT trip: a trailer that names an unlisted tool with a
+# personal-looking address. Add such a name to NAMES when one appears.
+NAMES='claude anthropic opus sonnet haiku copilot chatgpt openai gpt-4 gpt-5 gemini codex devin aider'
+
+# ⚠ `cursor` is this project's own vocabulary (a Kafka cursor, a state cursor),
+# so the word alone is never refused. The editor of that name is refused only in
+# its tool forms: as the name in a Co-authored-by trailer (TRAILER_NAMES), or as
+# a "Cursor Agent" line (SHAPES).
+TRAILER_NAMES="$NAMES cursor"
+
+# The lines a tool appends to a message.
+SHAPES='generated with|created with|written by ai|authored by ai|cursor agent'
+
+# ⛔ COMMENT LINES ARE STRIPPED, AND ONLY COMMENT LINES. git's own template puts
+# the branch name and the staged file list behind `#`, none of which reaches the
+# stored message. Refusing a message over git's own scaffolding is how a hook
+# becomes something people turn off.
+REPORT=$(awk '/^#/ { next } { print }' "$MSGFILE" | LC_ALL=C awk -v names="$NAMES" -v tnames="$TRAILER_NAMES" -v shapes="$SHAPES" '
+  function has_word(hay, needle,   re) {
+    re = "(^|[^a-z0-9_])" needle "([^a-z0-9_]|$)"
+    return (hay ~ re)
+  }
+  # The local part of the first address in s: the run of characters before the
+  # first "@", back to a space, "<", "(" or a tab. Empty when s holds no "@".
+  function local_part(s,   at, start, c) {
+    at = index(s, "@")
+    if (at == 0) return ""
+    start = at
+    while (start > 1) {
+      c = substr(s, start - 1, 1)
+      if (c == " " || c == "<" || c == "(" || c == "\t") break
+      start--
+    }
+    return substr(s, start, at - start)
+  }
+  BEGIN {
+    nn = split(names, N, " ")
+    nt = split(tnames, T, " ")
+    ns = split(shapes, S, "|")
+    seen = 0
+  }
+  {
+    seen++
+    lower = tolower($0)
+    for (i = 1; i <= ns; i++)
+      if (index(lower, S[i]) > 0) printf "  line %d carries \"%s\"\n", NR, S[i]
+    at = index(lower, "co-authored-by:")
+    if (at > 0) {
+      rest = substr(lower, at + 15)
+      for (i = 1; i <= nt; i++)
+        if (has_word(rest, T[i])) {
+          printf "  line %d has a co-author trailer naming \"%s\"\n", NR, T[i]
+          break
+        }
+      lp = local_part(rest)
+      if (lp == "noreply" || lp == "no-reply" || lp == "donotreply" || lp == "do-not-reply")
+        printf "  line %d has a co-author trailer from a no-reply address, the shape of a tool\n", NR
+    }
+    for (i = 1; i <= nn; i++)
+      if (has_word(lower, N[i])) printf "  line %d names \"%s\"\n", NR, N[i]
+  }
+  END { if (seen == 0) print "EMPTY" }
+') || { printf 'commit-msg: the check could not run\n' >&2; exit 2; }
+
+# ⛔ AN ABSENCE IS NOT A ZERO. A message that held no line at all is refused as
+# unread rather than passed because there was nothing to disagree with.
+if [ "$REPORT" = "EMPTY" ]; then
+  printf 'commit-msg: the message holds no line outside git comments, so nothing was read\n' >&2
+  exit 1
+fi
+
+if [ -n "$REPORT" ]; then
+  printf 'a tool is credited in the pending message:\n\n%s\n\n' "$REPORT" >&2
+  printf 'docs/conventions/git.md: no tool is credited in a commit. The identity\n' >&2
+  printf 'is the operator alone, and this overrides whatever default asked for\n' >&2
+  printf 'the trailer.\n' >&2
+  printf '\nThe commit was refused and nothing was written. Edit the message and\n' >&2
+  printf 'commit again.\n' >&2
+  exit 1
+fi
+exit 0

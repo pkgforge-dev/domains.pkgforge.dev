@@ -1,0 +1,5 @@
+manifest status 200: 300
+manifest latency s: min 0.39 med 0.45 p95 0.53 max 7.55
+blob307 status 000: 2
+blob307 status 307: 198
+blob307 latency s: min 0.36 med 0.45 p95 15.49 max 21.73

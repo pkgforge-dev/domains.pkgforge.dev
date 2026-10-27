@@ -1,0 +1,5 @@
+ICANN-regdoms 25: 11412043 26: 11162434 26 not in 25: 9587118 85.9%
+ISC first-seen 10-26  n= 250940 in THC-26 regdoms 64102 25.5% | in THC-25 137405 54.8% | in 26 and not in 25 36258
+ISC first-seen 10-25  n= 251054 in THC-26 regdoms 31244 12.4% | in THC-25 55678 22.2% | in 26 and not in 25 24666
+WhoisDS file 10-26 (= ISC 10-25 day)  n= 70000 in THC-26 regdoms 9344 13.3% | in THC-25 14572 20.8% | in 26 and not in 25 7496
+THC "regdoms in 26 not in 25": 9587118 -> in ISC 10-26: 36258 in ISC 10-25: 24666

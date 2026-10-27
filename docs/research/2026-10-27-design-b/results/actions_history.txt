@@ -1,0 +1,8 @@
+mirror/runs_387012819.json total_count 66 returned 66 span_days 10.13 expected_runs 973
+ first 2026-10-16T21:43:49.000Z last 2026-10-27T00:52:31.000Z
+ gap minutes: min 104.2 median 226.9 p90 314.3 max 442.7
+ conclusions {"success":66}
+mirror/runs_383456295.json total_count 57 returned 57 span_days 12.66 expected_runs 101
+ first 2026-10-14T08:40:19.000Z last 2026-10-27T00:24:32.000Z
+ gap minutes: min 145.5 median 319.8 p90 432.5 max 511.9
+ conclusions {"success":39,"failure":16,"cancelled":2}

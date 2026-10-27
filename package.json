@@ -1,0 +1,27 @@
+{
+  "name": "domains-pkgforge-dev",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "Certificate-transparency names and newly registered and newly seen domains, as 0BSD data in GHCR, served from a Cloudflare Worker at domains.pkgforge.dev. Consumers are never gated.",
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "npm@12.2.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "gate": "node scripts/gate.mjs",
+    "test": "node scripts/test.mjs",
+    "lint": "biome check .",
+    "todo:check": "node scripts/todo/check.mjs",
+    "todo:count": "node scripts/todo/count.mjs",
+    "todo:next": "node scripts/todo/next.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15"
+  }
+}

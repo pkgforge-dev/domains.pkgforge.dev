@@ -1,0 +1,155 @@
+{
+ "at": "2026-10-27T05:30:36.471Z",
+ "res": {
+  "newly_registered_domain": {
+   "earliest": 166475059,
+   "latest": 172166090,
+   "retained": 5691031,
+   "off_1h_ago": 172155765,
+   "off_24h_ago": 171743898,
+   "last_1h": 10325,
+   "last_24h": 422192,
+   "earliest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 166475059,
+     "v": "{\"domain\":\"creatorwide.com.\",\"cert_index\":1864170391,\"ct_name\":\"DigiCert 'Wyvern2026h2'\",\"timestamp\":1792069250,\"submission_timestamp\":1788554798.785}"
+    },
+    {
+     "off": 166475060,
+     "v": "{\"domain\":\"pracovento.com.\",\"cert_index\":212933032,\"ct_name\":\"DigiCert 'sphinx2027h1'\",\"timestamp\":1792069251,\"submission_timestamp\":1792069247.137}"
+    },
+    {
+     "off": 172166088,
+     "v": "{\"domain\":\"tinifb.net.\",\"cert_index\":319907597,\"ct_name\":\"DigiCert Wyvern2027h1\",\"timestamp\":1793079036,\"submission_timestamp\":1793079030.541}"
+    },
+    {
+     "off": 172166089,
+     "v": "{\"domain\":\"onlinendib.com.\",\"cert_index\":319907635,\"ct_name\":\"DigiCert Wyvern2027h1\",\"timestamp\":1793079036,\"submission_timestamp\":1793079030.908}"
+    }
+   ]
+  },
+  "certstream_domains": {
+   "earliest": 42507738363,
+   "latest": 42588721502,
+   "retained": 80983139,
+   "off_1h_ago": 42585700556,
+   "off_24h_ago": 42516021991,
+   "last_1h": 3020946,
+   "last_24h": 72699511,
+   "earliest_msg_ts": null,
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 42588721501,
+     "v": "<codec 2>"
+    }
+   ]
+  },
+  "confirmed_newly_registered_domain": {
+   "earliest": 77668881,
+   "latest": 80191643,
+   "retained": 2522762,
+   "off_1h_ago": 80185490,
+   "off_24h_ago": 79956316,
+   "last_1h": 6153,
+   "last_24h": 235327,
+   "earliest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 77668881,
+     "v": "{\"domain\":\"2uu03zcqv10n5.study.\",\"cert_index\":245210174,\"ct_name\":\"DigiCert 'Wyvern2027h1'\",\"timestamp\":1792069319,\"confidence\":4}"
+    },
+    {
+     "off": 77668882,
+     "v": "{\"domain\":\"mlw609.top.\",\"cert_index\":212938090,\"ct_name\":\"DigiCert 'sphinx2027h1'\",\"timestamp\":1792069323,\"confidence\":8}"
+    },
+    {
+     "off": 80191642,
+     "v": "{\"domain\":\"sk5fi3py.top.\",\"cert_index\":282397410,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793079040,\"confidence\":4}"
+    },
+    {
+     "off": 80191643,
+     "v": "{\"domain\":\"tuningledger.com.\",\"cert_index\":598159610,\"ct_name\":\"Sectigo Tiger2027h1\",\"timestamp\":1793079031,\"confidence\":3}"
+    }
+   ]
+  },
+  "newly_issued_certificates_measurements": {
+   "earliest": 84710817642,
+   "latest": 84879832338,
+   "retained": 169014696,
+   "off_1h_ago": 84873080296,
+   "off_24h_ago": 84713355022,
+   "last_1h": 6752042,
+   "last_24h": 166477316,
+   "earliest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 84710817646,
+     "v": "<codec 2>"
+    },
+    {
+     "off": 84710817648,
+     "v": "<codec 2>"
+    },
+    {
+     "off": 84879832345,
+     "v": "<codec 2>"
+    },
+    {
+     "off": 84879832351,
+     "v": "<codec 2>"
+    }
+   ]
+  },
+  "certstream": {
+   "earliest": 42580308221,
+   "latest": 42582100284,
+   "retained": 1792063,
+   "off_1h_ago": 42580308221,
+   "off_24h_ago": 42580308221,
+   "last_1h": 1792063,
+   "last_24h": 1792063,
+   "earliest_msg_ts": null,
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 42582100283,
+     "v": "<codec 2>"
+    }
+   ]
+  },
+  "newly_registered_fqdn": {
+   "earliest": 177511440,
+   "latest": 181258360,
+   "retained": 3746920,
+   "off_1h_ago": 181246441,
+   "off_24h_ago": 180916050,
+   "last_1h": 11919,
+   "last_24h": 342310,
+   "earliest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "latest_msg_ts": "1970-01-01T00:00:00.000Z",
+   "sample": [
+    {
+     "off": 177511440,
+     "v": "{\"fqdn\":\"staging.misaccountants.com\",\"cert_index\":1901415472,\"ct_name\":\"DigiCert 'Sphinx2026h2'\",\"timestamp\":1792069254,\"submission_timestamp\":1788959564.164}"
+    },
+    {
+     "off": 177511441,
+     "v": "{\"fqdn\":\"courageouseating.com\",\"cert_index\":421663897,\"ct_name\":\"Sectigo 'Elephant2027h1'\",\"timestamp\":1792069254,\"submission_timestamp\":1792069097.689}"
+    },
+    {
+     "off": 181258361,
+     "v": "{\"fqdn\":\"pagexpert.tech\",\"cert_index\":282397918,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793079047,\"submission_timestamp\":1793079043.506}"
+    },
+    {
+     "off": 181258362,
+     "v": "{\"fqdn\":\"www.pagexpert.tech\",\"cert_index\":282397918,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793079047,\"submission_timestamp\":1793079043.506}"
+    }
+   ]
+  }
+ }
+}

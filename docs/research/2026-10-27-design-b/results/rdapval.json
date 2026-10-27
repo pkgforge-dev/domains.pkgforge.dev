@@ -1,0 +1,438 @@
+[
+ {
+  "d": "ninewet.com",
+  "ts": 1793078271,
+  "sub": 1780706649.96,
+  "ct": "TrustAsia log2026b",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "techwebhub.com",
+  "ts": 1793078274,
+  "sub": 1781048887.382,
+  "ct": "TrustAsia log2026a",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "labubuissatanic.com",
+  "ts": 1793078274,
+  "sub": 1785743826.538,
+  "ct": "Google Argon2027h1",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-08-21T03:25:31Z"
+ },
+ {
+  "d": "mckinneyresidentialcleaning.com",
+  "ts": 1793078275,
+  "sub": 1779895024.407,
+  "ct": "Google Argon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "usa-en-sugarmute.com",
+  "ts": 1793078275,
+  "sub": 1790014866.17,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-09-19T03:45:05Z"
+ },
+ {
+  "d": "thegamebaccarat.com",
+  "ts": 1793078275,
+  "sub": 1790014866.727,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-10-01T19:12:55Z"
+ },
+ {
+  "d": "workingfromlaptop.com",
+  "ts": 1793078276,
+  "sub": 1781048887.595,
+  "ct": "TrustAsia log2026a",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "creativeprolab.com",
+  "ts": 1793078277,
+  "sub": 1790014869.993,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-09-05T17:43:28Z"
+ },
+ {
+  "d": "trueblissboutique.com",
+  "ts": 1793078278,
+  "sub": 1785743809.234,
+  "ct": "Google Argon2027h1",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "soshomesalesolutions.com",
+  "ts": 1793078278,
+  "sub": 1785743773.739,
+  "ct": "Google Argon2027h1",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "headhuntingmexico.com",
+  "ts": 1793078279,
+  "sub": 1790014871.736,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2026-09-19T19:25:42Z"
+ },
+ {
+  "d": "surchabilitypr.com",
+  "ts": 1793078282,
+  "sub": 1785743847.554,
+  "ct": "Google Argon2027h1",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "governancewave.net",
+  "ts": 1793078283,
+  "sub": 1790014875.745,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-10-11T22:19:13Z"
+ },
+ {
+  "d": "muonline-guide.com",
+  "ts": 1793078283,
+  "sub": 1779895016.166,
+  "ct": "Google Argon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "ntmhonline.com",
+  "ts": 1793078284,
+  "sub": 1790014880.168,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-09-04T02:56:25Z"
+ },
+ {
+  "d": "tactixcorp.com",
+  "ts": 1793078284,
+  "sub": 1780706650.749,
+  "ct": "TrustAsia log2026b",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "wickerparkdentaloffice.com",
+  "ts": 1793078286,
+  "sub": 1780706650.801,
+  "ct": "TrustAsia log2026b",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2012-09-12T22:24:58Z"
+ },
+ {
+  "d": "eldersfr.com",
+  "ts": 1793078286,
+  "sub": 1790014880.33,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2025-08-11T18:04:14Z"
+ },
+ {
+  "d": "pickartprinting.com",
+  "ts": 1793078286,
+  "sub": 1780706651.017,
+  "ct": "TrustAsia log2026b",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "cyberod.com",
+  "ts": 1793078288,
+  "sub": 1790014885.178,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2016-08-09T02:37:01Z"
+ },
+ {
+  "d": "register-theoriqai.com",
+  "ts": 1793078290,
+  "sub": 1780605653.393,
+  "ct": "Google Xenon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "matbet898.com",
+  "ts": 1793078291,
+  "sub": 1779895025.695,
+  "ct": "Google Argon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "zcomicbits.com",
+  "ts": 1793078297,
+  "sub": 1790014900.8,
+  "ct": "DigiCert Sphinx2026h2",
+  "grp": "old_cert",
+  "status": 200,
+  "registration": "2026-09-21T18:18:06Z"
+ },
+ {
+  "d": "56p26.com",
+  "ts": 1793078299,
+  "sub": 1779895021.698,
+  "ct": "Google Argon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "alacatiescort.com",
+  "ts": 1793078300,
+  "sub": 1780605662.474,
+  "ct": "Google Xenon2026h2",
+  "grp": "old_cert",
+  "status": 404
+ },
+ {
+  "d": "bz168v.com",
+  "ts": 1793078271,
+  "sub": 1793073854.436,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-26T04:44:43Z"
+ },
+ {
+  "d": "mutthutlonbybobie.com",
+  "ts": 1793078272,
+  "sub": 1793078100.671,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T03:52:04Z"
+ },
+ {
+  "d": "ipmgreeley.com",
+  "ts": 1793078272,
+  "sub": 1793078105.831,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:11:01Z"
+ },
+ {
+  "d": "omnises.com",
+  "ts": 1793078273,
+  "sub": 1793078108.755,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T01:08:12Z"
+ },
+ {
+  "d": "pizzanauts.com",
+  "ts": 1793078273,
+  "sub": 1793078267.827,
+  "ct": "DigiCert Sphinx2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:11:47Z"
+ },
+ {
+  "d": "dealblea.com",
+  "ts": 1793078273,
+  "sub": 1793078268.652,
+  "ct": "DigiCert Sphinx2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:15:35Z"
+ },
+ {
+  "d": "schoollearningsimplified.com",
+  "ts": 1793078274,
+  "sub": 1793078120.592,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-26T18:59:36Z"
+ },
+ {
+  "d": "rezonafudousan.com",
+  "ts": 1793078274,
+  "sub": 1793073872.533,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T04:00:05Z"
+ },
+ {
+  "d": "bonvilleacademy.com",
+  "ts": 1793078275,
+  "sub": 1793078126.98,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-26T11:33:05Z"
+ },
+ {
+  "d": "haltonmail.com",
+  "ts": 1793078275,
+  "sub": 1793078269.132,
+  "ct": "DigiCert Wyvern2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:15:41Z"
+ },
+ {
+  "d": "beautyrushco.com",
+  "ts": 1793078275,
+  "sub": 1793078130.37,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:13:20Z"
+ },
+ {
+  "d": "gripdistrict.com",
+  "ts": 1793078276,
+  "sub": 1793078138.042,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:13:21Z"
+ },
+ {
+  "d": "sakuriment.com",
+  "ts": 1793078276,
+  "sub": 1793078148.528,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:13:41Z"
+ },
+ {
+  "d": "recordfable.com",
+  "ts": 1793078278,
+  "sub": 1793073889.012,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T03:20:07Z"
+ },
+ {
+  "d": "uttardisha.com",
+  "ts": 1793078278,
+  "sub": 1793078160.121,
+  "ct": "Sectigo Elephant2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:06:19Z"
+ },
+ {
+  "d": "toothpastetruth.com",
+  "ts": 1793078279,
+  "sub": 1793078275.119,
+  "ct": "DigiCert Wyvern2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:00:26Z"
+ },
+ {
+  "d": "kosavira.com",
+  "ts": 1793078280,
+  "sub": 1793073905.058,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T04:01:08Z"
+ },
+ {
+  "d": "wildfoxtales.com",
+  "ts": 1793078281,
+  "sub": 1793073913.915,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T03:56:28Z"
+ },
+ {
+  "d": "filstudio.com",
+  "ts": 1793078283,
+  "sub": 1793073922.666,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-26T12:40:14Z"
+ },
+ {
+  "d": "cesteriapro.com",
+  "ts": 1793078284,
+  "sub": 1793073929.207,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T02:06:48Z"
+ },
+ {
+  "d": "fundliftio.com",
+  "ts": 1793078284,
+  "sub": 1793073929.902,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T01:55:05Z"
+ },
+ {
+  "d": "capyapp.net",
+  "ts": 1793078285,
+  "sub": 1793078282.377,
+  "ct": "DigiCert Sphinx2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:15:49Z"
+ },
+ {
+  "d": "forgeknightstore.com",
+  "ts": 1793078287,
+  "sub": 1793078283.136,
+  "ct": "DigiCert Wyvern2027h1",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T05:10:23Z"
+ },
+ {
+  "d": "bareillymirror.com",
+  "ts": 1793078288,
+  "sub": 1793073951.585,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-27T04:04:08Z"
+ },
+ {
+  "d": "kenwardcashflowfinance.com",
+  "ts": 1793078288,
+  "sub": 1793073955.344,
+  "ct": "Cloudflare Nimbus2027",
+  "grp": "fresh_cert",
+  "status": 200,
+  "registration": "2026-10-26T18:25:05Z"
+ }
+]

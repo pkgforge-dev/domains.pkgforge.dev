@@ -1,0 +1,22 @@
+# overlap of THC daily dumps (normalised: lowercase, sort -u, C locale); outputs of the comm jobs
+2026-10-27T06:00:13Z
+n26 vs n25: both=2632911  share_of_n26=6.84%  share_of_n25=7.10%
+n26 vs n19: both=2567288  share_of_n26=6.67%  share_of_n19=6.20%
+n26 vs n12: both=830987  share_of_n26=2.15%  share_of_n12=2.16%
+n26 vs n05: both=403118  share_of_n26=1.04%  share_of_n05=1.89%
+union of 4 older days=133555130 ; n26 names not in any of them=33312893 (86.58%)
+2026-10-27T06:16:57Z
+
+[exited with code 0]
+# distinct normalised lines per day
+sorted 25 2026-10-27T05:36:29Z 37032889
+sorted 26 2026-10-27T05:37:19Z 38473142
+done 2026-10-27T05:42:39Z
+sorted 19 41353747
+sorted 12 38349433
+sorted 05 21224010
+# n25 and n26 both:
+2632911
+# registrable domains per day
+norm/n25.txt 37032889 regAll 14120564 regIcann 11412043
+norm/n26.txt 38473142 regAll 14142438 regIcann 11162434

@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": ["**/*.ts", "**/*.tsx", "**/*.mjs", "**/*.js", "!**/worker-configuration.d.ts", "!docs/research", "!**/test/fixtures"]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 200 },
+  "javascript": { "formatter": { "quoteStyle": "double", "trailingCommas": "all", "semicolons": "always", "arrowParentheses": "always" } },
+  "overrides": [{ "includes": ["**/*.mjs", "**/*.js"], "javascript": { "formatter": { "quoteStyle": "single" } } }],
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "nursery": { "noFloatingPromises": "error" },
+      "style": { "noNonNullAssertion": "off", "useTemplate": "off" },
+      "complexity": { "noCommaOperator": "off", "useSimpleNumberKeys": "off", "useOptionalChain": "off", "useArrowFunction": "off", "noUselessStringRaw": "off" },
+      "suspicious": { "noAssignInExpressions": "off", "noControlCharactersInRegex": "off", "noTemplateCurlyInString": "off", "noArrayIndexKey": "off", "noThenProperty": "off" },
+      "correctness": { "useExhaustiveDependencies": "off", "noUnsafeOptionalChaining": "off", "noUnusedImports": "error", "noUnusedVariables": "error" }
+    }
+  }
+}

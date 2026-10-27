@@ -1,0 +1,18 @@
+== oi/raw/newly_registered_domain.ndjson 800
+sample [{"domain":"ninewet.com.","cert_index":1884141387,"ct_name":"TrustAsia log2026b","timestamp":1793078271,"submission_timestamp":1780706649.96},{"domain":"imsarc.biz.","cert_index":1226364429,"ct_name":"Google Argon2026h2","timestamp":1793078271,"submission_timestamp":1779895020.927},{"domain":"choki-peta.site.","cert_index":319851900,"ct_name":"DigiCert Wyvern2027h1","timestamp":1793078271,"submission_timestamp":1793078266.971}]
+keys domain,cert_index,ct_name,timestamp,submission_timestamp
+distinct 800 of 800 bytes/msg 147
+tld top com:388 lat:49 shop:44 vip:26 wiki:26 org:25 online:24 info:21 net:21 xyz:19 top:18 store:14 ntlds 66
+rx - timestamp (s): min -0 median 0 p90 1 max 1
+rx - submission_timestamp (s): min 2 median 4096 max 13183427
+ct_name [["Cloudflare Nimbus2027",232],["Sectigo Elephant2027h1",85],["DigiCert Sphinx2026h2",68],["DigiCert Sphinx2027h1",66],["Sectigo Tiger2027h1",64],["Google Xenon2026h2",52],["Google Argon2027h1",50],["DigiCert Wyvern2027h1",46]]
+trailing dot 800 wildcard 0 idn 2
+== oi/raw/newly_registered_fqdn.ndjson 942
+sample [{"fqdn":"ninewet.com","cert_index":1884141387,"ct_name":"TrustAsia log2026b","timestamp":1793078271,"submission_timestamp":1780706649.96},{"fqdn":"imsarc.biz","cert_index":1226364429,"ct_name":"Google Argon2026h2","timestamp":1793078271,"submission_timestamp":1779895020.927},{"fqdn":"choki-peta.site","cert_index":319851900,"ct_name":"DigiCert Wyvern2027h1","timestamp":1793078271,"submission_timestamp":1793078266.971}]
+keys fqdn,cert_index,ct_name,timestamp,submission_timestamp
+distinct 942 of 942 bytes/msg 145
+tld top com:479 lat:49 shop:48 vip:46 online:32 org:28 wiki:26 net:23 info:21 top:20 xyz:19 site:17 ntlds 66
+rx - timestamp (s): min -0 median 0 p90 1 max 1
+rx - submission_timestamp (s): min 2 median 3951 max 13183427
+ct_name [["Cloudflare Nimbus2027",295],["Sectigo Elephant2027h1",114],["Sectigo Tiger2027h1",81],["DigiCert Sphinx2027h1",78],["DigiCert Sphinx2026h2",73],["DigiCert Wyvern2027h1",52],["Google Xenon2026h2",52],["Google Argon2027h1",50]]
+trailing dot 0 wildcard 0 idn 2

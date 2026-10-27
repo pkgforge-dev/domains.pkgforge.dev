@@ -1,0 +1,6 @@
+2026-10-26 ISC 250940 WhoisDS 70000 both 40 WhoisDS in ISC same day 0.1%
+2026-10-25 ISC 251054 WhoisDS 70000 both 112 WhoisDS in ISC same day 0.2%
+2026-10-24 ISC 340972 WhoisDS 70000 both 9 WhoisDS in ISC same day 0.0%
+W26 in ISC25 55865 W26 in ISC24 274 W25 in ISC26 0 W25 in ISC24 46351
+Zonestream sample 800 in any ISC list (5 days) 1
+ old cert >30d: 306 in ISC 1 | fresh cert <1d: 493 in ISC 0

@@ -1,0 +1,827 @@
+{
+ "t0": "2026-10-27T05:22:28.890Z",
+ "dt_s": 120.012,
+ "res": [
+  {
+   "op": "Google",
+   "desc": "Google Xenon2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 2997553165,
+   "rate_per_s": 30.871912808719127,
+   "per_day_M": 2.67,
+   "names_tile": null
+  },
+  {
+   "op": "Cloudflare",
+   "desc": "Cloudflare Nimbus2026",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 6725046953,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google PlumbersArms2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1620793423,
+   "rate_per_s": 27.10562277105623,
+   "per_day_M": 2.34,
+   "names_tile": 404
+  },
+  {
+   "op": "Google",
+   "desc": "Google PlumbersArms2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 467102469,
+   "rate_per_s": 207.61257207612573,
+   "per_day_M": 17.94,
+   "names_tile": 404
+  },
+  {
+   "op": "Cloudflare",
+   "desc": "Cloudflare Nimbus2027",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 689296113,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google Argon2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 720930865,
+   "rate_per_s": 186.63133686631338,
+   "per_day_M": 16.12,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google Argon2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 3463677174,
+   "rate_per_s": 28.372162783721627,
+   "per_day_M": 2.45,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Wyvern2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 2186680609,
+   "rate_per_s": 19.38139519381395,
+   "per_day_M": 1.67,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Wyvern2027h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 33993,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Wyvern2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 319881154,
+   "rate_per_s": 71.25120821251208,
+   "per_day_M": 6.16,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Sphinx2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 2152982739,
+   "rate_per_s": 17.223277672232776,
+   "per_day_M": 1.49,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Sphinx2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 282372373,
+   "rate_per_s": 68.26817318268174,
+   "per_day_M": 5.9,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google Xenon2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 589958126,
+   "rate_per_s": 168.88311168883112,
+   "per_day_M": 14.59,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Mammoth2026h2",
+   "kind": "rfc6962",
+   "state": "readonly",
+   "size": 57634084,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "DigiCert",
+   "desc": "DigiCert Sphinx2027h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 33923,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google PlumbersArms2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 9326,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Sabre2026h2",
+   "kind": "rfc6962",
+   "state": "readonly",
+   "size": 68732793,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Elephant2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 2052934816,
+   "rate_per_s": 16.490017664900176,
+   "per_day_M": 1.42,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google ParcelYard2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1621283648,
+   "rate_per_s": 26.888977768889777,
+   "per_day_M": 2.32,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Elephant2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 584072412,
+   "rate_per_s": 182.59007432590073,
+   "per_day_M": 15.78,
+   "names_tile": null
+  },
+  {
+   "op": "Google",
+   "desc": "Google ParcelYard2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 466409100,
+   "rate_per_s": 204.37956204379563,
+   "per_day_M": 17.66,
+   "names_tile": 404
+  },
+  {
+   "op": "Google",
+   "desc": "Google ParcelYard2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 9302,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Elephant2027h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 32300,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Tiger2026h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 2451975541,
+   "rate_per_s": 15.148485151484852,
+   "per_day_M": 1.31,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Tiger2027h1",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 598080371,
+   "rate_per_s": 189.006099390061,
+   "per_day_M": 16.33,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Tiger2027h2",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 31599,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Monument2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1660211,
+   "rate_per_s": 0.51661500516615,
+   "per_day_M": 0.04,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Monument2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1478,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Monument2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1507,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Monument2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1474,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Statue2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1696780,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Statue2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1481,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Statue2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1516,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": "The operation was aborted due to timeout"
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Sycamore2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1042973447,
+   "rate_per_s": 29.422057794220578,
+   "per_day_M": 2.54,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Sycamore2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 797527649,
+   "rate_per_s": 176.14071926140718,
+   "per_day_M": 15.22,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Sycamore2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 20337,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Sycamore2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1528,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Sycamore2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1514,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Willow2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 20358,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Willow2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1510,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Willow2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 792354456,
+   "rate_per_s": 175.55744425557444,
+   "per_day_M": 15.17,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Willow2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1000392609,
+   "rate_per_s": 29.913675299136752,
+   "per_day_M": 2.58,
+   "names_tile": 200
+  },
+  {
+   "op": "Let's Encrypt",
+   "desc": "Let's Encrypt Willow2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1527,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "TrustAsia",
+   "desc": "TrustAsia log2026a",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 3006619991,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": null
+  },
+  {
+   "op": "TrustAsia",
+   "desc": "TrustAsia log2026b",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 3027490937,
+   "rate_per_s": 16.3983601639836,
+   "per_day_M": 1.42,
+   "names_tile": null
+  },
+  {
+   "op": "TrustAsia",
+   "desc": "TrustAsia HETU2027",
+   "kind": "rfc6962",
+   "state": "usable",
+   "size": 439651811,
+   "rate_per_s": 147.80188647801887,
+   "per_day_M": 12.77,
+   "names_tile": null
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Tuscolo2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 86073,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Tuscolo2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1020758926,
+   "rate_per_s": 20.2313102023131,
+   "per_day_M": 1.75,
+   "names_tile": 429
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Tuscolo2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 367382592,
+   "rate_per_s": 156.05939406059395,
+   "per_day_M": 13.48,
+   "names_tile": 429
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Tuscolo2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 62680,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 429
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Tuscolo2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 62616,
+   "rate_per_s": 0.024997500249975,
+   "per_day_M": 0,
+   "names_tile": 429
+  },
+  {
+   "op": "TrustAsia",
+   "desc": "TrustAsia Luoshu2027",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 434785775,
+   "rate_per_s": 125.90407625904076,
+   "per_day_M": 10.88,
+   "names_tile": 404
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Trastevere2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 62627,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Trastevere2026h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 22812741,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Trastevere2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 14431048,
+   "rate_per_s": 0.558277505582775,
+   "per_day_M": 0.05,
+   "names_tile": 200
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Trastevere2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 62614,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Geomys",
+   "desc": "Geomys Trastevere2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 62562,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Halloumi2026h2a",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1270830603,
+   "rate_per_s": 17.173282671732828,
+   "per_day_M": 1.48,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Halloumi2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 275317009,
+   "rate_per_s": 93.80728593807287,
+   "per_day_M": 8.1,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Halloumi2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 20170,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Gouda2026h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 1231266303,
+   "rate_per_s": 10.973902609739026,
+   "per_day_M": 0.95,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Gouda2027h1",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 235909051,
+   "rate_per_s": 83.44998833449988,
+   "per_day_M": 7.21,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Gouda2027h2",
+   "kind": "tiled",
+   "state": "usable",
+   "size": 20392,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Gouda2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2931,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Halloumi2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2941,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Gouda2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2874,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "IPng Networks",
+   "desc": "IPng Networks Halloumi2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2870,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 404
+  },
+  {
+   "op": "Microsec",
+   "desc": "Microsec Eszigno2026h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 19372838,
+   "rate_per_s": 0.016665000166650002,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Microsec",
+   "desc": "Microsec Eszigno2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 22050023,
+   "rate_per_s": 0.5999400059994,
+   "per_day_M": 0.05,
+   "names_tile": 200
+  },
+  {
+   "op": "Microsec",
+   "desc": "Microsec Eszigno2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2413,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Microsec",
+   "desc": "Microsec Eszigno2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2471,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "GoDaddy",
+   "desc": "GoDaddy Aquamarine2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2359,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Microsec",
+   "desc": "Microsec Eszigno2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2411,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "GoDaddy",
+   "desc": "GoDaddy Aquamarine2026h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 23767920,
+   "rate_per_s": 0.024997500249975,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "GoDaddy",
+   "desc": "GoDaddy Aquamarine2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2335,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "GoDaddy",
+   "desc": "GoDaddy Aquamarine2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 2309,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "GoDaddy",
+   "desc": "GoDaddy Aquamarine2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 144963332,
+   "rate_per_s": 7.482585074825851,
+   "per_day_M": 0.65,
+   "names_tile": 200
+  },
+  {
+   "op": "HARICA",
+   "desc": "HARICA Selene2027h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1518,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "HARICA",
+   "desc": "HARICA Selene2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1517,
+   "rate_per_s": 0.008332500083325001,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "HARICA",
+   "desc": "HARICA Selene2027h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 21328923,
+   "rate_per_s": 0.43329000433290005,
+   "per_day_M": 0.04,
+   "names_tile": 200
+  },
+  {
+   "op": "HARICA",
+   "desc": "HARICA Selene2028h1",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1568,
+   "rate_per_s": 0,
+   "per_day_M": 0,
+   "names_tile": 200
+  },
+  {
+   "op": "Sectigo",
+   "desc": "Sectigo Statue2028h2",
+   "kind": "tiled",
+   "state": "qualified",
+   "size": 1469,
+   "rate_per_s": null,
+   "per_day_M": null,
+   "names_tile": 404,
+   "err": "The operation was aborted due to timeout"
+  }
+ ]
+}

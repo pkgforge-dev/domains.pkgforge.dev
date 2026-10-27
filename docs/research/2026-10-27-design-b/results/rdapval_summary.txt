@@ -1,0 +1,4 @@
+old_cert asked 25 with registration date 11 statuses {"200":11,"404":14}
+  age at emission (days): min 35.5 median 416.5 max 5157.3 | <=2d 0 | >30d 11
+fresh_cert asked 25 with registration date 25 statuses {"200":25}
+  age at emission (days): min 0.0 median 0.1 max 1.0 | <=2d 25 | >30d 0

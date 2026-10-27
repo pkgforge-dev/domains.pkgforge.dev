@@ -1,0 +1,20 @@
+# Verbatim terminal output of `node scripts/kafkaprobe.mjs` (PORT 9092), run 2026-10-27T06:17:33Z against kafka.zonestream.openintel.nl.
+# Transcribed from the session's tool output; the probe was not re-run, because the counters move with time.
+tcp connected kafka.zonestream.openintel.nl 9092
+ApiVersions error_code 0 apis 61
+brokers 1@kafka.zonestream.openintel.nl:9092
+topics newly_registered_domain(ec=0,parts=1) certstream_domains(ec=0,parts=1) confirmed_newly_registered_domain(ec=0,parts=1) newly_issued_certificates_measurements(ec=0,parts=1) newly_registered_fqdn_measurements(ec=0,parts=4) newly_registered_domains_measurements(ec=0,parts=4) certstream(ec=0,parts=1) newly_registered_fqdn(ec=0,parts=1)
+newly_registered_domain p0 earliest 166475059 latest 172173868 retained 5698809 | last 1h 10552 | last 24h 422534 (ec 0) | last 7d 3390410 | offset@24h-ago ts 1792995454428
+certstream_domains p0 earliest 42516631133 latest 42590735533 retained 74104400 | last 1h 3025789 | last 24h 72849308 (ec 0) | last 7d 74104400 | offset@24h-ago ts 1792995454242
+confirmed_newly_registered_domain p0 earliest 77668881 latest 80195314 retained 2526433 | last 1h 5562 | last 24h 235406 (ec 0) | last 7d 1563665 | offset@24h-ago ts 1792995455642
+newly_issued_certificates_measurements p0 earliest 84715934129 latest 84884250225 retained 168316096 | last 1h 6532837 | last 24h 166470269 (ec 0) | last 7d 168316096 | offset@24h-ago ts 1792995454120
+newly_registered_fqdn_measurements p0 earliest 86622802036 latest 86670967450 retained 48165414 | last 1h 1862325 | last 24h 43187818 (ec 0) | last 7d 48165414 | offset@24h-ago ts 1792995454147
+newly_registered_fqdn_measurements p2 earliest 4019615204 latest 4067257904 retained 47642700 | last 1h 1870597 | last 24h 43161948 (ec 0) | last 7d 47642700 | offset@24h-ago ts 1792995454119
+newly_registered_fqdn_measurements p3 earliest 4024816875 latest 4068158539 retained 43341664 | last 1h 1902328 | last 24h 43192448 (ec 0) | last 7d 43341664 | offset@24h-ago ts 1792995454119
+newly_registered_fqdn_measurements p1 earliest 4019599560 latest 4066881606 retained 47282046 | last 1h 1879789 | last 24h 43304265 (ec 0) | last 7d 47282046 | offset@24h-ago ts 1792995454518
+newly_registered_domains_measurements p0 earliest 110390193570 latest 110472447148 retained 82253578 | last 1h 3457585 | last 24h 81309467 (ec 0) | last 7d 82253578 | offset@24h-ago ts 1792995454114
+newly_registered_domains_measurements p2 earliest 8917878191 latest 9001323129 retained 83444938 | last 1h 3435344 | last 24h 81282399 (ec 0) | last 7d 83444938 | offset@24h-ago ts 1792995454115
+newly_registered_domains_measurements p3 earliest 8917847081 latest 9000768895 retained 82921814 | last 1h 3464357 | last 24h 81459216 (ec 0) | last 7d 82921814 | offset@24h-ago ts 1792995454113
+newly_registered_domains_measurements p1 earliest 8917877765 latest 8999900883 retained 82023118 | last 1h 3460291 | last 24h 81345749 (ec 0) | last 7d 82023118 | offset@24h-ago ts 1792995454113
+certstream p0 earliest 42582027663 latest 42584125867 retained 2098204 | last 1h 2098204 | last 24h 2098204 (ec 0) | last 7d 2098204 | offset@24h-ago ts 1793078935992
+newly_registered_fqdn p0 earliest 177511440 latest 181267189 retained 3755749 | last 1h 12170 | last 24h 342918 (ec 0) | last 7d 2296857 | offset@24h-ago ts 1792995454425

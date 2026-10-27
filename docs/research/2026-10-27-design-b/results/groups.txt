@@ -1,0 +1,12 @@
+# NOTE: the bucket labels below are shifted by one (a bug in scripts/groups.mjs): the row labelled '2-9' is the groups with exactly 1 name,
+# '10-99' is 2-9 names, '100-999' is 10-99, '1k-9.9k' is 100-999, '10k-99k' is 1k-9.9k, '>=100k' is 10k-99k; the >=100k bucket is not printed
+# (25 registrable domains, 13,633,081 names = 38,473,142 minus the printed buckets). The design document uses the corrected reading.
+rows 38473142 regdom groups 11170138 noreg 2
+ names per regdom =1 : regdoms 0 (0.0%) names 0 (0.0%)
+ names per regdom 2-9 : regdoms 4603123 (41.2%) names 4603123 (12.0%)
+ names per regdom 10-99 : regdoms 6463450 (57.9%) names 14733761 (38.3%)
+ names per regdom 100-999 : regdoms 100277 (0.9%) names 1819761 (4.7%)
+ names per regdom 1k-9.9k : regdoms 2918 (0.0%) names 683878 (1.8%)
+ names per regdom 10k-99k : regdoms 276 (0.0%) names 768070 (2.0%)
+ names per regdom >=100k : regdoms 69 (0.0%) names 2231468 (5.8%)
+top amazonaws.com:2099248 aws.dev:1923083 workers.dev:1467003 pages.dev:1367146 dyingbirds.com:1098305 chatgpt.site:664978 sfdc.net:595753 crm.dev:560866 workdaysuv.com:555932 azure.com:502516 netcraze.io:385355 quickconnect.to:328255 azure-api.net:223262 cloudflarestorage.com:217706 workdaysuvcareers.com:193990 snowflake.app:182780 snowflake.com:182719 azurecontainerapps.io:160384 a2z.eu:153909 amplifyapp.com:147805 sslip.io:140629 myvolumio.org:129243 on.aws:126410 azure.net:120051 mongodb.net:105753

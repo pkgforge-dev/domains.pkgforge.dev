@@ -1,0 +1,125 @@
+# Ignore rules for this repository.
+#
+# ⛔ .gitignore only applies to files git is not ALREADY tracking. Adding a line
+# does not untrack what is already in. Check with: git ls-files
+
+# -- secrets. Never committed, no exceptions ---------------------------------
+# ⛔ Listed BEFORE the files exist, so one can never be staged by accident.
+# A credential file added here after the fact was trackable in between.
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_ed25519
+credentials.json
+service-account*.json
+*.token
+.*_token
+.*-token
+
+# -- scratch and temporary work ---------------------------------------------
+# .tmp/ holds the commit message file, the gate's pass record and any download.
+.tmp/
+tmp/
+scratch/
+.scratch/
+
+# -- logs --------------------------------------------------------------------
+*.log
+logs/
+
+# -- local databases ---------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.db-shm
+*.db-wal
+
+# -- coverage and test output -----------------------------------------------
+coverage/
+.coverage
+test-results/
+.nyc_output/
+
+# -- agent and assistant local files ----------------------------------------
+.claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
+
+# -- Node, and anything that runs on it --------------------------------------
+node_modules/
+.npm/
+dist/
+build/
+.cache/
+*.tsbuildinfo
+.eslintcache
+
+# ⛔ A lockfile IS committed. It is what makes an install reproducible, and a
+# project without one installs a different dependency tree every time.
+# package-lock.json is listed here as a reminder, not as an ignore.
+
+# Cloudflare Workers local state. Deleting this directory resets ALL local data.
+.wrangler/
+# The `cf` CLI's account cache and wrangler's sign-in are credential files.
+.cloudflare/
+
+# -- operating system and editor noise ---------------------------------------
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+.directory
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# ⛔ WINDOWS RESERVED DEVICE NAMES. Two different things create one as a real
+# file, and only the first is something you wrote:
+#   1. your own redirect: 2>/dev/null under a shell that does not map it makes
+#      a real file called nul, which git then tracks, which breaks git stash
+#      outright, and which cannot be deleted by rm or by Python;
+#   2. a tool's own argument list: some ssh wrappers pass
+#      -o UserKnownHostsFile=NUL, and under Git Bash that is a filename.
+# Ignoring the whole set is what stops the recurrence.
+nul
+CON
+PRN
+AUX
+NUL
+COM[1-9]
+LPT[1-9]
+CON.*
+PRN.*
+AUX.*
+NUL.*
+COM[1-9].*
+LPT[1-9].*
+
+# --- this project ---------------------------------------------------------
+# The session resume file: written at every session start, never committed
+# (docs/methodology/sessions.md).
+RESUME.md
+# Local secrets as bare files (never read by an agent; AGENTS.md absolute 4).
+.env/
+
+# ⚠ A research corpus is NOT ignored. A corpus in an ignored directory is lost
+# with the machine, and a conclusion nobody can re-check is an opinion
+# (docs/methodology/research.md section 3.4). Where one is too large for every
+# clone, it goes in GHCR as an artifact and the write-up names its digest.

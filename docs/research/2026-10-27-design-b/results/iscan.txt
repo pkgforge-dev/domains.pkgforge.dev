@@ -1,0 +1,15 @@
+== dl_isc/2026-10-26.json.gz records 250940 keys domainname,ip,firstseen,score,scorereason
+ firstseen [["2026-10-26",250940]]
+ labels {"2":250939,"3":1}
+ tld top com:136580 top:13207 shop:9806 info:7651 org:7497 online:6595 net:6172 xyz:5354 app:4757 baby:4570 site:4158 store:3785 ntld 466
+ score [["0|",219147],["2|Excessive numbers: 8 (+9)",2314],["1|Excessive numbers: 6 (+3)",1851],["0|High entropy: 3.52 (+0.11)",1647],["1|Excessive numbers: 7 (+6)",1446],["0|High entropy: 3.51 (+0.03)",1347]] ip0 169859
+== dl_isc/2026-10-25.json.gz records 251054 keys domainname,ip,firstseen,score,scorereason
+ firstseen [["2026-10-25",251054]]
+ labels {"2":251053,"3":1}
+ tld top com:137471 xyz:15757 top:12533 shop:8687 net:8547 org:7039 online:6886 app:4250 store:4100 site:3931 dev:3448 info:2672 ntld 463
+ score [["0|",221220],["2|Excessive numbers: 9 (+12)",2208],["1|Excessive numbers: 6 (+3)",1599],["0|High entropy: 3.52 (+0.11)",1466],["1|Unusually short domain name (+5)",1177],["0|High entropy: 3.51 (+0.03)",1142]] ip0 170214
+== dl_isc/2026-10-20.json.gz records 418062 keys domainname,ip,firstseen,score,scorereason
+ firstseen [["2026-10-20",418062]]
+ labels {"2":418061,"3":1}
+ tld top com:188041 xyz:87918 top:18521 shop:13903 org:10683 online:10253 tech:8194 info:6426 net:6249 site:6238 store:5514 click:3154 ntld 496
+ score [["0|",365336],["0|High entropy: 3.52 (+0.11)",8294],["0|High entropy: 3.92 (+2.11)",2038],["4|Contains suspicious keyword: service (+20)",1825],["0|High entropy: 3.51 (+0.03)",1721],["0|High entropy: 3.66 (+0.82)",1703]] ip0 278558

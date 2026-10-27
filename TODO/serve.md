@@ -1,0 +1,291 @@
+# Serve
+
+The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its routes, its bulk downloads, its generated root documents, and the contract a consumer relies on. The Worker only reads. It holds no secret. The operator deploys it by hand with a wrangler login (architecture section 7 and section 12).
+
+"The mirror" in this file is mirror-archlinux, `https://github.com/pkgforge-dev/mirror-archlinux` at commit `669ac725f8081445c164113f2ed092533de112e2`: "mirror `docs/worker.md`" is that repository's file at that commit, which an entry reads at `https://raw.githubusercontent.com/pkgforge-dev/mirror-archlinux/669ac725f8081445c164113f2ed092533de112e2/<path>`. It is never THC's mirror: "the GHCR mirror" of THC's data is this project's own copy of THC's monthly database (DOM-042, ruling 7).
+
+## DOM-030 — The Worker: custom domain, GHCR reads, root cache and healthz
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** mirror-archlinux at commit 669ac725f8081445c164113f2ed092533de112e2: `docs/worker.md`, `worker/wrangler.toml`, `worker/src/index.js` lines 212 to 376 (`send`, `bearerRealm`, `tokenKept`, `tokenNew`, `ghcr`), `worker/test/*.test.js`. The reference reader `docs/research/reference/ghcr.ts`. Architecture sections 4.3, 7.1, 7.5 and 12.
+- **Problem:** nothing serves the data. A client that reads GHCR by hand needs the token dance, the 307 step and the root format. The Worker is the first piece a person can `curl`, and every later route stands on its GHCR reads, its caches and its error shape.
+- **Premise:**
+  - READ mirror `docs/worker.md`, "GHCR tokens": every GHCR subrequest sends `Authorization: Bearer QQ==`, which GHCR accepts for any public package. On a 401 or 403 the Worker reads the Bearer challenge from `www-authenticate`, accepts the realm only when it is https on `ghcr.io`, asks it for a pull token with `service=ghcr.io` and `scope=repository:<repository>:pull`, and sends the subrequest once more. It keeps the token in the isolate and in a `token` cache entry for `expires_in` minus 30 s, at most 300 s.
+  - READ mirror `docs/worker.md`, "Caching": the Cache API is per data centre and does not replicate. Keys are on the request host under `/__cache/v1`. Entries: `loc` (the final answer), `man` (a manifest's layers), `blob` (a signed URL, valid until its `se` minus 120 s, at most 600 s), `token`. A manifest by digest keeps 1 year, `latest` 30 s. A signed URL with no usable `se` is not stored. Changing `/__cache/v1` to `/__cache/v2` clears every entry with one deploy.
+  - READ mirror `worker/wrangler.toml`: `compatibility_flags = ["no_nodejs_compat", "no_nodejs_compat_v2"]` (the Worker uses only Web APIs), `workers_dev = false`, `preview_urls = false`, `routes = [ { pattern = "ghcr.mirror.archlinux.pkgforge.dev", custom_domain = true } ]`, `[limits] cpu_ms = 50`, `[observability] enabled = true` with `head_sampling_rate = 1`, and `[observability.logs] invocation_logs = false`. The Worker logs with `console.error` only on a 5xx or a cache failure.
+  - MEASURED in mirror `docs/measurements.md` (2026-10-14, `wrangler dev --local` against live GHCR from Nepal): a database cold 0.53 to 0.88 s, a repeat 4 to 6 ms (one cache lookup). The deployed first version answered with 302 in 1.05 to 1.33 s. 16 of 16 live probes passed with a median of 0.41 s.
+  - MEASURED in design B, M7 (2026-10-27T05:36:29Z): 300 of 300 anonymous manifest GETs at concurrency 50 gave median 0.45 s, p95 0.53 s, max 7.6 s, with no 429. The blob 307 gives a signed URL on `pkg-containers.githubusercontent.com` (`Windows-Azure-Blob/1.0`), valid about 7 to 8.7 minutes, and `Range` gives 206 in 0.57 s from Nepal.
+  - READ mirror `docs/worker.md`, "Deploy": the maintainer deploys by hand. CI holds no Cloudflare credential. `worker.yml` runs the tests only. `npx wrangler@4.150.0 rollback` rolls back.
+  - The hostname `domains.pkgforge.dev` is one level below the zone, so the zone's Universal certificate covers it. mirror-archlinux's Worker uses the same account and zone for `ghcr.mirror.archlinux.pkgforge.dev`.
+  - DOM-007 measures the Range path from a Worker and DOM-020 defines the root. This entry builds against both.
+- **Approach:**
+  - **Layout** (created here): `apps/api/wrangler.toml`, `apps/api/src/index.ts` (router, CORS, 404 and 405), `src/ghcr.ts` (port of `docs/research/reference/ghcr.ts`: `send`, `bearerRealm`, `tokenKept`, `tokenNew`, `ghcr`, plus `readBlobRange(repo, digest, start, end)`), `src/cache.ts` (Cache API entries `loc`, `man`, `blob`, `token`, and `body` for immutable bytes by digest, keys under `/__cache/v1`), `src/root.ts` (read `root:latest`, find the layer titled `root.json`, parse it, keep it in the isolate), `src/health.ts`, and `apps/api/test/`.
+  - **`wrangler.toml`**, copied in shape from the mirror's: `name = "domains-pkgforge-dev"`, `main = "src/index.ts"`, `account_id` of the account that `npx wrangler whoami` shows (mirror-archlinux commits its account id in the same file), `compatibility_date = "2026-10-27"`, the two `no_nodejs_compat` flags, `workers_dev = false`, `preview_urls = false`, `routes = [ { pattern = "domains.pkgforge.dev", custom_domain = true } ]`, `[limits] cpu_ms = 50` (DOM-008 may change it), and the observability block above. DOM-031 adds the R2 binding.
+  - **GHCR reads.** Repository `pkgforge-dev/domains.pkgforge.dev/<package>`. Read `root:latest` with `Accept: application/vnd.oci.image.manifest.v1+json`. Cap a manifest at 64 KiB and a subrequest at 10 s. For a blob, do the 307 step with `redirect: "manual"` and no `Range`, then GET the `Location` with `Range: bytes=<a>-<b>`. Accept a `Location` only when it is https. Use DOM-007's result for the default colo behaviour. Cache `man` for `root:latest` at 30 s and for a digest at 1 year. Cache the parsed `root.json` body by its digest at 1 year.
+  - **Routes in this entry:**
+    - `GET /healthz` answers `{"ok":true,"version":"<12 hex>","root_age_s":N}` with status 200. It answers 503 with `ok: false` when `root_age_s` is above 21,600 (6 hours) or the root cannot be read. `version` comes from a `BUILD` var set at deploy: `npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`.
+    - `GET /v1/index/latest` answers the envelope of architecture section 7.1 with `data: {format, root_seq, as_of, root: "sha256:<digest>", references: {root_latest: "ghcr.io/pkgforge-dev/domains.pkgforge.dev/root:latest", root_digest: "ghcr.io/pkgforge-dev/domains.pkgforge.dev/root@sha256:<digest>"}}`.
+    - `GET /` answers a plain text stub with the route list. DOM-059 replaces it with generated documents.
+    - Every other path answers 404 and every method but `GET`, `HEAD` and `OPTIONS` answers 405 with `allow`, both as `application/problem+json` with `status`, `title`, `detail`, `reason` (`not-found`, `method-not-allowed`) and `see`. An `OPTIONS` answers 204 with CORS. Every answer carries `access-control-allow-origin: *`.
+  - **Provenance headers.** Every JSON answer sets `x-domains-root` (the root digest), `x-domains-as-of`, `x-domains-cache` (`hit`, `ghcr` or `mixed`, from what really served the bytes) and `x-domains-body: derived`. A header names only what answered (architecture section 7.1). `x-domains-degraded: 1` is set only when the Worker serves a stale root after a GHCR failure.
+  - **Tests** (`apps/api/test/*.test.ts`, run in the harness of DOM-013): a mock `fetch` that stands in for GHCR (copy the idea of mirror `worker/test/world.js` and `worker/test/ghcr.test.js`), a Cache API stub with a clock (mirror `worker/test/cache.test.js`), a root fixture. Cases: the dummy token is accepted; a 403 to the dummy token triggers the token flow once; a realm outside `ghcr.io` gives 502; a manifest over 64 KiB gives 502; `root:latest` is cached 30 s; a digest read is cached 1 year; `/healthz` gives 503 for a root older than 6 hours; a 404 and a 405 are problem+json; `OPTIONS` gives 204.
+  - **`docs/worker.md`** is created here, in the shape of the mirror's `docs/worker.md`: paths, answers, tokens, caching table, limits, deploy, rollback, monitoring, trust. The Worker holds no secret and only the maintainer's wrangler login can deploy it.
+  - **`worker.yml`** (copy of mirror `.github/workflows/worker.yml`): triggers on a push to `main` that changes `apps/api/**` or the workflow, runs the tests in a pinned image, never deploys, `permissions: {}` at the top with `contents: read` on its one job `test`, `defaults.run.shell: bash`, `timeout-minutes` set, and every `uses:` pinned by commit as DOM-013 does.
+- **Decision:** one Worker serves every route, not one Worker per dataset. The CPU per request is small (limit 50 ms), the GHCR reads and the root cache are shared, and one Worker means one deploy, one rollback and one set of cold starts. The alternative multiplies deploys and duplicates the token flow.
+- **Depends on:** DOM-007, DOM-013, DOM-020
+- **Prove:** `curl -sS https://domains.pkgforge.dev/healthz | jq '{ok, version, root_age_s}'` prints `ok: true` and a 12 hex version.
+  - `curl -sS -D - https://domains.pkgforge.dev/v1/index/latest | grep -i '^x-domains-root\|^access-control-allow-origin'` shows both headers.
+  - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq .artifactType` prints `application/vnd.pkgforge.domains.root.v1`, and its digest equals `jq -r .data.root` of the route above.
+  - `node scripts/test.mjs apps/api --name "healthz"` and `node scripts/test.mjs apps/api --name "ghcr"` pass.
+  - `curl -sS -o /dev/null -w '%{http_code}' -X POST https://domains.pkgforge.dev/healthz` prints `405`.
+- **Operator:** `npx wrangler login`, then `npx wrangler whoami` must show the account that holds the `pkgforge.dev` zone: record the account name it prints in this entry's Closed line. **Read the zone's rate-limit rules before the first deploy** (dashboard: `pkgforge.dev`, Security, WAF, Rate limiting rules). The operator ruled on 2026-10-27 that the zone's rate-limit rules lose their reach over the public services (`TODO/RULES.md` section 5, ruling 12), so no rule may cover `domains.pkgforge.dev`: if one does, ask for the host to be left out of it before the Worker goes live, because a rule that covers the host gates callers and the design forbids that (architecture section 7.6). Then deploy: `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`. Wait 20 s before a rollback decision, as a new version takes seconds to reach every data centre (mirror `docs/worker.md`).
+- **Resources:** Worker `domains-pkgforge-dev` and the custom domain `domains.pkgforge.dev` on the `pkgforge.dev` zone. Undo: remove the custom domain in the dashboard (Workers and Pages, the Worker, Settings, Domains and Routes), then `cd apps/api && npx wrangler@4.150.0 delete`. Add both rows to `docs/resources.md` in the same change.
+
+## DOM-032 — GET /v1/new for registrable domains
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** the operator's ruling 2 of 2026-10-27 (every THC query type, plus windows of 1 h, 6 h, 12 h, 1 d and N days, any suffix or parent, first and last seen per source). Architecture sections 7.1, 7.3, 7.4 and 7.5. Design A section 7.2 and design B section 7.
+- **Problem:** the new-domain feed is the first product. No route reads it. A caller needs "new domains under `com.np` in the last hour" as one `curl`, with the answer saying which sources it used and which failed.
+- **Premise:**
+  - Keys are reversed labels, so `suffix=com.np` and `under=example.co.uk` are one contiguous key range in every pack (architecture section 3.2). Design A's hash partitioning could not answer "every name under `.np` in a window" without reading all 4,096 partitions (design A section 6.3 against design B section 0 item 2).
+  - Tiers are time-disjoint (architecture section 4.5). A window of 1 h to 12 h reads segments and hour packs. A window of N days reads day packs, and week packs where a week is whole.
+  - Feed rows come from `oi-nrd` (about 422,000 messages a day, MEASURED 2026-10-27 05:30:36Z, design A M6), `isc-new` (250,940 domains for 2026-10-26, design B M6), `whoisds` (70,000 a day), `hagezi-nrd` (about 396,000 a day) and the THC-derived ledger. So the feed holds 0.3 to 0.8 million rows a day (design B section 6.2).
+  - Evidence tiers T1, T2 and T3 and the `registered` object are in architecture section 3.3. `suspect` rows (an `oi-nrd` certificate older than 7 days) are hidden by default.
+  - The caps are in architecture section 7.6: window at most 31 days, a JSON page at most 10,000 rows, at most 60 packs and 2,000 blocks a request. DOM-054 measures and may change them.
+  - DOM-007 gives the cold and warm cost of one range read. A query reads at most two small ranges per pack.
+- **Approach:**
+  - **Seams** (created here): `apps/api/src/routes/new.ts`, `apps/api/src/cursor.ts`, `apps/api/src/window.ts`, `apps/api/src/format.ts` (json, ndjson, csv, txt writers that stream), and the planner of `packages/feed` (DOM-022) used as is.
+  - **Parameters** exactly as architecture section 7.3: `since` (`1h`, `6h`, `12h`, `1d`, `Nd` with N at most 31, or ISO 8601, default `1d`), `until`, `kind` (`registrable` only here), `suffix`, `under`, `basis` (`any`, `seen`, `claimed`, `registered`, `zone`, `rdap`, `nrd-list`, `ct`), `source`, `min_confidence`, `suspect` (`exclude`, `include`, `only`), `provisional`, `order`, `limit` (default 1,000, at most 10,000), `cursor`, `format`. `suffix` must be a public suffix of the pinned PSL, else 400 `unknown-suffix`. `under` is any parent and is normalised with `packages/names` (DOM-015). `kind=fqdn` answers 501 with reason `not-implemented` until DOM-041 builds the name-level feed.
+  - **Window.** Parse `since` and `until` as UTC. Reject a window over 31 days with 400 `window-too-large`, and a `since` after `until` with 400 `bad-window`. A day-precision row is inside the window when its day overlaps it (architecture section 7.4). Put `meta.as_of` from the root, and add a `meta.gaps` entry for any source whose `gaps` overlap the window.
+  - **Read plan.** From the root's `datasets.feed.packs`, take the packs whose span overlaps the window, newest first. For each, binary-search the index (cached in R2 or the Cache API) for the key range of `suffix` or `under`, read the blocks, decode with the reader of `packages/pack`, filter by window, `basis`, `source`, `min_confidence`, `suspect` and `provisional`. At most 6 subrequests at a time.
+  - **Order.** Tiers have disjoint spans, so newest-tier-first gives time order across tiers. Inside one tier, stream the candidate rows through a top-K heap, K = limit plus the cursor skip, ordered by `first_seen`. If the read reaches the block budget, answer `partial: true` and `next_cursor`, and say so in `meta`.
+  - **Cursor.** Opaque base64url JSON `{v:1, root:<12 hex of the root digest>, q:<hash of the normalised query>, tier:<index>, after:[<first_seen>,<key>]}`. A cursor made on another root digest or another query answers 400 `bad-cursor`. A new page re-reads the cached blocks and skips rows at or before `after`.
+  - **Row** (architecture section 7.1): `domain`, `first_seen`, `first_seen_precision`, `last_seen`, `registered` (only when evidence T1 or T2 exists), `sources` (first and last per source), `flags` (`provisional`, `suspect`, `corroborated`). A day-precision value prints as a date.
+  - **Meta**: `as_of`, `root`, `corpus_since`, `confidence` (`warming` while the corpus is under 90 days), `sources_used` (sources of packs read that gave a row), `sources_failed` (sources of the root whose status is `late` or `down`, with `since` and `error`), `tiers_read`, `partial`, `next_cursor`. Headers: architecture section 7.1.
+  - **Caching.** Key an answer by root digest and normalised query. Its time to live is the minimum of its inputs (architecture section 7.5): 60 s for current-day packs, 1 year for closed packs.
+  - **Problem reasons** used here: `bad-window`, `window-too-large`, `unknown-suffix`, `bad-parameter`, `bad-cursor`, `work-budget`, `not-implemented`. DOM-059 lists them in the registry.
+  - **Tests.** Build a root fixture with `packages/pack` from synthetic rows: 3 hour packs, 2 day packs, one week pack, rows under `com.np`, `co.uk`, `com`. Assert: the key range of `com.np` contains no `np.org` row; a 1 h window reads only segments and hour packs; a 7 d window reads day and week packs; `suspect` rows are hidden by default; a second page continues with no duplicate; a cursor from another query is refused; the block budget gives `partial: true`.
+  - **Operator checkpoint.** After DOM-026 has run for at least 7 days, the operator reads the three queries of the Prove and judges the answers.
+- **Decision:** one query plan for every window. Short windows are the same plan over smaller tiers, not a second code path. The alternative, a separate hot-tier route, would split behaviour and caches.
+- **Depends on:** DOM-023, DOM-026, DOM-030
+- **Prove:** `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1h&suffix=com.np&limit=5' | jq '{n:(.data|length), used:.meta.sources_used, tiers:.meta.tiers_read, as_of:.meta.as_of}'` prints rows, the sources used and the packs read.
+  - The operator checkpoint, each with `jq '{n:(.data|length), partial:.meta.partial}'`: `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1h&suffix=com.np'`, `curl -sS 'https://domains.pkgforge.dev/v1/new?since=6h&suffix=co.uk&limit=100'`, `curl -sS 'https://domains.pkgforge.dev/v1/new?since=12h&under=com&limit=100'`, `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1d&suffix=com.np'`, `curl -sS 'https://domains.pkgforge.dev/v1/new?since=7d&suffix=co.uk&limit=100'`.
+  - `curl -sS -o /dev/null -w '%{http_code} %{time_total}\n' 'https://domains.pkgforge.dev/v1/new?since=40d'` prints `400` (`window-too-large`).
+  - `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1d&suffix=com.np&format=csv&limit=3'` prints three CSV rows with a header line.
+  - `node scripts/test.mjs apps/api --name "new"` passes.
+
+## DOM-033 — /v1/domain, /v1/sources, /v1/status and /v1/coverage
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** architecture sections 3.3, 3.5, 7.2 and 9. Design A section 7.2 (`/v1/domain/{reg}`, `/v1/sources`, `/v1/status`, `/v1/coverage`, `/v1/suffixes`).
+- **Problem:** a caller needs to ask about one domain, to see which sources are healthy, and to see how complete the corpus is. `/v1/new` alone cannot answer "is this domain new, and who says so".
+- **Premise:**
+  - The `domains` dataset holds one record per registrable domain: per-source first and last seen, and an evidence list (architecture section 3.3). DOM-021 builds it. A lookup is a point query across the live set, at most two small range reads per pack.
+  - `sources.json` in the root lists, for each source, the id, family, datasets, precision, kind, cadence, `status` (`ok`, `late`, `down`) and `through` (architecture section 3.5). A source has `urls` and `fetched` as its provenance. There is no licence field.
+  - `coverage.json` is a layer of the root, produced by DOM-035. Until DOM-035 closes the layer is `{"pairs":[],"gaps":{}}`.
+  - A daily compaction does not yet write a per-suffix summary. `/v1/suffixes` needs it. This entry adds it.
+  - The `names` dataset arrives in DOM-038. A dossier shows names only when the root lists `names` packs.
+- **Approach:**
+  - **`GET /v1/domain/{reg}`.** Normalise the input with `packages/names`. If it is a name below a registrable domain, answer for the registrable domain and set `meta.input_normalised_to`. Point-look it up in the `domains` packs. Row: `{domain, suffix, site, first_seen, last_seen, first_seen_precision, sources:{<id>:{first,last}}, evidence:[{tier,basis,source,at,confidence}], registered?, flags}`. When the root lists `names` packs, add `names:{count, sample:[...]}`: count the names in the key range, capped at 10,000 (`count_capped: true` beyond), and list the 20 most recently seen. Answer 404 `not-found` when no tier has the domain, with the `corpus_since` in `meta` so the caller knows what "not found" means.
+  - **`GET /v1/sources`** answers the registry rows of the root's `sources.json`: `id`, `family`, `datasets`, `precision`, `kind`, `cadence`, `status`, `through`, `gaps`, `urls`, `fetched`. Order by `bit`. `meta.sources_failed` lists sources whose status is not `ok`.
+  - **`GET /v1/status`** answers `{as_of, root_seq, root_age_s, sources:[{id,status,through,lag_s}], hot:null | {age_s}, worker:{version}}`. `hot` is read from `hot/manifest.json` in R2 when it exists (DOM-025) and is `null` otherwise. It never claims a hot tier that is absent.
+  - **`GET /v1/coverage`** serves the root's `coverage.json` with the envelope. `?date=YYYY-MM-DD` reads the artifact `dumps:coverage-<YYYYMMDD>` by tag (DOM-035) and answers 404 when it does not exist.
+  - **`GET /v1/suffixes?since=`.** The window is `1d` to `31d`; a shorter window answers 400 `bad-window`. Each closed day writes a layer `summary.json` in its `feed-d-<YYYYMMDD>` manifest: `{day, suffixes:{<suffix>:{new_registrable:N, by_source:{<id>:N}}}}`. Add the writer to the daily step of `packages/compact` (DOM-023) in this change, and a test for it. The route sums the layers of the window's days. Each layer is immutable and cached 1 year.
+  - **Seams:** `apps/api/src/routes/domain.ts`, `sources.ts`, `status.ts`, `coverage.ts`, `suffixes.ts`; `packages/compact/src/summary.ts`.
+  - **Tests.** Fixture root with three domains: one with T1 evidence, one `warming`, one suspect. Assert the dossier fields, the 404, the normalisation note, the sums of `/v1/suffixes` over two days, and that `hot` is `null` with no manifest.
+- **Decision:** `/v1/status` reports only what the root and R2 hold. It does not call upstream sources on the request path. The hourly `status.yml` (DOM-034) does that, because a request path that dials a third party would let that party slow every caller.
+- **Depends on:** DOM-021, DOM-032
+- **Prove:** `curl -sS https://domains.pkgforge.dev/v1/domain/example.com.np | jq '{domain:.data.domain, first:.data.first_seen, sources:(.data.sources|keys), evidence:.data.evidence}'` prints a dossier for a domain the feed holds (pick one from `/v1/new`).
+  - `curl -sS https://domains.pkgforge.dev/v1/sources | jq '.data[] | {id, status, through}'` lists every source.
+  - `curl -sS https://domains.pkgforge.dev/v1/status | jq '{root_age_s, hot}'` prints the root age and `hot`.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/suffixes?since=7d' | jq '.data | to_entries | sort_by(-.value.new_registrable) | .[0:5]'` prints the five largest suffixes.
+  - `curl -sS -o /dev/null -w '%{http_code}' https://domains.pkgforge.dev/v1/domain/not-a-real-domain-xyz-123.com` prints `404`.
+  - `node scripts/test.mjs apps/api --name "domain"` and `node scripts/test.mjs packages/compact --name "summary"` pass.
+
+## DOM-039 — Subdomains, name lookup, name listing and batch lookup
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** the operator's ruling 2 of 2026-10-27 (THC's subdomains query, plus first and last seen per name per source). THC's route shapes in `docs/research/web-pkgforge-2026-10-27/ct.md` section 1. Architecture sections 7.2, 7.6 and 9.
+- **Problem:** the names index is the second product. A caller needs the subdomains of a domain, one name's history, a list of names under any suffix in a window, and a batch check. None of these exist until the `names` dataset is served.
+- **Premise:**
+  - THC's `POST /api/v1/lookup/subdomains` takes `{domain}` and answers `{domain, last_seen_on}` rows, 100 a page, with a Cassandra `page_state` token. MEASURED 2026-10-27 against THC's live API (`docs/research/web-pkgforge-2026-10-27/ct.md` section 1): `github.com` gave 4,294 subdomains, `pkgforge.dev` 39, `phrack.org` 12. 3,931 of the 4,294 had `last_seen_on` in 2024-12 (an initial import). This route is parity with that shape, served from this project's own index and never from THC's API.
+  - MEASURED in design B, M2 (2026-10-27T05:17Z to 06:15Z): a daily THC dump holds the names of certificates issued that day. So `subdomains of github.com` was empty in the dump (0 names), while `np.com` had 6,764 names that day. Name-level coverage needs about one certificate validity period of corpus (about 200 days [E]) before subdomain answers are good.
+  - Name-level newness is censored. The answer must carry `censored: true` where a name's `first_seen` lies within 200 days of `corpus_since` (architecture section 9).
+  - Keys are reversed, so the subdomains of `example.com` are the key range `com.example.` and a suffix is one range (architecture section 3.2).
+  - The `names` dataset has the live-set fan-out of about 50 packs in the worst case (architecture section 4.5). Caps: at most 60 packs and 2,000 blocks a request, 500 keys for a batch (architecture section 7.6).
+  - Wildcards: a name that came from `*.x` is stored as `x` with the flag `wild` (architecture section 2). THC's dump keeps the `*.` lines.
+- **Approach:**
+  - **Seams:** `apps/api/src/routes/subdomains.ts`, `name.ts`, `names.ts`, `lookup.ts`, and a shared `apps/api/src/names-read.ts` that plans pack reads for a key range or a key list.
+  - **`GET /v1/subdomains/{domain}`**: rows `{subdomain, last_seen_on, first_seen_on, sources:{<id>:{first,last}}, wild?, censored?}`. `last_seen_on` and `first_seen_on` are dates (THC's field is a date). Parameters: `wildcards` (`include` default, `only`, `exclude`), `source`, `limit` (default 1,000, at most 10,000), `cursor`, `format` (`json`, `ndjson`, `csv`, `txt`). `{domain}` is normalised; the route lists names strictly below it (not the domain itself, which `/v1/name` answers).
+  - **`GET /v1/name/{fqdn}`**: one record `{name, suffix, reg, site, first_seen, last_seen, sources, wild, censored}` or 404.
+  - **`GET /v1/names`**: parameters `under` (required; a TLD, suffix, registrable domain or name), `since`, `until`, `basis` (`first` or `last`), `source`, `wildcards`, `limit`, `cursor`, `format`. It lists names in the key range whose `first_seen` (basis `first`) or `last_seen` (basis `last`) is in the window. It scans blocks of the range, so a broad range stops at the block budget and answers `partial: true` with a cursor. `meta.censored_until` states the date before which `basis=first` is censored.
+  - **`POST /v1/lookup`**: body `{"names":[...],"domains":[...]}` of at most 500 keys in all and at most 64 KB. Normalise and sort the keys, then make one pass per pack that reuses each block for every key it holds. Answer `{data:{<key>:<record>|null}}`, with `null` for a key not found and `meta.corpus_since`. A bad key answers 400 `bad-parameter` with its index.
+  - **Format.** `csv` and `txt` stream with no whole-body buffer. `txt` prints one name a line.
+  - **Tests.** A fixture `names` root with the key ranges `np.com`, `com.example`, a wildcard and names with several sources. Assert: the subdomain range excludes `com.example2`; `wildcards=exclude` hides the flagged rows; `basis=first` marks `censored` for names near `corpus_since`; a batch of 500 keys reads each block once (count the subrequests); 501 keys give 400.
+- **Decision:** the empty answer is a real answer. A domain with no names in the corpus answers 200 with `data: []` and a `meta.confidence: warming` and `corpus_since`, not 404. THC answers the same for an unseen domain. A 404 would say "no such domain", which the corpus cannot know.
+- **Depends on:** DOM-032, DOM-038
+- **Prove:** `curl -sS 'https://domains.pkgforge.dev/v1/subdomains/np.com?limit=5' | jq '{n:(.data|length), first:.data[0], conf:.meta.confidence}'` prints names under `np.com`.
+  - `curl -sS https://domains.pkgforge.dev/v1/name/pkgforge.dev | jq '.data | {name, first_seen, last_seen, sources:(.sources|keys)}'` prints one record.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/names?under=com.np&since=1d&basis=first&limit=5' | jq '.meta.censored_until'` prints a date.
+  - `curl -sS -X POST -H 'content-type: application/json' -d '{"names":["pkgforge.dev","no-such-name-xyz-123.com"]}' https://domains.pkgforge.dev/v1/lookup | jq '.data'` prints one record and one `null`.
+  - `node scripts/test.mjs apps/api --name "subdomains"` and `node scripts/test.mjs apps/api --name "lookup"` pass.
+
+## DOM-040 — Bulk dumps: daily names and new-domain files
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** the operator's ruling 2 of 2026-10-27 (bulk downloads and daily CT dumps). THC's dump listing at `https://cs2.ip.thc.org/`. mirror-archlinux `docs/worker.md` ("The Worker sends no package bytes"). Architecture sections 4.1, 7.2 and 7.5.
+- **Problem:** THC offers a sorted file of a day's CT names. Scripts and people want the same, from this project's union of sources, and want to download it without the Worker carrying the bytes.
+- **Premise:**
+  - THC's daily file is `<date>.txt.gz`, one lowercase name a line, wildcards kept (`*.x`). MEASURED 2026-10-27T08:22:56Z (`curl -sS https://cs2.ip.thc.org/`): the 2026-10-26 file is 319,917,410 B with `Last-Modified` 2026-10-27T00:04:12Z. It holds 38,474,309 lines and 1,327,623,793 B uncompressed (design A M5). It is not bytewise sorted and 0.57% of its lines have upper case (design B M2). Ours must be sorted bytewise in the C locale and lowercase.
+  - The Worker sends no package bytes in the mirror: it reads the manifest, asks GHCR for the blob, and answers 302 with the `Location` of GHCR's redirect, a signed URL that needs no credential and supports `Range`. READ mirror `docs/worker.md`. The answer has `cache-control: no-store`. The `loc` cache entry lives until the signed URL's `se` minus 120 s, at most 600 s.
+  - The union dump for a day is about 350 to 450 MB compressed [E] (design A section 6.3). THC's own is 320 MB. A day's file is built from about 60 million names [E].
+  - The `dumps` package holds `names-YYYYMMDD` and `new-YYYYMMDD` (architecture section 4.1). Tags are write-once. The daily compaction (DOM-023) builds them.
+  - The new-domain file is small: 15 to 30 MB a day [E] (architecture section 3.3).
+  - Provenance of a dump is the publisher, URL and fetch time of each source, in the manifest annotations. No licence field.
+- **Approach:**
+  - **Build** in `compact-daily.yml` (DOM-023): add `scripts/compact/dumps.mjs`. Inputs: the day's `names` pack (DOM-038) and the day's `feed` pack.
+    - **`names-YYYYMMDD`**: every name with an observation in UTC day D from any source, written as one name a line, wildcards as `*.<name>` where the flag `wild` is set, sorted by `LC_ALL=C sort -S 2G -T "$RUNNER_TEMP"`, gzip level 9. The layer is `names.txt.gz`. Annotations: `dev.pkgforge.domains.count`, `.bytes`, `.sha256`, `.sources` (the ids with their `through`), `.day`.
+    - **`names-by-source-<source>-YYYYMMDD`**: the same for one source, for the sources that feed `names`.
+    - **`new-YYYYMMDD`**: layer `new.tsv.gz`, columns `domain`, `first_seen`, `first_seen_precision`, `basis`, `sources`, `flags`, sorted by `first_seen` then `domain`.
+    - Push with the tool of DOM-019 (write-once tag, read-back). Add the dump to the root's `datasets.dumps` list (the last 60 days; older dates are found by the tag list).
+  - **Routes** (`apps/api/src/routes/dumps.ts`):
+    - `GET /v1/dumps` lists dumps: `{dataset, date, bytes, sha256, tag, digest, url}`. Parameters `dataset` and `before=YYYY-MM-DD`. The root gives the last 60; `before` pages the GHCR tag list (`/v2/<repo>/tags/list?n=1000`, 1000 is the cap) and caches each page 60 s.
+    - `GET /v1/dumps/names/{date}.txt.gz`, `GET /v1/dumps/new/{date}.tsv.gz`, `GET /v1/dumps/names-by-source/{source}/{date}.txt.gz`: read the manifest by tag (cached 1 year, as tags are write-once), take the layer digest, GET the blob with the dummy token (`redirect: "manual"`), and answer 302 to the signed `Location`. Set `cache-control: no-store`, `x-domains-body: verbatim`, `x-domains-cache`, `x-domains-root`. `HEAD` makes the same subrequests. A date with no dump answers 404 `not-found`. A malformed date answers 400 `bad-parameter`.
+    - A `Location` that is not https gives 502. The Worker logs a host outside `*.githubusercontent.com` once per isolate and adds `x-domains-blob-host: unexpected`, as the mirror does.
+  - **Backfill.** Build the dumps for 2026-09-01 onward from the THC backfill once DOM-038 has built the day packs: `gh workflow run compact-daily.yml -f day=<date>` for each day (a matrix, at most 6 at once).
+  - **Tests.** Build a dump from a fixture day with upper case, a wildcard and a duplicate. Assert: sorted bytewise (`LC_ALL=C sort -c`), lowercase, no duplicate, wildcard kept as `*.x`. The route test asserts 302, `no-store`, the 1 year manifest cache, 404 and 400.
+- **Decision:** gzip, not zstd. THC's files are `.txt.gz`, every tool opens them, and the measured size gap is small. The alternative saves a little and breaks `zcat`.
+- **Depends on:** DOM-023, DOM-038
+- **Prove:** `curl -sSI https://domains.pkgforge.dev/v1/dumps/names/2026-10-26.txt.gz | grep -i '^HTTP\|^location\|^x-domains-body'` prints `302`, a `location` on `pkg-containers.githubusercontent.com` and `verbatim`.
+  - `curl -sSL -r 0-4194303 https://domains.pkgforge.dev/v1/dumps/names/2026-10-26.txt.gz | gzip -dc 2>/dev/null | head -n 5` prints names.
+  - `curl -sSL https://domains.pkgforge.dev/v1/dumps/names/2026-10-26.txt.gz | gzip -dc | LC_ALL=C sort -c && echo sorted` prints `sorted` (the exit code of `sort -c` is the check).
+  - `curl -sS 'https://domains.pkgforge.dev/v1/dumps?dataset=new' | jq '.data[0]'` prints the newest entry.
+  - `node scripts/test.mjs apps/api --name "dumps"` and `node scripts/test.mjs packages/compact --name "dumps"` pass.
+
+## DOM-044 — /v1/ip and /v1/cnames
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** the operator's ruling 7 of 2026-10-27: "serve the reverse ip/cname from the thc source from the ghcr mirror, not direct to thc itself". THC's routes in `docs/research/web-pkgforge-2026-10-27/ct.md` section 1. Architecture sections 6 and 7.2.
+- **Problem:** reverse IP lookups are THC's flagship query. They must be served from the mirror in GHCR, with THC's shape, for IPv4, IPv6 and CIDR ranges, with downloads. The CNAME route cannot be served from the data that exists, and must say so honestly.
+- **Premise:**
+  - THC's `POST /api/v1/lookup` takes `ip_address` as an IP or a CIDR and answers `domains[{domain, apex_domain, tld, organization, country, city, asn}]`, 100 a page, with `page_state`. THC's CSV `GET /download` returns at most 50,000 rows. MEASURED 2026-10-27 against THC's live API (ct.md section 1), for shape comparison only: `1.1.1.1` gave 92,770 rows, `8.8.8.8` 45,606, `140.82.112.3` 19, `89.58.57.239` 15. IPv6 returned 0 rows with `count_unavailable`. This project's route never calls that API.
+  - MEASURED 2026-10-27T08:21:59Z (`curl -sSL -r 0-1048575 -o head1m.csv.gz 'https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true'`, then `gzip -dc`): the September monthly CSV has exactly two comma-separated fields on every line, `ip,name`, with no header. IPv4 and IPv6 both appear, and one address carries many names (`190.0.0.1` has 4,993 lines in the first 72,834). So the mirror holds no organisation, country, city or ASN. This route omits those fields. It does not send them as null.
+  - The same sample has no CNAME column and no record type. Names that contain the text `cname` are host names. So no mirrored source holds CNAME targets (DOM-010 confirms over the whole file). DOM-046 takes the first of them that DOM-058 (OpenINTEL's measurement topic) or DOM-047 (its zone Parquet) shows to carry CNAME records (ruling 10, `TODO/RULES.md` §5).
+  - The `rev` packs (DOM-043) are keyed by the address bytes, so a CIDR range is one key range. The newest month is the default.
+  - Apex and TLD are computed at query time from the pinned PSL (DOM-015).
+  - Caps: streamed `csv`, `ndjson` and `txt` at most 5,000,000 rows; JSON pages at most 10,000 rows (architecture section 7.6).
+- **Approach:**
+  - **`GET /v1/ip/{ip-or-cidr}`** (`apps/api/src/routes/ip.ts`): parse an IPv4 address, an IPv6 address (any valid text form, normalised) or a CIDR. Reject a CIDR wider than IPv4 `/8` or IPv6 `/32` with 400 `bad-parameter` (work bound). Rows `{domain, apex_domain, tld}`; for a CIDR add `ip`. Parameters: `month` (`YYYY-MM`, default the newest month in the root's `rev` list; an unknown month answers 404 `not-found`), `limit`, `cursor`, `format`. `meta.month` states the month read, and `meta.fields_absent: ["organization","country","city","asn"]` says what THC's live shape had that this does not. An address with no names answers 200 and `data: []`.
+  - **Cursor.** Opaque base64url of `{v:1, month, ip:<address bytes hex>, name_index}`, so a popular address pages through its many names.
+  - **`GET /v1/cnames/{target}`** (`routes/cnames.ts`): answers 501 `application/problem+json` with `reason: "unsupported-by-source"`, `detail: "No mirrored source holds CNAME targets. The THC monthly database has two columns, ip and name."`, and `sources_checked: ["thc-rdns"]`. The route and the reason are stable, so DOM-046 turns the route on with no new path. When a source exists, the route answers the THC shape `{domain}` rows.
+  - **`GET /v1/dumps/rdns/{month}`**: JSON listing `{month, bytes, sha256, chunks:[{n, bytes, sha256, url}]}` read from the manifest `obs:thc-rdns.<YYYY-MM>` (DOM-042); `url` is `https://domains.pkgforge.dev/v1/dumps/rdns/<month>/<n>`. `GET /v1/dumps/rdns/{month}/{n}` answers 302 to the signed blob URL, as DOM-040 does. This is how the architecture row "302 to the mirrored raw chunks' listing" is read: a listing, then one 302 per chunk.
+  - **Provenance.** `x-domains-body: derived` for `/v1/ip`; `verbatim` for a chunk. `meta.sources_used: ["thc-rdns"]`.
+  - **Tests.** A `rev` fixture with IPv4, IPv6, a CIDR range and an address with 5,000 names. Assert: the CIDR range includes its first and last address and nothing else; a cursor pages the 5,000 names with no duplicate; `/v1/cnames/x` gives 501 with the reason and `sources_checked`; an IPv6 query reads the IPv6 key range; a CIDR of `/7` gives 400.
+- **Decision:** the CNAME route answers 501 and not an empty 200. An empty 200 would say "no domain points at this target", which the data cannot know. The 501 names the missing source, so a caller can tell absence of data from absence of records.
+- **Depends on:** DOM-032, DOM-043
+- **Prove:** `curl -sS 'https://domains.pkgforge.dev/v1/ip/1.1.1.1?limit=5' | jq '{n:(.data|length), row:.data[0], month:.meta.month, absent:.meta.fields_absent}'` prints rows, the month and the absent fields.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/ip/190.0.0.0/30?limit=5' | jq '.data[0]'` prints a row with `ip`.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/ip/2a00:800:1000:3::1?limit=3' | jq '.meta.month'` prints the month (IPv6 is served).
+  - `curl -sS -w '\n%{http_code}\n' https://domains.pkgforge.dev/v1/cnames/github.com | jq -R -s .` and `curl -sS https://domains.pkgforge.dev/v1/cnames/github.com | jq '{status, reason, sources_checked}'` print `501`, `unsupported-by-source` and `["thc-rdns"]`.
+  - `curl -sS 'https://domains.pkgforge.dev/v1/dumps/rdns/2026-09' | jq '.chunks | length'` prints the chunk count.
+  - `node scripts/test.mjs apps/api --name "ip"` passes.
+
+## DOM-054 — Work budget, caps and a 100 requests a second drive
+
+- **Status:** open
+- **Priority:** P2
+- **Effort:** M
+- **Source:** architecture section 7.6 (limits, and no gating) and section 10 (cost); design B section 10; DOM-007's numbers.
+- **Problem:** the caps of architecture section 7.6 are design values, not measurements. No route has been driven at load. The design promises no consumer is gated, so cost must be bounded by the work a request may do, and that bound must be seen to hold.
+- **Premise:**
+  - The design values are: a window of at most 31 days, a JSON page of at most 10,000 rows, a streamed answer of at most 5,000,000 rows, a batch of 500 keys, at most 60 packs and 2,000 blocks a request. A broader query answers `partial: true` and a cursor.
+  - Cost model, from design B section 10 (estimates [E]): 100,000 queries a day is 3 million Worker requests a month, inside the 10 million included. CPU of 25 ms a query is 2.5 million CPU-ms a month, inside 30 million. At 1 million queries a day the cost is about $9 to $10 a month. R2 class B reads stay under 300,000 a day when the Cache API takes the first hit.
+  - A Worker has 6 simultaneous outgoing connections waiting for headers and 128 MB of memory (READ design B section 2.3). The route `[limits] cpu_ms` is 50 (DOM-030).
+  - GHCR anonymous reads: 300 of 300 manifest GETs at concurrency 50 succeeded (design B M7). The read limit through a Worker is measured by DOM-007 at 20, 50 and 100 requests a second.
+  - The zone `pkgforge.dev` is shared with other sites and may carry a zone-level rate-limit rule. The operator ruled on 2026-10-27 that the zone's rate-limit rules lose their reach over the public services (`TODO/RULES.md` section 5, ruling 12). A rule that covers `domains.pkgforge.dev` gates callers, and the design forbids that (architecture section 7.6). DOM-030's Operator line reads the rules before the first deploy; this entry measures that none of them acts: its drive and its "no gating" test would meet a 429 from the zone if one did.
+- **Approach:**
+  - **Drive script** `scripts/load/drive.mjs`: flags `--url`, `--route` (a path with query), `--rps` (20, 50 or 100), `--seconds` (default 60), `--out`. It sends requests at a fixed rate with bounded concurrency and a timeout of 15 s, and prints one table row per route: sent, status counts (200, 4xx, 5xx, timeout), p50, p95 and max latency, the share of `x-domains-cache: hit`, `r2`, `ghcr` and `mixed`, and `x-domains-degraded` count. Write `docs/research/measure/DOM-054/<route-slug>.json`.
+  - **Routes to drive** at 20, 50 and 100 requests a second: `/v1/new?since=1h&suffix=com.np&limit=100`, `/v1/new?since=7d&under=com&limit=1000`, `/v1/subdomains/np.com?limit=1000`, `/v1/name/pkgforge.dev`, `/v1/ip/1.1.1.1?limit=1000`, and a batch `POST /v1/lookup` of 500 keys.
+  - **Caps.** For each cap, a test sends a request that exceeds it and asserts the answer: a 40 day window gives 400 `window-too-large`; `limit=20000` is clamped or refused as `bad-parameter`; a 501 key batch gives 400; a `/v1/names?under=com&since=7d&basis=first` that needs more than 2,000 blocks gives `partial: true` and a cursor that continues; a request that would read more than 60 packs gives `work-budget`.
+  - **CPU.** Run `npx wrangler@4.150.0 tail domains-pkgforge-dev --format json` during the drive and read `cpuTime` of the events. Report p50 and p99 per route. A route whose p99 is above 40 ms is a finding.
+  - **No gating.** A test sends the same query with different `user-agent`, `x-forwarded-for` and `accept-language` values, and with and without cookies, and asserts the same status and body. The Worker never refuses by caller identity (architecture section 7.6).
+  - **Result.** If a measured value says a design value is wrong, change the value in architecture section 7.6 and in the code in the same change. Record the old and new value in the result file.
+  - **Where it runs.** From the operator's machine, or from a runner with `measure-load.yml` (workflow dispatch, `permissions: {}` at the top, `defaults.run.shell: bash`, one job `measure` with `contents: read`, the pinned actions of DOM-004). A runner is one address. Name the address in the result, because the zone may shape a single address.
+- **Decision:** drive at the production hostname, not at a local workerd. Cloudflare's cache, the network path to GHCR and the colo all matter, and a local run measures none of them. The cost of production load is small: a 60 s drive at 100 requests a second is 6,000 requests.
+- **Depends on:** DOM-032, DOM-039, DOM-044
+- **Prove:** `node scripts/load/drive.mjs --url https://domains.pkgforge.dev --route '/v1/new?since=1h&suffix=com.np&limit=100' --rps 100 --seconds 60 --out docs/research/measure/DOM-054/new-1h.json` exits 0 and prints `PASS` when there are zero 5xx answers and p95 is under 3 s, else `FAIL` and exit 1.
+  - `node scripts/test.mjs apps/api --name "work budget"` passes (every cap above).
+  - `node scripts/test.mjs apps/api --name "no gating"` passes.
+  - `curl -sS -o /dev/null -w '%{http_code}' -H 'user-agent: x' -H 'x-forwarded-for: 1.2.3.4' 'https://domains.pkgforge.dev/v1/new?since=1h&suffix=com.np'` prints `200`.
+- **Operator:** none beyond DOM-030's: the zone's rate-limit rules were read before the first deploy. If the drive meets a 429 that the Worker did not send (the answer carries Cloudflare's own `cf-ray` and no `x-domains-*` header), a rule covers the host after all: ask for the host to be left out, as the design requires that no consumer is gated.
+
+## DOM-059 — The route registry and the root documents
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** L
+- **Source:** architecture section 7.7. The generated-document pattern of the operator's other services (a private repository, so this entry writes the pattern out in full below and nothing needs reading elsewhere): one typed registry of routes, four documents rendered from it at build time, a gate that regenerates and fails on a difference.
+- **Problem:** an agent or a person that meets `domains.pkgforge.dev` needs `llms.txt`, `llms-full.txt`, `openapi.json` and `SKILL.md` at its root. Written by hand, they drift from the routes. They must be generated from one registry, and a route with no registry entry must fail a test.
+- **Premise:**
+  - The pattern that works elsewhere, to copy in shape:
+    - Each service declares its routes once, in a typed registry beside its handlers. A generator renders `llms.txt` (the llmstxt.org index and a quick card), `llms-full.txt` (a salient guide), `openapi.json` (OpenAPI 3.1 for every route, the whole reference) and `SKILL.md` (one short file an agent fetches to learn the service). The documents are committed. The gate regenerates them and fails on any difference. A test fails when a handled route has no registry entry.
+    - A registry entry marks what the guide prints. A parameter or header with a `brief` (one short line) or `salient: true` appears in the guide. A required or path parameter always appears. The rest are named only, with a pointer to `openapi.json`. A route's `brief` is its paragraph. A failure's `brief` is its short "what to do".
+    - `llms-full.txt` stays under 12,000 characters, and no line outside a fenced block is over 700 characters. The quick card is at most 1,280 bytes besides its loops, and a test parses every `curl` in the card and the guide against the routes.
+    - `info.version` of `openapi.json` is the first 12 hex digits of the SHA-256 of the four documents joined by a newline, each rendered with an empty version. So it changes with anything a caller reads.
+    - Every error is the one problem shape (`status`, `title`, `detail`, `reason`, `see`). A list of reason values lives in one file, and a test fails on a reason the code emits that the list lacks. Each operation lists in `x-reasons` the reasons it can answer, sorted and unique.
+    - Documents answer CORS `*` and a preflight is a 204. `/` answers a browser (`Accept: text/html`) with a small HTML index and any other client with `llms.txt`.
+  - The routes to register are those of DOM-030 (`/healthz`, `/v1/index/latest`), DOM-032 (`/v1/new`), DOM-033 (`/v1/domain/{reg}`, `/v1/sources`, `/v1/status`, `/v1/coverage`, `/v1/suffixes`), DOM-039 (`/v1/subdomains/{domain}`, `/v1/name/{fqdn}`, `/v1/names`, `POST /v1/lookup`), DOM-040 (`/v1/dumps` and its files) and DOM-044 (`/v1/ip/{ip-or-cidr}`, `/v1/cnames/{target}`, `/v1/dumps/rdns/{month}`). Their parameters, headers and reasons are in those entries and in architecture sections 7.1 to 7.6.
+  - The reasons list so far: `not-found`, `method-not-allowed`, `bad-parameter`, `bad-window`, `window-too-large`, `unknown-suffix`, `bad-cursor`, `work-budget`, `not-implemented`, `unsupported-by-source`, `no-root`, `source-unavailable`.
+- **Approach:**
+  - **Registry** `apps/api/src/routes.ts`: entries `{id, method, path, summary, when, brief?, params:[{name, in, type, required?, brief?, salient?, enum?, description}], headers, responses, reasons, examples:[{curl, note}]}`. A handler is registered with its id; a test walks the router and fails on a handler id with no entry, and on an entry with no handler.
+  - **Package** `packages/docs` (created here): `src/registry.ts` (types), `src/render.ts` (the four renderers), `src/select.ts` (apply `brief` and `salient`), `src/card.ts` (the quick card and the paging loop for a route with `cursor` and `next_cursor`), `src/reasons.ts` (the reason list, used by `packages/core` problem builders), `src/problem.ts` (the extension members).
+  - **Generator** `scripts/docs/generate.mjs` writes `apps/api/public/llms.txt`, `llms-full.txt`, `openapi.json`, `SKILL.md`. `--check` regenerates in memory and exits 1 on any difference with the files. Add `node scripts/docs/generate.mjs --check` to the gate list (`scripts/gate.mjs` STEPS and `TODO/RULES.md` section 1 are held equal by `scripts/gate.test.mjs`: edit both).
+  - **Serving.** Bundle the four files into the Worker as text modules (`[[rules]]` with `type = "Text"` for `**/*.txt` and `**/*.md`, and a JSON import for `openapi.json`), so no assets binding is needed. `GET /` answers HTML for `Accept: text/html`, else `llms.txt`. Each document route answers its type with `access-control-allow-origin: *` and `cache-control: public, max-age=300`.
+  - **Content to write in the registry** (the documents render it): what the service is (CT names, new and newly registered domains, reverse IP; GHCR is the store; reads need no key); when to use each route; the three checkpoint calls of DOM-032 as the quick card; the provenance header table of architecture section 7.1; the failures by status with their reasons and whether to retry (429 and 5xx with backoff, 400 fix the request); the definitions `seen`, `claimed_new`, `registered` and `corpus_since`; the statement that no caller is gated; the pointer to read GHCR directly through `root:latest` (architecture section 11).
+  - **Tests** in `apps/api/test/docs.test.ts`: every registered route has a handler and the reverse; `llms-full.txt` is under 12,000 characters with no line over 700 outside fences; every `curl` in the card parses to a registered route and its parameters; every reason in `x-reasons` is in the reasons list and the reverse; `info.version` equals the hash rule; a browser `Accept` gets HTML and another client gets `llms.txt`.
+- **Decision:** the documents are committed and checked by the gate, not built at deploy. A reader of the repository sees them, and a drift fails before a push, not after a deploy. The alternative, build-time only, hides the text from review.
+- **Depends on:** DOM-032, DOM-033, DOM-039, DOM-040, DOM-044
+- **Prove:** `curl -sS https://domains.pkgforge.dev/openapi.json | jq -r '.info.version, (.paths | keys | length)'` prints a 12 hex version and the route count.
+  - `curl -sS https://domains.pkgforge.dev/llms.txt | head -n 20` prints the card.
+  - `curl -sS -H 'Accept: text/html' https://domains.pkgforge.dev/ | head -c 200` prints HTML.
+  - `curl -sS https://domains.pkgforge.dev/SKILL.md | head -n 5` prints the skill file.
+  - `node scripts/docs/generate.mjs --check` exits 0, and `node scripts/test.mjs apps/api --name docs` passes.
+  - Planted drift: edit one `summary` in `apps/api/src/routes.ts` without regenerating, and `node scripts/docs/generate.mjs --check` exits 1.
+
+## DOM-060 — The consumer contract and the reference reader
+
+- **Status:** open
+- **Priority:** P1
+- **Effort:** M
+- **Source:** architecture section 11 (the consumer contract). The brief of 2026-10-27: another service reads this project's names index, new-domain feed and reverse lookups, through its HTTP API or its GHCR root and packs.
+- **Problem:** a consumer must be able to rely on the routes, the root and the pack format without knowing this project's internals, and this project must be able to change without breaking it. Today the promises are prose in the architecture. A promise nobody can run is a hope.
+- **Premise:**
+  - Four parts: the HTTP routes, the root manifest, the pack format, and the versioning rules (architecture section 11). The routes are in DOM-059's registry. The root is `ghcr.io/pkgforge-dev/domains.pkgforge.dev/root:latest`, readable anonymously with `Authorization: Bearer QQ==`. The pack format `DPK1` is in `docs/format.md` (DOM-017).
+  - Versioning: changes inside `domains.root.v1`, `DPK1` and `/v1` are additive. A reader ignores unknown fields and unknown layers. A breaking change gets a new `format` id and a new path (`/v2`). The old one stays for at least 90 days. A reader checks `format` and `schema` and refuses a value it does not know. One logical question reads one root digest, and the answer carries it in `x-domains-root`.
+  - The consumer must honour `meta.confidence`, `censored`, `provisional`, `suspect` and `sources_failed`. It must not read a day-precision value as a time of day, and must not read `last_seen` as "the domain is live".
+  - A guard that fails on a removed or renamed route keeps the documents stable, as the operator's other services do: a `stable.json` of paths, methods, `x-reasons` values and provenance header names, and a test that fails unless the same commit edits the list. An addition is not held.
+  - This entry states the contract and builds a reader that proves it. It reads nothing of the consumer's code. The consumer is another repository's service.
+- **Approach:**
+  - **`docs/consumer.md`**: for each route of the contract, one `curl` example with the output shape; how to read the root with no Worker (the manifest, the layer `root.json`, a pack by digest and a `Range` read, with `curl` commands); how to read a block (the sparse index, then one range); the versioning rules above; the list of flags to honour; what changes are additive; the contact for a breaking change (the repository's issues). It is a narrative document: present tense, no story.
+  - **`stable.json`** at `packages/docs/src/stable.json`: `{host, routes:[{method, path}], reasons:[...], headers:[...], root:{format, layers:[...]}, pack:{id, schema}}`. **Contract test** `packages/docs/src/contract.test.ts` fails when a route, a reason, a header name, a root layer title or the pack id of `stable.json` is missing from the registry and the code, unless the same commit edits `stable.json`. It does not fail on an addition.
+  - **Reference reader** `packages/reader`: TypeScript, runs in Node and in workerd, depends on `packages/pack` (DOM-017) and `packages/ghcr` (DOM-019) only. It never calls the Worker. API: `openRoot(ref)` (reads and validates `format` and `schema`), `lookupName(root, fqdn)`, `subdomains(root, domain, opts)`, `newDomains(root, {since, until, suffix, under})`, `reverseIp(root, ip)`. Each returns rows in the same shape as the HTTP routes, so a consumer can switch between the two.
+  - **Drill** `packages/reader/bin/drill.mjs --root ghcr.io/pkgforge-dev/domains.pkgforge.dev/root:latest --against https://domains.pkgforge.dev`. It opens the root anonymously, answers `subdomains of np.com`, `new in the last 1h under com.np` and one `ip` from the packs, then asks the Worker the same and compares the rows as sets (ignoring order within a tie and the `cache` fields). It prints `match` or the first difference and exits 1 on a difference. Both reads use the same root digest: the drill pins the digest from the first read and passes it to the comparison (`x-domains-root` must equal it, or the drill reruns once).
+  - **Tests.** `packages/reader` tests run against a recorded fixture root: unknown fields and an unknown layer are ignored; an unknown `format` is refused; a truncated pack gives an error, not a short answer.
+- **Decision:** the reference reader is a package of this repository, not a published library. A consumer copies or imports the module. This keeps one reader for the Worker, the drill and the consumer, so the three cannot read the format differently.
+- **Depends on:** DOM-017, DOM-020, DOM-059
+- **Prove:** `node packages/reader/bin/drill.mjs --root ghcr.io/pkgforge-dev/domains.pkgforge.dev/root:latest --against https://domains.pkgforge.dev` prints `match` and exits 0.
+  - `node scripts/test.mjs packages/reader` passes, and `node scripts/test.mjs packages/docs --name "contract"` passes.
+  - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq '.layers[].annotations["org.opencontainers.image.title"]'` lists `root.json`, `sources.json` and `coverage.json`.
+  - Planted break: remove a route from the registry without editing `stable.json`, and `node scripts/test.mjs packages/docs --name "contract"` fails.
