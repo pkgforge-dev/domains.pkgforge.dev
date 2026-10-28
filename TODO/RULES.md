@@ -74,7 +74,7 @@ no issue, pull request, comment, fork, star or push.
 | read a GHCR artifact anonymously | `oras manifest fetch <reference>`, or `curl` against the registry's public API. No login, no token. |
 | drive the deployed Worker | `curl` against `https://domains.pkgforge.dev` |
 | GitHub | `gh`: this repository's runs and issues; other repositories read-only |
-| Cloudflare | `npx wrangler`, with the operator's own login, run by the operator for anything that changes the account |
+| Cloudflare | `npx wrangler`, with the operator's own login on the operator's machine; the agent runs it for this project's resources (§5, ruling 14) and runs `whoami` first |
 
 ## 4. The rules that bite most often
 
@@ -143,7 +143,8 @@ failure this section prevents. Rulings 1 to 9 are the operator's, given on
 2026-10-27 to the session that opened this repository, and are binding and
 never re-asked (rulings 10 and 11 were chosen from options on the same day, and
 ruling 12 is a fact the operator ruled on that day, stated without quoted
-words). Where the operator's own words are recorded they are quoted;
+words). Rulings 14 to 17 are the operator's answers of 2026-10-28 to the
+questions the session of that day asked at its start. Where the operator's own words are recorded they are quoted;
 where this record holds none, it says so.
 
 1. **The project** (operator, 2026-10-27). The repository is
@@ -234,6 +235,37 @@ where this record holds none, it says so.
     DOM-051 takes ISC's year, DNS Coffee's counts as a monitor, `.gov` and
     the zone walks. Overturn: the operator asks for removals, full snapshots
     or the small gTLDs ISC never lists, which only CZDS gives.
+14. **The agent acts on this repository's resources itself** (operator,
+    2026-10-28: "do everything sensible, you are free to rw as long as it
+    applies to this repo"). With the operator's local wrangler login and `gh`
+    login on the operator's machine, the agent creates, deploys, redeploys and
+    deletes this project's Cloudflare resources (the probe and drill Workers
+    and buckets, the API Worker with its custom domain `domains.pkgforge.dev`,
+    the cache bucket and its lifecycle rule), and sets this repository's
+    settings (the default workflow permission). An entry's `- **Operator:**`
+    line is then run by the agent, which records the account name `whoami`
+    printed. It reaches nothing outside this repository's resources: no other
+    Worker, bucket, zone setting or repository. Rulings 5 and 6 still hold:
+    nothing is deleted from GHCR, and no credential crosses between GitHub and
+    Cloudflare. Overturn: the operator rules otherwise.
+15. **The zone's rate-limit rules are the operator's final decision**
+    (operator, 2026-10-28: "keep it a blocked, final decision, remind me at
+    session end loudly"). The agent cannot read the `pkgforge.dev` zone's WAF
+    rules: the wrangler login holds `zone (read)` and no WAF scope (MEASURED
+    2026-10-28T10:19:05Z, `npx wrangler whoami`). DOM-062 holds the check, stays
+    `blocked` on the operator, and every session's end names it in chat. The
+    deploys of ruling 14 go ahead; ruling 12 is unchanged. Overturn: the
+    operator confirms the rules in chat, and DOM-062 closes on that.
+16. **The `/v1/new` checkpoint is not a stop** (operator, 2026-10-28, choosing
+    the recommended option "Keep going"). The session runs the checkpoint
+    queries of DOM-032 itself, records their output in the entry for the
+    operator to read later, and continues the order. Overturn: the operator
+    asks to review before the build goes on.
+17. **The clock thresholds are 15 and 60 minutes** (operator, 2026-10-28,
+    choosing "Keep 15 / 60 min"). DOM-003 judges each clock by a 48 hour p90
+    gap of at most 15 minutes and a maximum gap of at most 60 minutes, the
+    numbers the record proposed on 2026-10-27. Overturn: the operator sets
+    other numbers; `config/clock.json` holds them once.
 
 Also settled, as a default and not as an operator ruling:
 

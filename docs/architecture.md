@@ -354,7 +354,7 @@ The clock is the thing that starts an ingest run. Ruling 8 requires a measuremen
 | B. Self-dispatch chain | Each run starts the next with `gh workflow run`, using `GITHUB_TOKEN`. A concurrency group makes the next run wait until this one ends. | Once a run exists, its runner starts fast: median 2 s, p90 3 s, max 7 s over 250 jobs (design B M8). Dispatch runs queue like scheduled runs. DOM-001 measures the chain's gaps. |
 | C. Cloudflare cron Worker | A Worker with a cron trigger reads the sources, writes a 72 h hot tier to R2, and the Actions jobs write the durable tiers. | Not measured. DOM-002 measures it with the probe Worker that DOM-061 deploys. |
 
-The decision rule (DOM-003) reads 48 hours of gaps from each clock. The two thresholds below, a p90 of 15 minutes and a maximum of 60, are the author's proposal from the freshness target: ruling 8 records no threshold, and the operator may change them.
+The decision rule (DOM-003) reads 48 hours of gaps from each clock. The two thresholds below, a p90 of 15 minutes and a maximum of 60, were proposed from the freshness target, and the operator confirmed them on 2026-10-28 (ruling 17).
 
 - Take the first of A, then B, whose p90 gap is at most 15 minutes and whose maximum gap is at most 60 minutes.
 - If A and B both fail, build C (entry DOM-025). Actions then carries only the durable work: the THC daily job, compaction, verification and the root.

@@ -99,15 +99,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**61 items. 61 open, 0 partial, 0 blocked, 0 done.**
+**62 items. 61 open, 0 partial, 1 blocked, 0 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 43 | 0 | 0 | 0 | 43 |
+| P1 | 43 | 0 | 1 | 0 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 61 | 0 | 0 | 0 | 61 |
+| **All** | 61 | 0 | 1 | 0 | 62 |
 
 ## Entries
 
@@ -174,3 +174,4 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-059](serve.md) | P1 | serve | open | The route registry and the root documents |
 | [DOM-060](serve.md) | P1 | serve | open | The consumer contract and the reference reader |
 | [DOM-061](ops.md) | P1 | ops | open | Deploy the probe Worker and its R2 bucket |
+| [DOM-062](serve.md) | P1 | serve | blocked | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |

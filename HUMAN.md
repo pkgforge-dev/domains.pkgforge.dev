@@ -81,7 +81,10 @@ The measurements that need a Worker on Cloudflare share one temporary probe
 
 ### Deploy the Worker
 
-CI never deploys. You deploy from your machine, with your own login, the way
+Under your ruling of 2026-10-28 (`TODO/RULES.md` §5, ruling 14) the agent runs
+these steps itself, with your login on your machine, and records the account
+name `whoami` printed. Step 1's reading of the zone's rate-limit rules stays
+yours (ruling 15, DOM-062). CI never deploys. You deploy from your machine, with your own login, the way
 `pkgforge-dev/mirror-archlinux` does (the "Deploy" section of its Worker
 document, docs/worker.md in that repository). From a
 clean tree at the tip of `origin/main` that the gate passed:

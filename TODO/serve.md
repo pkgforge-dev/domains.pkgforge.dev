@@ -41,6 +41,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs apps/api --name "healthz"` and `node scripts/test.mjs apps/api --name "ghcr"` pass.
   - `curl -sS -o /dev/null -w '%{http_code}' -X POST https://domains.pkgforge.dev/healthz` prints `405`.
 - **Operator:** `npx wrangler login`, then `npx wrangler whoami` must show the account that holds the `pkgforge.dev` zone: record the account name it prints in this entry's Closed line. **Read the zone's rate-limit rules before the first deploy** (dashboard: `pkgforge.dev`, Security, WAF, Rate limiting rules). The operator ruled on 2026-10-27 that the zone's rate-limit rules lose their reach over the public services (`TODO/RULES.md` section 5, ruling 12), so no rule may cover `domains.pkgforge.dev`: if one does, ask for the host to be left out of it before the Worker goes live, because a rule that covers the host gates callers and the design forbids that (architecture section 7.6). Then deploy: `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`. Wait 20 s before a rollback decision, as a new version takes seconds to reach every data centre (mirror `docs/worker.md`).
+- **Correction 2026-10-28T10:20Z:** under the operator's rulings 14 and 15 of 2026-10-28 the agent runs this Operator line itself with the operator's login, and the reading of the zone's rate-limit rules moved to DOM-062, which stays blocked on the operator. The deploy does not wait for it.
 - **Resources:** Worker `domains-pkgforge-dev` and the custom domain `domains.pkgforge.dev` on the `pkgforge.dev` zone. Undo: remove the custom domain in the dashboard (Workers and Pages, the Worker, Settings, Domains and Routes), then `cd apps/api && npx wrangler@4.150.0 delete`. Add both rows to `docs/resources.md` in the same change.
 
 ## DOM-032 — GET /v1/new for registrable domains
@@ -289,3 +290,19 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs packages/reader` passes, and `node scripts/test.mjs packages/docs --name "contract"` passes.
   - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq '.layers[].annotations["org.opencontainers.image.title"]'` lists `root.json`, `sources.json` and `coverage.json`.
   - Planted break: remove a route from the registry without editing `stable.json`, and `node scripts/test.mjs packages/docs --name "contract"` fails.
+
+## DOM-062 — Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev
+
+- **Status:** blocked
+- **Priority:** P1
+- **Effort:** S
+- **Source:** the operator's rulings 12 (2026-10-27) and 15 (2026-10-28) of `TODO/RULES.md` section 5. Split out of DOM-030's Operator line, so the deploys of ruling 14 go ahead while the check stays the operator's.
+- **Problem:** a rate-limit rule of the `pkgforge.dev` zone that covers `domains.pkgforge.dev` would refuse callers at the edge before the Worker runs. That gates consumers, which AGENTS.md absolute 8 and architecture section 7.6 forbid, and no test of this repository can see it.
+- **Premise:**
+  - MEASURED 2026-10-28T10:19:05Z, `npx wrangler whoami`: the login on the operator's machine names the account `Ajamx101@gmail.com's Account`, whose id equals the `account_id` of mirror-archlinux's `worker/wrangler.toml` at commit 669ac725f8081445c164113f2ed092533de112e2, and its scopes include `zone (read)` and no WAF or firewall scope. So the agent cannot list the zone's rate-limiting rules.
+  - The operator ruled on 2026-10-28 that the check is the operator's final decision, kept blocked, and named loudly at every session end (ruling 15).
+- **Approach:** the operator opens the dashboard (`pkgforge.dev`, Security, WAF, Rate limiting rules) and either confirms that no rule matches the host `domains.pkgforge.dev`, or adds the host to an exclusion of each rule that would. The session records the answer here, with the date, and closes the entry. A burst of the deployed Worker that gets no 429 is supporting evidence only: a rule with a higher threshold would not fire on it.
+- **Decision:** a separate blocked entry, not a blocked DOM-030. DOM-030 and every route behind it are built, deployed and driven under ruling 14; only the zone's rules wait for the operator.
+- **Blocked:** the operator must read the zone's rate-limiting rules in the Cloudflare dashboard (the login on this machine has no WAF scope) and say in chat that none covers `domains.pkgforge.dev`, or that the host is excluded.
+- **Depends on:** DOM-030
+- **Prove:** the operator's confirmation is recorded here with its date, and `node scripts/measure/range-load.mjs --url https://domains.pkgforge.dev/healthz --rps 100 --seconds 60 --mode warm --expect 200` (DOM-007's load tool) reports zero 429 answers.
