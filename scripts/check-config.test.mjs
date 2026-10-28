@@ -53,8 +53,9 @@ test('config: the Worker program checks every Worker source against the runtime 
   const worker = tsconfig('tsconfig.worker.json');
   assert.equal(worker.extends, './tsconfig.base.json');
   assert.deepEqual(worker.compilerOptions.types, ['@cloudflare/workers-types']);
-  assert.deepEqual(worker.include, ['apps/*/src', 'probes/*/src', 'packages/*/src']);
+  assert.deepEqual(worker.include, ['apps/*/src', 'probes/*/src', 'probes/*/test/*-entry.ts', 'packages/*/src']);
   assert.ok(worker.files.includes('packages/testkit/test/smoke-worker.ts'));
+  assert.ok(worker.files.includes('packages/names/test/names-worker.ts'));
   // A package source left out of the Worker program is named Node-only, and
   // each name is a package that exists.
   const nodeOnly = worker.exclude.filter((p) => /^packages\/[^/*]+\/src$/.test(p));

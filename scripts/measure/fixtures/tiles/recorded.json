@@ -1,0 +1,12 @@
+{
+ "recorded_at": "2026-10-28T15:54:31Z",
+ "command": "curl -sS -A 'domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)' -o FILE URL",
+ "files": {
+  "checkpoint-sycamore2026h2.txt": "https://mon.sycamore.ct.letsencrypt.org/2026h2/checkpoint",
+  "checkpoint-tuscolo2027h1.txt": "https://tuscolo2027h1.skylight.geomys.org/checkpoint",
+  "checkpoint-gouda2026h2.txt": "https://gouda2026h2.mon.ct.ipng.ch/checkpoint"
+ },
+ "synthetic": {
+  "fake-log.mjs": "built in the tests; no tree, timestamp or name in it was recorded"
+ }
+}

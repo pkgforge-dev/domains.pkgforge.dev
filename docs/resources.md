@@ -61,7 +61,7 @@ workflow makes it public (`TODO/RULES.md` §5). No token is created for it.
 
 | package | linked repository | visibility | pushed by | created | delete |
 | --- | --- | --- | --- | --- | --- |
-| `ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe` | `pkgforge-dev/domains.pkgforge.dev`, proven by the second run of DOM-006 | public, proven by the anonymous read of DOM-006 | `measure-push.yml` (DOM-006), tags `size-<MiB>m`, `layers-<N>` and `retag` | pending (the first dispatch of `measure-push.yml`) | none by an agent or a workflow |
+| `ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe` | `pkgforge-dev/domains.pkgforge.dev`, proven by the second run of DOM-006 | public, proven by the anonymous read of DOM-006 | `measure-push.yml` (DOM-006), tags `size-<MiB>m`, `layers-<N>` and `retag` | 2026-10-28, by `measure-push.yml` run 40714201294 (DOM-006): it did not exist before the run, and the package record reads `public` | none by an agent or a workflow |
 
 The probe package grows with every dispatch of `measure-push.yml`: about 5.5 GiB
 at the default inputs (a push of 1,536 MiB and one of 4,096 MiB), so about 11 GiB

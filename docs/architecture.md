@@ -87,13 +87,13 @@ Of the events in a 180 s sample, 38% carried a certificate older than 30 days.
 
 Every adapter runs the same function of the names package (entry DOM-015).
 
-1. Lowercase ASCII. Convert IDN labels to punycode.
+1. Lowercase ASCII. Convert IDN labels to punycode. The PSL's own IDN rules are converted the same way when the list is loaded, so a name under `公司.cn` splits under `xn--55qx5d.cn`.
 2. Remove one trailing dot. Remove a leading `*.` and set `wild`.
-3. Refuse a name with a byte outside `[a-z0-9_.-]`, a label over 63 bytes, a name over 253 bytes, an empty label, or no dot.
+3. Refuse a name with a byte outside `[a-z0-9_.-]`, a label over 63 bytes, a name over 253 bytes, an empty label, no dot, or a top-level label of digits only (`numeric-tld`: an address literal such as `192.0.2.1`; RFC 1123 section 2.1 makes the highest-level label alphabetic).
 4. Refuse a name that is itself a public suffix.
 5. Compute `suffix`, `reg` and `site` from the pinned PSL. The PSL's sha256 is in `sources.json` and in every root.
 
-THC's dump of 2026-10-26 held 38,474,309 lines. It had 0 refused lines under rule 3 and 4 refused lines under rule 4. It is not bytewise sorted.
+THC's dump of 2026-10-26 held 38,474,309 lines. Design A counted 0 refused lines under rule 3 as it then read and 4 refused lines under rule 4. DOM-009 counted distinct names of the same dump: 1,516 whose top-level label is all digits, under 256 distinct such labels, now refused under rule 3, and 2 that are themselves a suffix once the list's IDN rules are converted (MEASURED 2026-10-28T11:19Z, `docs/research/measure/DOM-009/local-2026-10-26.stat.json`). The dump is not bytewise sorted.
 0.57% of its lines carry upper case (MEASURED 2026-10-27, design B §2.4 item 1, design A M5).
 The ingester normalises and sorts the dump itself.
 
@@ -493,7 +493,7 @@ Measured columns, from the first 1,048,576 compressed bytes of the September CSV
 - No line has a third column, a record type or a CNAME target. Names that contain the text `cname` are host names that resolve to an address.
 - The sample's average is 41.2 bytes a line. The page's 252 GB for 6.36 billion records gives 39.6 bytes a record, so the whole file has the same two-column shape.
 
-So the monthly database holds reverse IP to names and holds no CNAME targets. DOM-010 scans the whole stream on a runner to confirm this.
+So the monthly database holds reverse IP to names and holds no CNAME targets. DOM-010 confirmed it over the whole stream: all 6,364,111,723 records of the September file have exactly two fields and an address first (MEASURED 2026-10-28T15:53Z on a runner, run 40714223764, `docs/research/measure/DOM-010/result.json`).
 Until a mirrored source holds CNAME targets, `GET /v1/cnames/{target}` answers 501 with the reason `unsupported-by-source` (§7.2). DOM-046 takes the first of them that DOM-058 (OpenINTEL's measurement topic) or DOM-047 (its zone Parquet) shows to carry CNAME records (ruling 10, `TODO/RULES.md` §5).
 
 The mirror keeps the CSV as fetched: chunks of at most 4 GiB in package `obs`, each with a sha256, written once per month.
@@ -674,7 +674,7 @@ A merge never removes a record from a promoted tier. A rollback is a new root th
 - Feed rows keep the feed's own date. WhoisDS's file dated D matches ISC's day D-1 at 79.8% for one pair and 66.2% for another, and 0% for the same date (MEASURED 2026-10-27, design B M6).
   The adapter dates a WhoisDS file as D-1.
 - An `oi-nrd` event with a certificate older than 7 days is `suspect`.
-- Name-level newness is censored. A daily THC dump holds the names of certificates issued that day. 86.6% of 2026-10-26's names were absent from the union of four earlier days (design B M2).
+- Name-level newness is censored. A daily THC dump holds the names of certificates issued that day. 86.6% of 2026-10-26's names were absent from the union of four earlier days (design B M2). Against every earlier day of THC's 54 daily dumps, each day from 2026-10-16 to 10-26 still carries 25% to 31% names never seen before (MEASURED 2026-10-28, DOM-009's novelty curve, `docs/research/measure/DOM-009/result.json`).
   A name recurs only at a renewal. Until the corpus holds one validity period (about 200 days [E]), `new` for names carries `censored: true`.
   Domain-level newness from feeds with their own history is not censored.
 - `corroborated` needs two families. Lists derived from one another (hagezi from Stamus) count as one family.
@@ -689,7 +689,7 @@ A merge never removes a record from a promoted tier. A rollback is a new root th
 | Item | Per day | Basis |
 | --- | --- | --- |
 | Actions | $0. 100 to 420 runner-minutes [E] | public repositories are free |
-| GHCR storage and egress | $0. 1.2 to 2 GB net new of derived data and 8 to 14 GB of raw lane [E] | "currently free", with at least a month's notice before a change (READ GitHub's packages billing page via design A §2.2). Raw data is kept always (ruling 5). |
+| GHCR storage and egress | $0. 1.2 to 2 GB net new of derived data [E] and about 12 GB of raw lane (§4.8) | "currently free", with at least a month's notice before a change (READ GitHub's packages billing page via design A §2.2). Raw data is kept always (ruling 5). |
 | Workers | $0 over the $5 monthly plan at 100,000 requests a day [E] | 10 million requests and 30 million CPU-ms are included |
 | R2 | at most 5 GB at $0.015 per GB-month, about $0.075 a month | the cap |
 | Inbound network on runners | THC 0.32 GB, Kafka 10.7 GB on the wire (MEASURED, DOM-004; 28.4 GB once decoded), tiles 1.4 GB | not billed |

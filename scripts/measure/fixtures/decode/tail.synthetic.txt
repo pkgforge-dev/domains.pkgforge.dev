@@ -1,0 +1,103 @@
+{
+    "wallTime": 4,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptName": "domains-probe",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793203200000,
+    "event": {
+        "cron": "* * * * *",
+        "scheduledTime": 1793203200000
+    }
+}
+{
+    "wallTime": 31,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptName": "domains-probe",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793203201000,
+    "event": {
+        "request": {
+            "url": "https://probe.example.test/decode?blocks=1&per=4096&tag=run1.1.0",
+            "method": "GET",
+            "headers": {
+                "accept": "application/json"
+            },
+            "cf": {
+                "colo": "KTM"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 12,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptName": "domains-probe",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793203202000,
+    "event": {
+        "request": {
+            "url": "https://probe.example.test/gaps?hours=1",
+            "method": "GET",
+            "headers": {},
+            "cf": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 58,
+    "cpuTime": 9,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "exception",
+    "scriptName": "domains-probe",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [
+        {
+            "name": "Error",
+            "message": "a message with {braces}, [brackets] and an escaped \"quote\" inside",
+            "timestamp": 1793203203000
+        }
+    ],
+    "logs": [
+        {
+            "message": [
+                "{\"level\":\"error\",\"worker\":\"domains-probe\",\"op\":\"/decode\"}"
+            ],
+            "level": "error",
+            "timestamp": 1793203203000
+        }
+    ],
+    "eventTimestamp": 1793203203000,
+    "event": {
+        "request": {
+            "url": "https://probe.example.test/decode?rows=1000&per=4096&tag=run1.9.0",
+            "method": "GET",
+            "headers": {},
+            "cf": {}
+        },
+        "response": {
+            "status": 500
+        }
+    }
+}

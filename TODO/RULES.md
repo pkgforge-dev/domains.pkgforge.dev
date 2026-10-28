@@ -18,7 +18,7 @@ sessions.
 | | |
 | --- | --- |
 | run the gate | `npm run gate` (`scripts/gate.mjs`) |
-| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `npm run typecheck` (tsc on `tsconfig.json` against Node's types, then on `tsconfig.worker.json` against the Workers runtime's), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
+| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `node scripts/check-workflows.mjs` (every workflow parses as YAML and keeps the 15 rules of DOM-014), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `npm run typecheck` (tsc on `tsconfig.json` against Node's types, then on `tsconfig.worker.json` against the Workers runtime's), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
 | the record | [`PROGRESS.md`](PROGRESS.md) and [`INDEX.md`](INDEX.md) |
 | an entry's status moved | `node scripts/todo/count.mjs --set <ID> <status>` (`--proven` for a closed Prove) |
 | the counts | `node scripts/todo/count.mjs`; ⛔ never retyped |
@@ -256,6 +256,11 @@ where this record holds none, it says so.
     `blocked` on the operator, and every session's end names it in chat. The
     deploys of ruling 14 go ahead; ruling 12 is unchanged. Overturn: the
     operator confirms the rules in chat, and DOM-062 closes on that.
+    Later the same day the operator named the `cf` CLI, whose login holds
+    `zone-waf.read` and `zone-waf.write`. The agent read the rules with it, and
+    the operator applied the host's exclusion from the one rule that covered
+    it, at 2026-10-28T15:53:56Z (DOM-062). Changing a zone security rule stays
+    the operator's act; the agent reads, prepares and validates.
 16. **The `/v1/new` checkpoint is not a stop** (operator, 2026-10-28, choosing
     the recommended option "Keep going"). The session runs the checkpoint
     queries of DOM-032 itself, records their output in the entry for the

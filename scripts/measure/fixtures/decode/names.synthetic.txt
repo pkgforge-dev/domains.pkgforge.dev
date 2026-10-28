@@ -1,0 +1,27 @@
+api.example.com
+API.Example.COM
+*.example.com
+example.com
+example.com.
+www.example.com
+*.www.example.com
+mail.example.com.np
+*.example.com.np
+example.com.np
+shop.example.co.uk
+example.co.uk
+b.example.org
+a.example.org
+a.b.example.org
+xn--bcher-kva.example
+bücher.example
+city.kawasaki.jp
+*.city.kawasaki.jp
+z9-host_1.example.net
+localhost
+bad..name.com
+exa mple.com
+
+*.
+.example.com
+example.com.np

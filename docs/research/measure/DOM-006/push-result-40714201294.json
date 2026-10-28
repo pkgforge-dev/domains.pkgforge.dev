@@ -1,0 +1,204 @@
+{
+  "schema": "domains.measure.push.v1",
+  "entry": "DOM-006",
+  "records": [
+    {
+      "kind": "run",
+      "id": "40714201294",
+      "attempt": "1",
+      "sha": "69eff0d18c8f9048561d03b68e07a029f7cbac77",
+      "ref": "refs/heads/main",
+      "workflow_ref": "pkgforge-dev/domains.pkgforge.dev/.github/workflows/measure-push.yml@refs/heads/main",
+      "repository": "pkgforge-dev/domains.pkgforge.dev",
+      "started_at": "2026-10-28T15:16:18Z",
+      "image": "ubuntu24 20261026.354.1",
+      "oras": "1.3.4",
+      "curl": "8.5.0",
+      "inputs": {
+        "size_mb": 1536,
+        "layers": 0
+      }
+    },
+    {
+      "kind": "existed",
+      "token_status": 200,
+      "status": 404,
+      "present": false,
+      "tags": null
+    },
+    {
+      "kind": "push",
+      "tag": "size-1536m",
+      "mib": 1536,
+      "bytes": 1610612736,
+      "payload_sha256": "sha256:b6c4c4578f29c84a60b264707f8b870476758f4dd37ad7be78a4b01e28e4f2d6",
+      "seconds": 15.823,
+      "rc": 0,
+      "digest": "sha256:080d216a49741b11ee3600577b797526232194a3a75a57214b748d377b872dfc",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "package",
+      "status": 200,
+      "visibility": "public",
+      "repository": "pkgforge-dev/domains.pkgforge.dev",
+      "created_at": "2026-10-28T15:16:41Z",
+      "updated_at": "2026-10-28T15:16:41Z",
+      "message": null
+    },
+    {
+      "kind": "push",
+      "tag": "size-4096m",
+      "mib": 4096,
+      "bytes": 4294967296,
+      "payload_sha256": "sha256:5cbf764b1dea24de5879e0d5e1685346757ddaa4898391529ef6c552da4c8e90",
+      "seconds": 35.385,
+      "rc": 0,
+      "digest": "sha256:cdaa87a5124491a145936809826cfa7f7c38511f5d78fe242d5fedb3d9f7cb4a",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-earlier",
+      "status": "absent",
+      "b_digest": null,
+      "a_digest": null,
+      "run": null,
+      "at": null,
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "a",
+      "payload_sha256": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "seconds": 1.639,
+      "rc": 0,
+      "digest": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "b",
+      "payload_sha256": "sha256:477019c7b7403ca6cf49d9fb6362b15b4cd2dd9e9e216af607c4a28be0d95a7d",
+      "seconds": 1.663,
+      "rc": 0,
+      "digest": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 100,
+      "outcome": "accepted",
+      "seconds": 58.445,
+      "rc": 0,
+      "digest": "sha256:22402e62291127d24b86baaef3368097c1f6f39ae2623b7b2c5607f3db317cbe",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 256,
+      "outcome": "accepted",
+      "seconds": 93.284,
+      "rc": 0,
+      "digest": "sha256:9ecb60a14e2365995563ab0db3fc1e2fc792b278b31bda14ef46a7b90e7e4f7b",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 1000,
+      "outcome": "accepted",
+      "seconds": 404.011,
+      "rc": 0,
+      "digest": "sha256:dbcb9d727f30966206b0d32dcd617b072e71fb79d3fcfcc87b04ad3dde6a3f1e",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "anon",
+      "what": "size-manifest",
+      "ref": "size-1536m",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:080d216a49741b11ee3600577b797526232194a3a75a57214b748d377b872dfc",
+      "layer_digest": "sha256:b6c4c4578f29c84a60b264707f8b870476758f4dd37ad7be78a4b01e28e4f2d6",
+      "layers": 1,
+      "bytes": 720
+    },
+    {
+      "kind": "anon",
+      "what": "size-blob",
+      "ref": "sha256:b6c4c4578f29c84a60b264707f8b870476758f4dd37ad7be78a4b01e28e4f2d6",
+      "status": 307,
+      "via": "qq",
+      "qq_status": 307,
+      "token_status": null,
+      "digest": null,
+      "layer_digest": null,
+      "layers": null,
+      "bytes": null
+    },
+    {
+      "kind": "anon",
+      "what": "size-blob-range",
+      "ref": "sha256:b6c4c4578f29c84a60b264707f8b870476758f4dd37ad7be78a4b01e28e4f2d6",
+      "status": 206,
+      "via": "qq",
+      "qq_status": 206,
+      "token_status": null,
+      "digest": "sha256:8a28adaf4d58925e7a2e38e96244323505cb5cbbf3fa3b7c0931d79aefd260b9",
+      "layer_digest": null,
+      "layers": null,
+      "bytes": 1024
+    },
+    {
+      "kind": "anon",
+      "what": "retag-tag",
+      "ref": "retag",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "layer_digest": "sha256:477019c7b7403ca6cf49d9fb6362b15b4cd2dd9e9e216af607c4a28be0d95a7d",
+      "layers": 1,
+      "bytes": 876
+    },
+    {
+      "kind": "anon",
+      "what": "retag-a-manifest",
+      "ref": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "layer_digest": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "layers": 1,
+      "bytes": 709
+    },
+    {
+      "kind": "anon",
+      "what": "retag-a-blob",
+      "ref": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "layer_digest": null,
+      "layers": null,
+      "bytes": 65536
+    },
+    {
+      "kind": "end",
+      "finished_at": "2026-10-28T15:26:57Z"
+    }
+  ]
+}

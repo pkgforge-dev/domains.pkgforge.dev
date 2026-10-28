@@ -85,6 +85,6 @@ test("probe workerd: a cron with no row in CRONS fails its invocation and writes
     const res = await w.fetch("/");
     assert.equal(res.status, 200);
     const routes = ((await res.json()) as { routes: { path: string }[] }).routes.map((route) => route.path);
-    assert.deepEqual(routes, ["/", "/gaps"]);
+    assert.deepEqual(routes, ["/", "/gaps", "/kafka", "/range", "/decode"]);
   });
 });

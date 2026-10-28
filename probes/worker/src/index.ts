@@ -8,10 +8,14 @@
 //
 // Fetch: the route table ROUTES. GET / lists it; GET /gaps answers DOM-002's result
 // schema over a window of ticks (src/gaps.ts), kept GAPS_MAX_AGE_S seconds in the
-// Cache API. DOM-005 adds /kafka, DOM-007 /range
-// and DOM-008 /decode: each appends one row to ROUTES and puts its handler in a
-// module beside this file. A route answers anyone: the probe holds random bytes and
-// tick records, and no caller is ever asked for a key (AGENTS.md absolute 8).
+// Cache API. Three measurement routes follow, each one row of ROUTES with its
+// handler in a module beside this file: GET /kafka (DOM-005, src/kafka.ts) reads
+// OpenINTEL's Kafka broker over cloudflare:sockets; GET /range (DOM-007,
+// src/range.ts) reads byte ranges of a GHCR blob of this project's own package;
+// GET /decode (DOM-008, src/decode.ts) decodes a sample pack read from the bucket
+// PROBE. None of them touches the cron path or adds a binding. A route answers
+// anyone: the probe holds random bytes, tick records and a sample pack of public
+// names, and no caller is ever asked for a key (AGENTS.md absolute 8).
 import {
   CRONS,
   checkHours,
@@ -37,6 +41,9 @@ import {
   WORKER,
   type CronSpec,
 } from "./gaps.ts";
+import { kafkaRoute } from "./kafka.ts";
+import { rangeRoute } from "./range.ts";
+import { decodeRoute } from "./decode.ts";
 import type { CronController, Env, ProbeBucket, ProbeListOptions } from "./types.ts";
 
 // R2 answers at most 1,000 objects a list call, and fewer when it includes metadata.
@@ -82,6 +89,9 @@ export const ROUTES: readonly Route[] = [
     summary: `DOM-002's result over the first hours=N whole hours of ticks (default ${DEFAULT_HOURS}), from the first tick of the minute cron; ticks=1 adds every tick the result read`,
     handle: gapsRoute,
   },
+  kafkaRoute,
+  rangeRoute,
+  decodeRoute,
 ];
 
 function routeList(): unknown {

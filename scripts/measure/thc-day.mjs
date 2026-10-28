@@ -46,6 +46,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from '../lib/args.mjs';
+import { USER_AGENT } from '../lib/user-agent.mjs';
 import { BlockError, verifyPack, writePack } from './blockenc.mjs';
 import { F64Error, writeF64 } from './f64cmp.mjs';
 import { groupHistogram } from './groups.mjs';
@@ -99,7 +100,7 @@ export async function download({ sources, dest, size = null, timeoutMs = 30 * 60
     const attempt = { source, url_host: new URL(url).host };
     attempts.push(attempt);
     try {
-      const res = await fetch(url, { redirect: 'follow', headers: { 'accept-encoding': 'identity' }, signal: AbortSignal.timeout(timeoutMs) });
+      const res = await fetch(url, { redirect: 'follow', headers: { 'user-agent': USER_AGENT, 'accept-encoding': 'identity' }, signal: AbortSignal.timeout(timeoutMs) });
       attempt.status = res.status;
       attempt.final_host = new URL(res.url).host;
       if (res.status !== 200 || res.body === null) {

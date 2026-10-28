@@ -46,9 +46,10 @@ import { dirname, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from '../lib/args.mjs';
+import { USER_AGENT } from '../lib/user-agent.mjs';
 
 export const SCHEMA = 'dom-012-poll/1';
-export const USER_AGENT = 'domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)';
+export { USER_AGENT };
 export const ISC_BASE = 'https://isc.sans.edu/feeds/';
 export const ISC_LAGS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
 // The file of the current day is an empty JSON array of 55 B (MEASURED

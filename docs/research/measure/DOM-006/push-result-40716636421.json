@@ -1,0 +1,247 @@
+{
+  "schema": "domains.measure.push.v1",
+  "entry": "DOM-006",
+  "records": [
+    {
+      "kind": "run",
+      "id": "40716636421",
+      "attempt": "1",
+      "sha": "306454b6bf16be533327aaa5da32812ae5f021df",
+      "ref": "refs/heads/main",
+      "workflow_ref": "pkgforge-dev/domains.pkgforge.dev/.github/workflows/measure-push.yml@refs/heads/main",
+      "repository": "pkgforge-dev/domains.pkgforge.dev",
+      "started_at": "2026-10-28T15:30:38Z",
+      "image": "ubuntu24 20261026.354.1",
+      "oras": "1.3.4",
+      "curl": "8.5.0",
+      "inputs": {
+        "size_mb": 1536,
+        "layers": 0
+      }
+    },
+    {
+      "kind": "existed",
+      "token_status": 200,
+      "status": 200,
+      "present": true,
+      "tags": 6
+    },
+    {
+      "kind": "push",
+      "tag": "size-1536m",
+      "mib": 1536,
+      "bytes": 1610612736,
+      "payload_sha256": "sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3",
+      "seconds": 20.252,
+      "rc": 0,
+      "digest": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "package",
+      "status": 200,
+      "visibility": "public",
+      "repository": "pkgforge-dev/domains.pkgforge.dev",
+      "created_at": "2026-10-28T15:16:41Z",
+      "updated_at": "2026-10-28T15:31:06Z",
+      "message": null
+    },
+    {
+      "kind": "push",
+      "tag": "size-4096m",
+      "mib": 4096,
+      "bytes": 4294967296,
+      "payload_sha256": "sha256:aee1a055d79c99c1e5144ce998629f473d27e6b9953c3d2491dbd3d5c89c5573",
+      "seconds": 67.685,
+      "rc": 0,
+      "digest": "sha256:25c98276d494a703e2178f3139d7b84a00833259163a6ddf9fa3dca5acf9372c",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-earlier",
+      "status": "present",
+      "b_digest": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "a_digest": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "run": "40714201294",
+      "at": "2026-10-28T15:17:39Z",
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "a",
+      "payload_sha256": "sha256:374c9f54a0ef5927e402795a25abb327702b2fc5049fd477f07e73e403004352",
+      "seconds": 1.879,
+      "rc": 0,
+      "digest": "sha256:0ba3400d1616aa94953eaa8fa044af08bbc09d0b786773bcfc1f8672376744ad",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "b",
+      "payload_sha256": "sha256:99639e2840c861b30254761bec4eb71abfd821e89f7932ff3c650c91bb95a817",
+      "seconds": 1.876,
+      "rc": 0,
+      "digest": "sha256:5fe7d8b7d9c236138e22cb803736bd2d06e3750aba4ffcbce5ea9aadfeb41806",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 100,
+      "outcome": "accepted",
+      "seconds": 64.392,
+      "rc": 0,
+      "digest": "sha256:07a650def71d1e0bd0a5e58568c47e917ce848780c6dc0b589e40f2cdf1e187b",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 256,
+      "outcome": "accepted",
+      "seconds": 102.284,
+      "rc": 0,
+      "digest": "sha256:c9d9047781c06c845722caa10a8123e5a5715d0c73bb67fb89ba24b01af87fc5",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 1000,
+      "outcome": "timeout",
+      "seconds": 480.005,
+      "rc": 124,
+      "digest": null,
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers-stop",
+      "reason": "layers-1000 ended timeout"
+    },
+    {
+      "kind": "anon",
+      "what": "size-manifest",
+      "ref": "size-1536m",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "layer_digest": "sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3",
+      "layers": 1,
+      "bytes": 720
+    },
+    {
+      "kind": "anon",
+      "what": "size-blob",
+      "ref": "sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3",
+      "status": 307,
+      "via": "qq",
+      "qq_status": 307,
+      "token_status": null,
+      "digest": null,
+      "layer_digest": null,
+      "layers": null,
+      "bytes": null
+    },
+    {
+      "kind": "anon",
+      "what": "size-blob-range",
+      "ref": "sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3",
+      "status": 206,
+      "via": "qq",
+      "qq_status": 206,
+      "token_status": null,
+      "digest": "sha256:8b52487a73c2c886bb280f44af38a7fdea9ef758eb60f9683a7d9ea8d5e8269f",
+      "layer_digest": null,
+      "layers": null,
+      "bytes": 1024
+    },
+    {
+      "kind": "anon",
+      "what": "retag-tag",
+      "ref": "retag",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:5fe7d8b7d9c236138e22cb803736bd2d06e3750aba4ffcbce5ea9aadfeb41806",
+      "layer_digest": "sha256:99639e2840c861b30254761bec4eb71abfd821e89f7932ff3c650c91bb95a817",
+      "layers": 1,
+      "bytes": 876
+    },
+    {
+      "kind": "anon",
+      "what": "retag-a-manifest",
+      "ref": "sha256:0ba3400d1616aa94953eaa8fa044af08bbc09d0b786773bcfc1f8672376744ad",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:0ba3400d1616aa94953eaa8fa044af08bbc09d0b786773bcfc1f8672376744ad",
+      "layer_digest": "sha256:374c9f54a0ef5927e402795a25abb327702b2fc5049fd477f07e73e403004352",
+      "layers": 1,
+      "bytes": 709
+    },
+    {
+      "kind": "anon",
+      "what": "retag-a-blob",
+      "ref": "sha256:374c9f54a0ef5927e402795a25abb327702b2fc5049fd477f07e73e403004352",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:374c9f54a0ef5927e402795a25abb327702b2fc5049fd477f07e73e403004352",
+      "layer_digest": null,
+      "layers": null,
+      "bytes": 65536
+    },
+    {
+      "kind": "anon",
+      "what": "earlier-b-manifest",
+      "ref": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "layer_digest": "sha256:477019c7b7403ca6cf49d9fb6362b15b4cd2dd9e9e216af607c4a28be0d95a7d",
+      "layers": 1,
+      "bytes": 876
+    },
+    {
+      "kind": "anon",
+      "what": "earlier-a-manifest",
+      "ref": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "layer_digest": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "layers": 1,
+      "bytes": 709
+    },
+    {
+      "kind": "anon",
+      "what": "earlier-a-blob",
+      "ref": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "status": 200,
+      "via": "qq",
+      "qq_status": 200,
+      "token_status": null,
+      "digest": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894",
+      "layer_digest": null,
+      "layers": null,
+      "bytes": 65536
+    },
+    {
+      "kind": "end",
+      "finished_at": "2026-10-28T15:43:27Z"
+    }
+  ]
+}

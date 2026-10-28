@@ -82,6 +82,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `curl -sS -o /dev/null -w '%{http_code} %{time_total}\n' 'https://domains.pkgforge.dev/v1/new?since=40d'` prints `400` (`window-too-large`).
   - `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1d&suffix=com.np&format=csv&limit=3'` prints three CSV rows with a header line.
   - `node scripts/test.mjs apps/api --name "new"` passes.
+- **Found 2026-10-28T23:38Z (DOM-015):** `isPublicSuffix` of `packages/names` follows the list's algorithm, so under the implicit rule `*` any single label is a public suffix, `zz` included. For `suffix=zz` to answer 400 `unknown-suffix`, this entry checks the list's explicit rules as well, a check the package does not offer yet.
 
 ## DOM-033 — /v1/domain, /v1/sources, /v1/status and /v1/coverage
 
@@ -301,7 +302,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
 
 ## DOM-062 — Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev
 
-- **Status:** blocked
+- **Status:** open
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator's rulings 12 (2026-10-27) and 15 (2026-10-28) of `TODO/RULES.md` section 5. Split out of DOM-030's Operator line, so the deploys of ruling 14 go ahead while the check stays the operator's.
@@ -311,6 +312,13 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - The operator ruled on 2026-10-28 that the check is the operator's final decision, kept blocked, and named loudly at every session end (ruling 15).
 - **Approach:** the operator opens the dashboard (`pkgforge.dev`, Security, WAF, Rate limiting rules) and either confirms that no rule matches the host `domains.pkgforge.dev`, or adds the host to an exclusion of each rule that would. The session records the answer here, with the date, and closes the entry. A burst of the deployed Worker that gets no 429 is supporting evidence only: a rule with a higher threshold would not fire on it.
 - **Decision:** a separate blocked entry, not a blocked DOM-030. DOM-030 and every route behind it are built, deployed and driven under ruling 14; only the zone's rules wait for the operator.
-- **Blocked:** the operator must read the zone's rate-limiting rules in the Cloudflare dashboard (the login on this machine has no WAF scope) and say in chat that none covers `domains.pkgforge.dev`, or that the host is excluded.
 - **Depends on:** DOM-030
 - **Prove:** the operator's confirmation is recorded here with its date, and `node scripts/measure/range-load.mjs --url https://domains.pkgforge.dev/healthz --rps 100 --seconds 60 --mode warm --expect 200` (DOM-007's load tool) reports zero 429 answers.
+- **Correction 2026-10-28T15:36Z:** the premise said the agent cannot list the zone's rate-limiting rules. The operator named a second CLI on 2026-10-28 ("please use `cf` cli"). `cf auth whoami` (cf 1.0.0-beta.20) names the same account, and its OAuth scopes include `zone-waf.read` and `zone-waf.write`. So the agent read the rules itself.
+  - MEASURED 2026-10-28T15:34:55Z, `cf rulesets entrypoint get http_ratelimit -z pkgforge.dev`: the zone's rate-limit ruleset (version 21, last updated 2025-01-28T18:30:47Z) holds one rule, `200req/Second`, enabled, action `block`. Its expression matches every path except those that start with `/bincache`, `/pkgcache` or `/v2`, or contain `pkgforge`. It does not test the host. Its limit is 2,000 requests in 10 s per source address and colo, with a 10 s block.
+  - So the rule covers `domains.pkgforge.dev`: a caller above 200 requests a second from one address would be blocked at the edge before the Worker runs. Ruling 12 says no rule may cover the host.
+  - The same reading of `http_request_firewall_custom` holds one rule, disabled, which names only web.pkgforge.dev's hosts. It does not touch `domains.pkgforge.dev`.
+  - The fix appends `and not (http.host eq "domains.pkgforge.dev")` to that rule's expression and changes nothing else. `cf rulesets rules update <rule> -z pkgforge.dev --ruleset-id <ruleset> --body <the rule with that expression> --validate-only` exits 0 at 2026-10-28T15:36Z. A re-read shows version 21 with the expression unchanged, so the validation changed nothing.
+- **Correction 2026-10-28T15:55Z:** the operator applied the exclusion. They ran the PowerShell form of the command in `TODO/PROGRESS.md` (validated first by the agent with `--validate-only`, exit 0) at 2026-10-28T15:53:56Z, and pasted its answer in chat: the ruleset's version 22.
+  - MEASURED 2026-10-28T15:55:16Z, `cf rulesets entrypoint get http_ratelimit -z pkgforge.dev`: version 22, last updated 2026-10-28T15:53:56.147631Z, one rule. `200req/Second` is enabled, action `block`, 2,000 requests in 10 s, and its expression ends with `and not (http.host eq "domains.pkgforge.dev")`. Nothing else in the rule changed.
+  - So no rate-limit rule of the zone covers the host, and the operator's half of the Prove is done. The entry is no longer blocked. The other half, the load of the deployed Worker with zero 429 answers, runs once DOM-030 is live.

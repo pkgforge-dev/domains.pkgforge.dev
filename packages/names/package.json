@@ -1,0 +1,11 @@
+{
+  "name": "@domains/names",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "One name for every adapter: normalisation, the Public Suffix List split into suffix, registrable domain and site, and reversed keys. Runs in Node and in workerd alike.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

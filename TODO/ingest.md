@@ -72,7 +72,8 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 
 ## DOM-005 — Measure Kafka from a Worker connect()
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-30T16:00:00Z; deploy the probe routes with `versions upload` and `versions deploy`, run `node scripts/measure/kafka-worker.mjs --url "$PROBE_URL" --minutes 10 --verdict` and record whether the tail carries `cpuTime`, then after DOM-002 sets `crons = []` run the `--sweep`, record the verdict, redeploy without `/kafka`, and close
 - **Priority:** P1
 - **Effort:** S
 - **Source:** design B section 11 Phase 0 item 4; the clock alternative in docs/architecture.md section 5.2.
@@ -93,11 +94,62 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 - **Prove:** `node scripts/measure/kafka-worker.mjs --url "$PROBE_URL" --minutes 10 --verdict` prints `PASS` when the socket opens, the stream decodes with no failure and the CPU per 1,000 messages is at most 50 ms, and `FAIL` with the reason otherwise.
   - Result file `docs/research/measure/DOM-005/result.json`.
 - **Found 2026-10-28T15:04Z (DOM-004):** the snappy decoder to port is `scripts/measure/snappy.mjs`, a hardened copy of design A's that takes and returns `Uint8Array` and uses no Node API. It decodes Kafka's xerial framing, which the recorded `certstream_domains` batch of 2026-10-28T10:40:45Z uses. The NRD topics are not compressed. The recorded `newly_registered_domain` batches have codec none and one record each (`scripts/measure/fixtures/kafka/`), and a live read of all three topics at 2026-10-28T15:00:39Z to 15:00:41Z found the same (DOM-004's Corrections). So the route must decode codec none as well as snappy, and the measurement must report the CPU per 1,000 messages for each topic, because only `certstream_domains` pays for a decompression. `scripts/measure/kafka-protocol.mjs` checks the CRC-32C of each batch before it decompresses it, and the route can port that check with the decoder.
+- **Built 2026-10-28T23:38Z:**
+  - `probes/worker/src/kafka.ts` exports `kafkaRoute` (GET `/kafka`), `makeKafkaRoute({hostname, port, connect, limits, log})`, `LIMITS` and `DEFINITIONS`.
+  - `probes/worker/src/kafka-protocol.ts` (ApiVersions v0, ListOffsets v1, Fetch v4, CRC-32C, the batch split and decode) and `probes/worker/src/snappy.ts` are `Uint8Array` and `DataView` ports of `scripts/measure/kafka-protocol.mjs` and `snappy.mjs`, with no Node API. `src/kafka-protocol.test.ts` holds each port equal to its script: the same request bytes, parses, decodes and refusals. gzip and zstd are refused as kind `codec`.
+  - `probes/worker/test/kafka-entry.ts` is a test-only Worker that serves only `/kafka`. Its workerd test runs the production `connect` (`cloudflare:sockets`) over TCP to the fake broker on 127.0.0.1.
+  - `scripts/measure/kafka-worker.mjs` runs the Prove.
+  - `src/index.ts` gains one `ROUTES` row and its import. The cron path, `/gaps`, `gaps.ts` and `wrangler.toml` are untouched.
+- **The route 2026-10-28T23:38Z:**
+  - **Query.** `topic` and `offset` are required. `offset` is a number, `earliest`, `latest`, `latest-N` (clamped at the earliest) or a UTC time. Optional parameters:
+    - `max_bytes`: default 1 MiB, cap 64 MiB;
+    - `partition`: default 0;
+    - `max_wait_ms`: default 500, cap 10,000;
+    - `sockets`: 1 to 6, opened at once, each sending ApiVersions; the Fetch goes over the first that answered;
+    - `call`: a label echoed back, so a call can be joined to its tail event.
+  - **Caps.** A Fetch frame holds at most `max_bytes` + 2 MiB, any other frame at most 1 MiB. A socket gets 10 s to open, and the whole call 30 s of wall time.
+  - **Answer.** `{messages, bytes, next_offset, decode_ms}`, with wire and raw bytes, batches by codec, failed batches by kind, `high_watermark`, `lag`, the sockets asked, opened and failed, and the milliseconds of each stage.
+  - **Status.** A bad query answers 400. `OFFSET_OUT_OF_RANGE` answers 416, `UNKNOWN_TOPIC_OR_PARTITION` 404, any other broker error, protocol fault or socket failure 502, and a cap 504. Every 5xx logs one JSON line.
+- **Correction 2026-10-28T23:38Z (the clock):** READ 2026-10-28T16:04Z, `https://developers.cloudflare.com/workers/runtime-apis/performance/`: deployed, `Date.now()` and `performance.now()` advance only after I/O; in local development they advance regardless. MEASURED 2026-10-28T16:03Z under Miniflare (workerd 1.20261006.1): `decode_ms` read 2 for two snappy batches. So a local `decode_ms` is a real clock reading. Deployed, it is expected to read 0, which has not yet been seen live. The CPU figure has to come from Cloudflare.
+- **Correction 2026-10-28T23:38Z (the CPU source, not verified):** the Prove reads `cpuTime` from `wrangler tail --format json`. READ 2026-10-28, `https://developers.cloudflare.com/workers/observability/logs/real-time-logs/`: the page's sample of `wrangler tail` output has no `cpuTime` or `wallTime`.
+  - `@cloudflare/workers-types` 5.20261013.1 declares both on `TraceItem` (`index.d.ts` line 3282).
+  - wrangler 4.150.0 prints each tail message with `JSON.stringify(data, null, 4)`, so it passes the field through if the stream has one.
+  - Without it, the verdict prints `FAIL no CPU figure` and never guesses. The fallbacks, in order:
+    - the dashboard's Workers Logs (`$workers.cpuTimeMs`) for the run's call labels;
+    - a Tail Worker;
+    - DOM-008's `[limits] cpu_ms` deployments.
+    The last two change `wrangler.toml`, so they wait for DOM-002's window.
+- **Correction 2026-10-28T23:38Z (the statistic):** the Prove says CPU per 1,000 messages without naming the calls it is computed over. As built, the verdict judges, per topic, the sum of `cpuTime` over the full calls divided by their messages, times 1,000. A full call has `lag > 0` after it: it ended before the head, at `max_bytes` or at a segment end.
+  - `result.json` also records p50, p99 and max per full call, the same sum over every call (`all_per_1000_ms`), and the CPU of empty calls (`empty_call_cpu_ms`, the fixed cost of one invocation).
+  - The reason: at the head, an NRD call reads the few messages since the last one, so its CPU per message measures invocation overhead, not decoding.
+  - The figure covers the socket I/O, the frame read, CRC-32C, the decode, the record framing and the JSON answer. It does not cover `JSON.parse` of the values or any packing, which DOM-025 adds.
+- **MEASURED 2026-10-28T16:01:44Z to 16:01:49Z (the port against the real broker, in Node, not a Worker):** `makeKafkaRoute` from `kafka.ts`, through a Node `net` socket adapter, ran from the operator's workstation against `kafka.zonestream.openintel.nl:9092`. All four topics answered 200 with 0 failed batches and 2 of 2 sockets open.
+  - `certstream_domains` `offset=latest-5000`, `max_bytes=1048576`, `sockets=2`: 5,341 messages in 66 snappy batches, frame 647,447 B, raw 1,713,001 B.
+  - `newly_registered_domain` from now - 1 h at 65,536 B: 302 messages in 302 codec-none batches, `lag > 0`.
+  - `newly_registered_fqdn` and `confirmed_newly_registered_domain` at `latest-200`: 200 and 202 messages, codec none.
+  - So the port decodes the broker's xerial snappy and codec-none batches.
+- **MEASURED 2026-10-28T23:38Z (the Workers plan):** `cf accounts subscriptions get` lists Workers Paid (`workers_paid`, state Paid) on the account that holds the `pkgforge.dev` zone. So the 10 ms CPU limit of Workers Free (DOM-002's Found) does not apply to the probe.
+- **Correction 2026-10-28T23:38Z (deploy and schedule):**
+  - **The deploy.** During DOM-002's 48 hours, the probe is redeployed with `cd probes/worker && npx wrangler@4.150.0 versions upload`, then `npx wrangler@4.150.0 versions deploy VERSION_ID@100% --yes`, not `wrangler deploy`. `versions deploy` leaves the cron triggers as they are. The deploy time goes in DOM-002.
+  - **The sweep.** The memory sweep (`max_bytes` 1 to 64 MiB) runs only with `--sweep`, and only after DOM-002 has set `crons = []`. The 10-minute loop can run before then.
+  - **The close.** When `result.json` is committed, the probe is redeployed without the `kafkaRoute` row, so `/kafka` does not stay a public route until DOM-056 deletes the probe.
+- **Prove as it stands 2026-10-28T23:38Z:**
+  - `node scripts/measure/kafka-worker.mjs --url "$PROBE_URL" --minutes 10 --verdict` does, in order:
+    - checks that `GET $PROBE_URL/` lists `/kafka`;
+    - starts the pinned wrangler's `tail domains-probe --format json` and waits for its ready marker;
+    - makes one `sockets=2` and one `sockets=6` call;
+    - loops 10 minutes round-robin over `certstream_domains` from now - 15 min and the three NRD topics from now - 24 h, each call resuming at `next_offset`;
+    - joins each tail event to its call by the `call` label.
+  - It exits 0 PASS, 1 FAIL or 2 when it cannot run, and writes `docs/research/measure/DOM-005/result.json` with no URL, no address and no raw tail event. `--verdict FILE` re-judges a committed file and refuses one whose summary differs from its calls.
+  - Offline, `node scripts/test.mjs probes/worker --name kafka` and `node scripts/test.mjs scripts/measure --name "kafka worker"` exit 0. They run 22 route tests, the protocol ports, and 12 script tests. The script tests cover the CPU rule at exactly 50 ms (pass), 50.001 and 75 (fail), and a call with no tail event.
+  - Gate part (c): the wave's three lenses. The door sweep made the sweep opt-in. The guard mutation pinned `LIMITS` with literals and covered:
+    - oversize frames;
+    - declared sizes of 0, 2 and -5;
+    - answers without the asked partition.
 
 ## DOM-009 — Measure the THC daily job and the 54-day backfill
 
-- **Status:** partial
-- **Waiting:** until 2026-10-28T20:00:00Z; dispatch measure-thc-day.yml for one day, then the 54-day matrix, read the merge job's verdict, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 11 Phase 0 items 3 and 7; design B section 11 Phase 0 item 5. The sizes in docs/architecture.md section 4.8 and the ledger sizing of DOM-021 are estimates until this entry replaces them.
@@ -143,11 +195,22 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 - **Correction 2026-10-28T14:31Z:** design B M2 reads that 41% of registrable domains have exactly one name. The stat's `groups` holds 68.5%: 7,647,793 of 11,162,627. Design B's `groups.mjs` counted the rows of the sorted record file, where a name seen plain and as a wildcard is two rows, and it grouped consecutive keys, which splits a domain whenever a sibling such as `com.example-x` sorts inside it (READ `docs/research/2026-10-27-design-b/scripts/groups.mjs`). `scripts/measure/groups.mjs` counts one record a name and groups the sorted hashes of each name's domain. The share of names in the 25 largest domains agrees: 35.1% in the stat, 35% in design B. The 23 domains with 100,000 names or more hold 34.6%. The largest are `aws.dev` with 1,912,769 names and `amazonaws.com` with 1,857,508.
 - **Correction 2026-10-28T15:04Z:** the Approach planned two jobs, a whole hash file of every name of every day, and up to 20 legs at once. Whole hash files of the 54 days are about 29 GB for the names alone [E]: the listing's 35,765,972,194 B of gzip at the 32,554,702 names in the 319,917,410 B of 2026-10-26, 8 B a name (the header of `scripts/measure/thc-union.mjs`). The job `merge` reads every leg's files. 29 GB is more than the 14 GB of disk that a job is guaranteed, although a runner had about 87 GB free in practice (DOM-042's premise). It is also about 29 GB of artifacts a run. So each leg keeps a 1-in-16 sample of its hashes, the union counts are estimates with their error stated, and the counts of one day stay exact. The job `plan` reads the listing and the PSL once for every leg, and the matrix runs 6 legs at once. The Approach now says so.
 - **Correction 2026-10-28T14:31Z:** the Prove read "one day takes under 30 minutes". `verdict()` in `scripts/measure/thc-day.mjs` judges every day of the result, so the slowest day decides, and a day that was not measured on a runner or did not verify fails it. The second Prove line ran `gh workflow run` alone, which prints no run id and ends before the run does. It now finds the run, watches it, and downloads `thc-result` with `--name` into `docs/research/measure/DOM-009/`, the path the verdict reads.
+- **Closed 2026-10-28T21:46Z (proven):** both runs of `measure-thc-day.yml` passed on commit 69eff0d18c8f9048561d03b68e07a029f7cbac77, on ubuntu-24.04 runners.
+  - The one day, run 40714214586 (2026-10-28T15:16:09Z to 15:19:29Z): 2026-10-26 from cs2 in 145.953 s of wall time with its download, peak RSS 4,850 MiB, 32,554,702 names, 6.039 B a name. Its verdict printed `PASS`.
+  - The matrix, run 40714899126 (2026-10-28T15:20:13Z to 16:15:07Z): 54 legs from Hugging Face, at most 6 at once, and the job `merge`. `gh run download 40714899126 --name thc-result --dir docs/research/measure/DOM-009` gave `docs/research/measure/DOM-009/result.json`, and `node scripts/measure/thc-day.mjs --verdict docs/research/measure/DOM-009/result.json` exits 0. It prints 54 day lines, the novelty curve and:
+
+        union days=54 first=2026-09-01 last=2026-10-26 gaps=2026-10-04,2026-10-09 distinct_names_54d=1397383552 distinct_registrable_54d=288022432 bytes_per_name=5.482
+        slowest 2026-09-20 589.677s
+        PASS
+
+  - So the slowest day, 2026-09-20, takes 9.8 minutes with its download, a third of the 30-minute rule. September's days are the large ones: 2026-09-01 holds 103,160,790 names against 32,554,702 on 2026-10-26. The download is the stage that varies most, from 15 s to 245 s for days of a like size. Peak RSS reached about 8,000 MiB on September's days.
+  - The two union counts are estimates from 1-in-16 hash samples, scaled by the exact day counts: 1,397,383,552 names (relative standard error 0.000104, about 108 expected hash collisions) and 288,022,432 registrable domains (0.000228, about 5).
+  - The novelty curve: each day from 2026-10-16 to 10-26 still carries 25% to 31% names absent from every earlier day of the span (0.2491 to 0.3083), and 6% to 8% new registrable domains. After 54 days the share has not fallen toward zero, so name-level newness stays censored, as `docs/architecture.md` section 9 says.
+  - Gate part (b) is the runs and their artifact read above; part (c) is the wave's three lenses, which ran on this entry's workflow and scripts before the commit.
 
 ## DOM-010 — Measure THC's monthly database: columns, CNAMEs and stream speed
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T04:00:00Z; dispatch measure-thc-monthly.yml, read its result.json and the cnames verdict, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator's ruling 7 of 2026-10-27: reverse IP and CNAME answers come from THC's data mirrored in GHCR, "not direct to thc itself"; and its rider that this entry measures the columns and whether the dump carries CNAME targets.
@@ -185,10 +248,29 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
   - The workflow runs the same tests on the runner with the awk it measures with. Only there do the CR case and the live child-CPU reads from `/proc` run. The test of the `/proc` parser runs on this machine too. Not measured on a runner yet: mawk's speed, the CPU split on Linux, and the speed of either pass. Waiting for the push to `main`: the dispatch, a run of up to 6 hours, the download of `result`, the verdict, the whole-stream verdict for `docs/architecture.md` and `docs/sources.md`, and the speeds for DOM-042 and DOM-043.
 - **Correction 2026-10-28T14:34Z:** the Prove named two verdict lines, `cnames: absent` and `cnames: present`, and exit 0 when the stream ended without a gzip error. `verdictOf()` in `scripts/measure/thc-monthly.mjs` claims `absent` only over a whole stream that ended complete with gzip exit 0 and awk exit 0. Over a cut stream or a range read it prints `cnames: unknown`, because `absent` there would be a guess. Its exit 0 also needs awk exit 0, the network pass's sha256 equal to the stream's, and the head pass read in full. The Prove now names the third line, the whole exit rule and the download with `--name result`.
 - **Correction 2026-10-28T14:34Z:** the Approach measured the download speed on the stream through gzip and awk. A pipe carries back-pressure, so that stream moves at the speed of its slowest stage, and its first 2 GB measure gzip and awk as much as the network. The script reads the whole CSV once more with no decompression for the network's own speed, and the verdict fails when the two passes read different bytes. So a run downloads the 37,046,639,482 B twice, unless it is dispatched with `-f network_pass=false`, which leaves DOM-042 only the pipeline speed. The Approach now says so. The review of the build also found that the inputs `csv_url` and `head_url` admitted any https host; the Measure step now refuses a URL that does not start with `https://huggingface.co/` (`.github/workflows/measure-thc-monthly.yml`).
+- **Closed 2026-10-28T21:46Z (proven):** `measure-thc-monthly.yml` run 40714223764 on commit 69eff0d18c8f9048561d03b68e07a029f7cbac77 passed (2026-10-28T15:16:12Z to 15:53:53Z). `gh run download 40714223764 --name result --dir docs/research/measure/DOM-010` gave `docs/research/measure/DOM-010/result.json`, and `node scripts/measure/thc-monthly.mjs --verdict docs/research/measure/DOM-010/result.json` exits 0. It prints, among its lines:
+
+        stream: complete, 37,046,639,482 B of 37,046,639,482 B, sha256 c6871ad14e6210a1f389eded64a9913ed998f624242adfe10c074f3dcaf8b24e
+        gzip: exit 0 (ok)
+        awk: exit 0 (mawk 1.3.4 20240123)
+        records: 6,364,111,723
+        fields: 2=6,364,111,723
+        ipv4 6,339,801,095, ipv6 24,310,628, not an address 0, family runs 93,473
+        records against the page's 6.36 billion: ratio 1.001
+        stream (compressed, through gzip and awk): 37,046,639,482 B in 1969.89 s, 18.806 MB/s; first 2 GB 17.972 MB/s; first byte after 1.243 s; 0 resumes
+        stream (uncompressed): 258,058,294,036 B, 131 MB/s, 3,230,665 records/s
+        cpu: gzip 890.17 s (0.452), awk 1936.73 s (0.983), curl 36.94 s (0.019), node 187.19 s (0.095)
+        network (no decompression): 37,046,639,482 B in 260.844 s, 142.026 MB/s; first 2 GB 132.615 MB/s; first byte after 0.906 s; 0 resumes
+        cnames: absent
+
+  - So every one of the 6,364,111,723 records of the September file has exactly two fields and an address first: the monthly database carries no CNAME targets. `docs/architecture.md` and the `thc-rdns` row of `docs/sources.md` now say so with this run.
+  - A runner downloads the 37 GB file in 261 s (142 MB/s). Through gzip and awk the same bytes take 1,970 s, and awk is the bound: 0.983 of a core against gzip's 0.452. The network pass read the same sha256 as the stream.
+  - Gate part (b) is the run and its artifact read above; part (c) is the wave's three lenses, which ran on this entry's workflow and script before the commit.
 
 ## DOM-011 — Measure names-tile availability per log, Geomys's window and the overlap
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-30T02:00:00Z; dispatch `measure-tiles.yml` once on main with `-f until=` 24 hours ahead and record both instants here, check the successor starts, read the first run's overlap artifact, and after `until` and the last run run `node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json`, commit `result.json` and `runs/`, write the table and the reliable set here and in DOM-037, and close
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 3.1 and section 11 Phase 0 item 2; `docs/research/web-pkgforge-2026-10-27/ct.md` section 4; the findings of 2026-10-27T08:23Z to 08:25Z recorded below.
@@ -241,6 +323,56 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
   - `node scripts/measure/tiles-window.mjs --log tuscolo2027h1 --from 2026-10-26T12:00:00Z --to 2026-10-26T12:05:00Z` prints the entry and name counts.
 - **Found 2026-10-28T14:36Z (DOM-004, DOM-009):** the Overlap bullet reads DOM-004's Kafka window of the same minutes, 2026-10-26T12:00:00Z to 12:05:00Z. That window has left the topic: at 2026-10-28T14:22:26Z `certstream_domains` kept messages back to 2026-10-27T14:10:34Z, about 24.2 hours (`node scripts/measure/kafkaprobe.mjs`). So the overlap must take one window inside the Kafka retention, read the same minutes from the four logs, and compare them with THC's dump of that day, which appears at about 00:05 UTC on the next day. `scripts/measure/kafka-window.mjs T0 T1 NAME --data DIR` reads such a window. Two functions named `h53` now exist: `kafka-window.mjs` keeps design A's hash over the name, and `scripts/measure/f64cmp.mjs` adds a murmur3 finaliser, which DOM-009 takes over the reversed key. A hash file of one does not compare with a hash file of the other. DOM-009's per-day files are also 1-in-16 samples, kept 1 day. So the overlap hashes every set with one function, and it hashes THC's dump of the window's day itself.
 - **Found 2026-10-28T15:04Z (DOM-012):** "The sample clock" gives one job `measure-chain` that holds `actions: write` while it loops and reads the CT logs. DOM-012 builds its chain with two jobs a run (`.github/workflows/measure-feeds.yml`). Its `measure-chain` holds `actions: write` and only dispatches the successor, and its job `poll` reads the outside hosts with `contents: read`. So the token that can dispatch a run never reaches a step that reads an outside host. Its dispatch step starts no successor on a re-run (attempt 2 or more), while another run of main waits, or when the workflow's state is not `active`, so a second dispatch never forks the chain. `scripts/measure/feed-chain.test.mjs` runs that step under bash with a fake `gh`. `measure-tiles.yml` must take the same two jobs, the same guards and an artifact name per attempt, or this entry must say why one job is enough.
+- **Built 2026-10-28T23:38Z:** `.github/workflows/measure-tiles.yml` and the scripts `ct-logs.mjs`, `ct-tiles.mjs` (the shared client), `ct-rates.mjs`, `ct-window.mjs`, `tiles-probe.mjs`, `first-names-tile.mjs`, `tiles-availability.mjs` and `tiles-window.mjs` under `scripts/measure/`, each with its test.
+  - **Jobs.** The workflow has three jobs, where the Approach has one.
+    - `measure-chain` (`actions: write`, `contents: read`) runs only DOM-012's successor step with its guards.
+    - `rounds` (`contents: read`, 350 min) runs `tiles-availability.mjs` with `--start` at the job's own start, `--for-min 340`, `--interval-min 30` and `--until`.
+    - `overlap` (`contents: read`, 240 min) runs `tiles-window.mjs --overlap`, then the Geomys window, then `ct-rates.mjs --gap-s 600`.
+    - Every job carries `if: github.ref == 'refs/heads/main'`. The download lists runs with `--branch main` and refuses any run that is not a `workflow_dispatch` on main.
+  - **Artifacts.** They are named per attempt, `tiles-rounds-RUN-ATTEMPT` and `tiles-overlap-RUN-ATTEMPT`. The rounds stop at `until`, so the chain ends there. The run after `until` starts no successor and takes no round, but it still reads the Geomys window and the rates, about 12 minutes.
+  - **The overlap window.**
+    - Picked at run time as `ceil5(now - 22 h)`, which leaves 2 h of margin inside Kafka's retention of about 24.2 h.
+    - A window within 30 min of either end of its UTC day, or on the pick's own day, is skipped, and the file says why.
+    - A Kafka window whose first message is more than 120 s after its start, or whose last is more than 120 s before its end, is marked cut and left out of the matrix.
+    - THC's day is awaited up to 120 min and streamed once. Every set is hashed with `ct-window.mjs` `hashName` (h53 over the UTF-8 bytes, one trailing CR dropped, ASCII lowered, a leading `*.` dropped).
+  - **The verdict.** A slot is a half hour from the first round, and PASS needs at least 44 of the 48 slots.
+    - Geomys's checkpoint, tile 0 and tail must answer 200 in every round, with no 429. A partial tile may answer 404: the static CT API lets a log drop one.
+    - Reliable means a log in state usable whose checkpoint and tail answered 200 in every round.
+    - PASS needs two conditions beyond the Prove's three: one whole Geomys window read with no 429, and one whole overlap window (all four families whole, Kafka not cut, THC read).
+    - The 24 hours are complete when a job stopped at `until`, or 6 h after the window ends. An incomplete window is printed and not written.
+- **MEASURED 2026-10-28T15:34:22Z (Premise, the log list):** `https://www.gstatic.com/ct/log_list/v3/log_list.json`, 62,375 B, version 95.15, `log_list_timestamp` 2026-10-28T13:37:58Z. It lists 59 tiled logs, 22 usable and 37 qualified. Beside the four operators it lists tiled logs of:
+  - Google (ParcelYard, PlumbersArms; usable);
+  - TrustAsia (Luoshu2027; usable);
+  - Sectigo (Monument, Statue; qualified);
+  - Geomys Trastevere, HARICA Selene, Microsec Eszigno and GoDaddy Aquamarine (all qualified);
+  - qualified 2028 shards of Let's Encrypt, Geomys and IPng.
+  Each round probes every tiled log in state usable or qualified, not only the four operators.
+- **MEASURED 2026-10-28T15:46:31Z to 15:46:53Z (one round, `node scripts/measure/tiles-availability.mjs --once`):** 59 logs, 282 requests, 275 answered, no 429.
+  - Tile 0, the last full tile and the partial tile answer 200 for every shard of Let's Encrypt Sycamore and Willow, Geomys Tuscolo and Trastevere, GoDaddy Aquamarine, HARICA Selene, and Microsec Eszigno 2027h1 to 2028h2. Eszigno2026h2 gave ECONNRESET.
+  - IPng Gouda 2026h2, 2027h1 and 2027h2 serve the tail but not tile 0. Their first served tiles are 366,929, 100,748 and 25. Gouda 2028h1 and 2028h2 serve tile 0.
+  - IPng Halloumi (all five shards), Google ParcelYard and PlumbersArms (GCS `NoSuchKey`), Sectigo Monument and Statue, and TrustAsia Luoshu2027 answer 404 at tile 0, the tail and the partial tile. Four Sectigo requests timed out at 20 s.
+  - Geomys: 40 answers, all 200, none 429, with the contact User-Agent.
+  - Evidence: `docs/research/measure/DOM-011/local-2026-10-28/round-154631/rounds.jsonl`. Two more rounds at 16:04:09Z and 16:05:09Z made 284 and 246 requests with no 429 (`local-2026-10-28/rounds-160409/rounds.jsonl`). A compacted round line is about 38 KB, so 24 hours of rounds is about 2 MB of JSONL [E].
+- **MEASURED 2026-10-28T15:47:41Z to 15:47:56Z (the Geomys window):** `node scripts/measure/tiles-window.mjs --log tuscolo2027h1 --from 2026-10-26T12:00:00Z --to 2026-10-26T12:05:00Z` exits 0 and prints `entries=47792 names=56165 tiles=193 429=0`, after 21 binary-search probes, 7,025,572 B decoded. No tile of Geomys or IPng declared a Content-Length: both compress on the fly. Of the window's 193 Geomys tiles, none declared one (`local-2026-10-28/geomys-window.json`). So the compressed bytes are unknown there. `gzip_local_bytes`, the tiles gzipped here at level 6, is 1,200,803 B, an estimate labelled as one.
+- **MEASURED 2026-10-28T15:48:30Z to 15:51:01Z (one overlap run, locally):** the window was 2026-10-27T17:50:00Z to 17:55:00Z, and THC's day 2026-10-27 is 348,643,615 B from cs2 with 42,161,943 lines.
+  - Distinct names: Sycamore 85,777, Willow 86,181, Tuscolo 56,538, Gouda 41,656, the union of the four 144,170, and Kafka 274,997 (214,088 messages from 17:49:59Z to 17:54:59Z, not cut).
+  - THC's day holds 98.26% of Sycamore, 98.19% of Willow, 95.29% of Tuscolo, 91.57% of Gouda, 94.31% of the union and 49.88% of the Kafka window.
+  - The Kafka window holds 73.28% of Sycamore and 61.53% of the union. Sycamore and Willow share 78.2% of Sycamore.
+  - `local-2026-10-28/overlap.json` is that read, taken before a fix. It marks the window not whole, because the read stopped at the last full tile and left the three 2027h2 shards open. The fix reads on into the partial tile. A re-read with the fix at 15:52:02Z printed 0 entries of the window for Sycamore2027h2, Willow2027h2 and Gouda2027h2, and 5 for Tuscolo2027h2. That re-read has no saved file, so the shares above stand on the printed output only. The runner's overlap job writes the evidence.
+- **MEASURED 2026-10-28T16:01:55Z to 16:03:17Z (rates, indicative):** `node scripts/measure/ct-rates.mjs --gap-s 60`, a 60 s span; the runner takes 600 s. It counts 324.7 M entries a day over the 79 answering logs of 82 non-retired (85 listed), as a lower bound: monument2027h1, statue2027h1 and statue2028h1 timed out. 91.7 M of them are in logs whose tile 0 answers 200. The entry's figure comes from the runner's 600 s run.
+- **MEASURED 2026-10-28T15:48:12Z and 15:48:20Z (Premise, THC):** the 2026-10-27 dump is 348,643,615 B, Last-Modified 2026-10-28T00:05:14Z, and was listed on Hugging Face at 00:05:33Z.
+- **Found 2026-10-28T23:38Z (DOM-037):** the local round already shows names tiles at tile 0 and the tail on HARICA Selene, Microsec Eszigno and Geomys Trastevere. These three logs are qualified and absent from DOM-037's list. Google's tiled logs serve no names tiles. DOM-037's reliable set waits for this entry's 24-hour result.
+- **Prove as it stands 2026-10-28T23:38Z:**
+  - `node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json` downloads the chain's artifacts and judges them. Without `--download` it re-judges the committed runs, or `result.json` alone when `runs/` is absent. It prints the rounds and the largest gap, then one row per log: statuses over 24 h, first served tile, entries a day and tail age. Then come the reliable list, the Geomys line, the Geomys window, each overlap matrix, the rates, and PASS or FAIL with the reasons.
+  - `node scripts/test.mjs scripts/measure --name "ct tiles|ct logs|ct rates|ct window|first names tile|tiles "` exits 0.
+  - The guard mutation added tests for:
+    - exactly 44 slots (pass) and 43 (fail);
+    - Geomys bodies and partial tiles;
+    - a log probed in fewer rounds;
+    - the windows that are not whole;
+    - the cut Kafka window;
+    - the 5-minute sequencing margin.
+  - Gate part (c): the wave's three lenses. The door sweep added the main-only guards, the bounded bodies and the recorded redirect host of `ct-tiles.mjs` (`BODY_MAX_BYTES` 8 MiB, `redirected_to`).
 
 ## DOM-012 — Measure when ISC and WhoisDS publish
 
@@ -485,6 +617,7 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 - **Prove:** `node scripts/test.mjs adapters/ct-tiles` passes.
   - After the live run: `node scripts/ghcr/tags.mjs obs --prefix ct-le. --min 1`, `node scripts/ghcr/tags.mjs obs --prefix ct-geomys. --min 1` and `node scripts/ghcr/tags.mjs obs --prefix ct-ipng. --min 1` each exit 0, and the same three with the prefixes `raw-ct-le.`, `raw-ct-geomys.` and `raw-ct-ipng.` exit 0 for the raw lane. The tool follows the registry's `Link` pages (DOM-019), so the check holds past 1,000 tags.
   - `node scripts/ingest/run.mjs --source ct-geomys --dry-run --max-tiles 50` prints 50 tiles read with status 200 and no 429.
+- **Found 2026-10-28T23:38Z (DOM-011):** one local round of DOM-011 at 2026-10-28T15:46:31Z found names tiles at tile 0 and the tail on HARICA Selene, Microsec Eszigno and Geomys Trastevere. All three are qualified logs that this entry's list does not name. Google's tiled logs (ParcelYard, PlumbersArms) and TrustAsia Luoshu2027 answered 404 there. The reliable set comes from DOM-011's 24-hour result.
 
 
 ## DOM-042 — Mirror THC's monthly database into GHCR
@@ -521,6 +654,7 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 - **Prove:** `node scripts/test.mjs scripts/rdns` passes.
   - After the live run (`gh workflow run rev-monthly.yml --repo pkgforge-dev/domains.pkgforge.dev -f month=2026-09 -f stage=mirror`): `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/obs/manifests/thc-rdns.202609 | jq '[.layers[].size] | add'` prints `37046639482`, and `... | jq '.layers | length'` prints `9`.
 - **Found 2026-10-28T14:36Z (DOM-010):** a stream through `gzip -dc` moves at the speed of its slowest stage, because a pipe carries back-pressure. So the Budget bullet takes the download speed from DOM-010's network pass (`passes.network` in its `result.json`), which reads the whole CSV with no decompression. DOM-010's stream pass gives the speed of gzip and awk, which bounds the Check bullet's line count over 252 GB. `scripts/measure/thc-monthly.mjs` already resumes a dropped read from the next byte with a Range request. It accepts a 206 only when its `Content-Range` is exactly the bytes asked for, with the same total, the same ETag and no `Content-Encoding`, and it refuses a byte past the declared length. The Stream bullet's resume can take that code and its tests in `scripts/measure/thc-monthly.test.mjs`. The smoke read of 2026-10-28T11:00:09Z (`docs/research/measure/DOM-010/smoke-first-mib.json`) ended at the host `us.aws.cdn.hf.co` after the redirect.
+- **Found 2026-10-28T21:46Z (DOM-010):** a GitHub runner downloads the 37,046,639,482 B September file from Hugging Face in 260.844 s, 142.026 MB/s, with no resume (run 40714223764, `docs/research/measure/DOM-010/result.json`). The budget of a monthly mirror run starts from that figure: the download is about 4.5 minutes, and decompression, not the network, is what costs time.
 
 ## DOM-045 — The monthly watcher
 

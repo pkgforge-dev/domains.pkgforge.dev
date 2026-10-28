@@ -52,7 +52,8 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
 
 ## DOM-014 — Workflow policy check and pinned installers
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T03:00:00Z; read the `ci.yml` run of the commit that carries this entry (`gh run list --workflow ci.yml --commit SHA`), confirm it passed on that SHA with `ok   node scripts/check-workflows.mjs` in its log, and close
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator's ruling 6 of 2026-10-27 (no credential crosses between GitHub and Cloudflare; Actions writes with its own `GITHUB_TOKEN`) and ruling 5 (nothing is deleted from GHCR). mirror-archlinux `tests/static/50-workflow-policy.sh` holds the same kind of rules.
@@ -104,10 +105,49 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
 - **Found 2026-10-28T14:27Z (DOM-013):** `scripts/check-workflows.mjs` does not exist yet, and nine workflows do: `ci.yml` and the eight `measure-*.yml` files of `.github/workflows/`. No script in the tree checks them, so the first run of this entry's check covers all nine. The step "Read the verdict" of DOM-009's `measure-thc-day.yml` (line 176) has no `if:`, so it runs only when every step before it passed. The verdict steps of `measure-kafka.yml` (line 64) and `measure-thc-monthly.yml` (line 126) set `if: always()`, and the one of `measure-push.yml` (line 498) sets the condition `!cancelled()`. The thc-day step needs neither. It reads the `result.json` that `scripts/measure/thc-union.mjs` writes only when it exits 0 (line 297), so after a failed merge there is no verdict to read. No rule is proposed for it, and none of the 15 rules above names it. `scripts/check-config.test.mjs` line 34 requires every dependency at an exact version, so this entry pins `yaml` at an exact version. `scripts/lib/workflow-step.mjs` runs the `run:` block of a workflow step under bash with a fake `gh`. Its export `BASH` (line 22) is the bash it found, and the tests of this entry use it rather than a second search for bash.
 - **Found 2026-10-28T14:27Z (DOM-006):** `scripts/install-oras` is in the tree, copied from mirror-archlinux at the pinned commit, with index mode 100755 (`git ls-files -s scripts/install-oras`). A cached archive whose hash differs from the pin does not make the script exit 1. It prints a warning and downloads the archive again (`scripts/install-oras` lines 63 to 76). It exits 1 only when that download fails or does not hash to the pin (lines 78 to 81). So the planned test must block the download. `scripts/install-oras.test.mjs` exists and does that with a fake `curl` first on `PATH`. `node scripts/test.mjs scripts --name "install-oras"` exits 0 with 3 tests at 2026-10-28T14:24Z. This entry extends that file and does not write it again.
 - **Found 2026-10-28T15:14Z (DOM-012):** a workflow that does not parse reached `main`: `measure-feeds.yml` in commit 5e7a646, failed push run 40713643585. The gate parses no workflow file yet. So `scripts/check-workflows.mjs` parses every file under `.github/workflows/` with the `yaml` package before it applies the 15 rules, and a fixture with a line that falls out of its block scalar fails it.
+- **Built 2026-10-28T23:38Z:** `scripts/check-workflows.mjs` parses every `*.yml` and `*.yaml` directly under `.github/workflows/`, or the files named on its command line, with `yaml` 2.9.1 (`parseDocument` with a `LineCounter` and `merge: true`). It then applies the 15 rules and prints `FILE:LINE: rule N: what` for each finding. It exits 0 when clean, 1 on a finding, and 2 when a file cannot be read or the directory holds no workflow. `JOB_GRANTS` at the top of the script is the entry's table, and `ACTION_PINS` beside it lists each action in use with its commit and tag. The step sits in `STEPS` after `node scripts/todo/count.mjs --check`, and in the same position in the `TODO/RULES.md` section 1 row. `scripts/fixtures/workflows/` holds `clean.yml` and one planted copy per rule. All of them are synthetic, and the first lines of each say so.
+  - MEASURED `npm view yaml version` at 2026-10-28T15:32:12Z: 2.9.1, published 2026-09-11T20:30:10Z, with no dependencies. 3.0.0-2 is a prerelease. It is pinned exact in devDependencies.
+  - The nine workflows committed before this entry kept every rule on the check's first run, and none was edited for it. With `measure-tiles.yml` and `measure-range-load.yml`, `node scripts/check-workflows.mjs` prints `check-workflows: 11 workflow file(s) keep the 15 rules` and exits 0.
+  - MEASURED 2026-10-28T15:40:00Z, the real defect of wave 1: `git show 5e7a646:.github/workflows/measure-feeds.yml > .tmp/measure-feeds-5e7a646.yml && node scripts/check-workflows.mjs .tmp/measure-feeds-5e7a646.yml` exits 1. It prints `.tmp/measure-feeds-5e7a646.yml:140: rule parse: Implicit keys need to be on a single line`, at the line that falls out of the `run:` scalar.
+- **Correction 2026-10-28T23:38Z (Premise, Problem):** MEASURED `gh api repos/pkgforge-dev/domains.pkgforge.dev/actions/permissions/workflow` at 2026-10-28T15:47:13Z: `{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}`. The default was `write` when the Premise was measured, on 2026-10-27, and it is `read` now. The Operator step's end state holds, and `gh` holds `admin: true` on the repository.
+- **Correction 2026-10-28T23:38Z (how the rules are read where the entry leaves room):** each reading below has a test.
+  - Rule 3 refuses, in every job, a write grant that has no row in `JOB_GRANTS`: `pull-requests`, `statuses`, `checks`, `deployments`, `security-events`, `discussions` and `attestations`. Its `root-promote.yml` clause allows `packages` and `issues`, the grants of DOM-020's `promote` job. `JOB_GRANTS` stays keyed by job name, as the entry defines it.
+  - Rule 4 also refuses a job-level `defaults.run.shell` that is not `bash`.
+  - Rule 6:
+    - A job may call only `./.github/workflows/NAME.yml`. A local action at step level is refused, and so is `docker://`.
+    - A pin must be the commit of its row in `ACTION_PINS`, and its `# vX.Y.Z` comment must equal the row's tag.
+  - Rule 7 reads the expression contexts `inputs`, `matrix`, `needs`, `steps`, `github.event`, `github.head_ref`, `github.ref`, `github.ref_name` and `github.base_ref`, in any case, also in their bare and index forms (`toJSON(inputs)`, `github['event']`). It reads them in `run:`, in a step's `shell:` and in `with.script`. `github.actor`, `github.triggering_actor` and `github.workflow` are allowed: a login holds letters, digits, hyphens and a `[bot]` suffix, and the workflow name comes from the committed file.
+  - Rule 9 also refuses a job's `secrets:` and `on.workflow_call.secrets`, reads every `if:` value as an expression, and counts `wrangler versions deploy` and `wrangler rollback` as deploys.
+  - Rule 10 joins `\` line continuations before it matches, then:
+    - counts a DELETE in any of its forms (`-X`, `-sSX`, `--request`, `--method`, `method: 'DELETE'`, an octokit `'DELETE /...'` and `requests.delete(`) when the same job names `packages`, `ghcr.io`, `/manifests/` or `/blobs/`, even in an `env:` value;
+    - refuses `oras blob|repo delete`, `regctl ... rm|delete`, a `deletePackage...` call, and a flag between a tool and its verb (`crane --insecure delete`).
+  - Rule 11 refuses a job's `container:` and `services:`.
+  - Rule 13 accepts `root-writer` at the workflow or at the job level, and refuses `queue: max` with any `cancel-in-progress` but a literal `false`.
+  - Rule 15 reads the tag of each `if:` value. In `yaml` 2.9.1, `if: !cancelled()` does not fail the parse: it is the tag `!cancelled()` on an empty string, with only the warning `TAG_RESOLVE_FAILED`. A duplicate key is the parse error `DUPLICATE_KEY`, a second document is `MULTIPLE_DOCS`, and `on` reads as the string `on` (YAML 1.2 core).
+- **Found 2026-10-28T23:38Z (DOM-020):** rule 13, read literally, puts `root-writer` on the workflow that calls `root-promote.yml`, while `TODO/storage.md` (DOM-020) and `TODO/ops.md` put the group in `root-promote.yml` itself. A caller and a called workflow in one group would wait on each other. That is GitHub's documented behaviour as read, not measured here. The check implements the literal rule, and a test holds it. `TODO/PROGRESS.md` "Open questions" carries the choice, and DOM-020 settles it with a measured run.
+- **Correction 2026-10-28T23:38Z (installers):** `scripts/install-oras.test.mjs` holds 8 tests. They check:
+  - the index mode 100755;
+  - an installed oras 1.3.4 is kept with no download, and 1.2.0 is not;
+  - a cached archive that hashes to the pin installs with no download, and one byte changed is refused;
+  - a synthetic oras that reports 1.9.9 fails the read-back (exit 1);
+  - the architecture's own sum is the one used.
+  The install path runs on a copy whose two pinned sums are set to a synthetic archive's.
+- **Prove as it stands 2026-10-28T23:38Z:** on Windows 11, Node 26.7.0, each exit code read unpiped:
+  - `node scripts/test.mjs scripts --name "workflow policy"` exits 0 with 46 tests. Each rule and `parse` has a planted fixture refused under that rule alone, and `clean.yml` is accepted.
+  - `node scripts/check-workflows.mjs` exits 0 on the 11 workflows. `node scripts/check-workflows.mjs scripts/fixtures/workflows/delete-package.yml` exits 1 and prints `scripts/fixtures/workflows/delete-package.yml:43: rule 10: a deletion of GHCR content; raw data is kept always`.
+  - `node scripts/test.mjs scripts --name "install-oras"` exits 0 with 8 tests.
+  - `npm run gate` exits 0 with `ok   node scripts/check-workflows.mjs` as its third step: 749 tests, 746 passed, 3 skipped for the platform.
+  - Gate part (c) is the wave's three lenses:
+    - The door sweep found the local `uses:` and `container:` gaps and the narrow rule 7 contexts.
+    - The guard mutation ran 130 mutants of the script against its tests. 29 survived, and each class it accepted now has a test.
+    - The claim audit fixed the header that said the default permission is `write`.
+    - One finding was rejected: keying `JOB_GRANTS` by file would change the entry's design.
+  - Not yet seen: the `ci.yml` run of the pushed commit, the first Linux run of the new install-oras tests (`tar` and `sha256sum` on ubuntu-24.04).
 
 ## DOM-015 — Names: normalisation, the Public Suffix List and reversed keys
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T03:00:00Z; read the `ci.yml` run of the commit that carries this entry, confirm it passed on that SHA with the names tests and the names workerd test run, and close
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 4.1 and design B section 4; `docs/architecture.md` section 3.1 and section 3.2. The operator ruling 2 of 2026-10-27 asks for queries on any suffix or parent domain. Reversed keys make each one a contiguous range.
@@ -133,6 +173,47 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
   - `node packages/names/bin/split.mjs api.example.com.np x.github.io` prints `suffix com.np reg example.com.np site example.com.np` and `suffix io reg github.io site x.github.io`. The `site` column applies the private section, the other two columns apply the ICANN section only. The exact output format is in the test.
 - **Found 2026-10-28T14:27Z (DOM-009):** `docs/research/measure/DOM-009/local-2026-10-26.stat.json` counts 1,516 names of THC's 2026-10-26 dump whose top-level label is all digits, with 256 distinct such labels (lines 117 and 121). The run took place on the operator's Windows workstation at 2026-10-28T11:19Z. `scripts/measure/regdoms.mjs` lines 37 to 41 read such a name as an address literal, such as `192.0.2.1`, that a certificate carried. These names pass the charset of `docs/architecture.md` section 3.1. This entry decides whether `normalise()` refuses them, records the decision with a recommendation, and holds it with a test. If it refuses them, section 3.1 changes in the same commit.
   - The same run converts each IDN rule of the PSL to ASCII (`scripts/measure/psl.mjs` line 64). Without the conversion, a name under a multi-label IDN rule such as `公司.cn` matches only its parent rule `cn`, so its registrable domain is one label too short (`scripts/measure/fixtures/thc/psl-mini.dat` lines 21 and 22 hold both rules, and `scripts/measure/psl.test.mjs` lines 102 to 104 split `x.xn--55qx5d.cn` under the converted rule). A name under a rule whose parent is an IDN label too, such as `個人.香港`, falls back to the rule `*` and is one label too short in the same way. A single-label IDN rule gives the same split with or without the conversion, because the rule `*` is also one label. So `loadPsl` converts each rule that holds a byte above 0x7f with `domainToASCII`, and a test splits a name under such a rule. No script in the tree records how many names a day the conversion moves. DOM-009's closing run re-derives that count.
+- **Built 2026-10-28T23:38Z:** the workspace package `@domains/names` (`packages/names/`, 0BSD).
+  - `src/syntax.ts` holds the one character loop `scan()`, `checkLabels()`, `toAscii()` and `NameError`. Names, keys and list rules all pass through that loop.
+  - `src/normalise.ts` holds `normalise(input, psl)` and `REFUSALS`.
+  - `src/psl.ts` holds `loadPsl(bytes | text)`, `split(name, psl)`, `isPublicSuffix(name, psl)`, `parseRule`, `MARKERS` and `PslError`.
+  - `src/key.ts` holds `key`, `fromKey` and `rangeOfDescendants`. `src/index.ts` exports them all.
+  - Beside them: `bin/split.mjs`, the test Worker `test/names-worker.ts`, four test files, and the fixture `test/fixtures/psl-2026-10-27.dat`.
+  - `scripts/ref/fetch-psl.mjs` has its test beside it. It sends the ruling 11 User-Agent with `accept-encoding: identity`, caps the body at 4 MiB and times out at 60 s. It checks the list with the package's `loadPsl`: each of the four markers once and in order, every rule readable, more than 9,000 rules, and at least one rule in each section. `--out` writes through a temporary file and a rename. Exit 1 for a failed check, 2 for a request, size or write failure.
+- **Correction 2026-10-28T23:38Z (Approach, IDN conversion):** `node:url` does not exist in workerd under `no_nodejs_compat`. So `toAscii()` uses the WHATWG URL host parser, `new URL('http://' + text).hostname`, which runs the same UTS #46 mapping and punycode as `domainToASCII`.
+  - A test holds `toAscii` equal to `domainToASCII`. The workerd test holds workerd's answers equal to Node's for 23 inputs, IDN names among them: `node scripts/test.mjs packages/names --name workerd` exits 0 with 2 tests.
+  - Found while building it: a host parser answers another host, with no error, when the text holds an ASCII delimiter. `new URL('http://ü@evil.example').hostname` is `evil.example`. So `toAscii`, and `normalise` before it, refuse any ASCII character outside `[A-Za-z0-9_.-]` before the parser sees the text, and two planted defects prove both guards.
+- **Correction 2026-10-28T23:38Z (Approach, API shapes):**
+  - `normalise` takes the list, `normalise(input, psl)`, because its last step refuses a public suffix.
+  - `loadPsl` is async, because the hash is `crypto.subtle`'s in both runtimes. Bytes are hashed as given, and text as its UTF-8 bytes.
+  - `split(name, psl)` takes no `privateSection` option. It returns `{ suffix, reg, site, labels }`, with `suffix` and `reg` from the ICANN section and `site` from both sections. `site` is `null` for a name that is itself a suffix of the full list (`github.io`).
+  - `split`, `isPublicSuffix`, `key`, `fromKey` and `rangeOfDescendants` throw `NameError` on text that is not lowercase charset labels, so a walk never answers the implicit `*` for a malformed name.
+- **Decision 2026-10-28T23:38Z (the Found of DOM-009, address literals):** `normalise` refuses a name whose top-level label is all digits, with the reason `numeric-tld`. RFC 1123 section 2.1 makes the highest-level label of a host name alphabetic, and kept, each such name would make a suffix such as `1` and a registrable domain such as `2.1`.
+  - The test covers `192.0.2.1`, a wildcard, a trailing dot, `1.2.3.4.5`, `host.123`, `a.0` and full-width digits. It passes `1.com`, `a.b0`, `a.0x1` and `192.0.2.1.example.com`.
+  - `docs/architecture.md` section 3.1 rule 3 changes in the same commit, and its count sentence now gives DOM-009's distinct names: 1,516 with an all-digit top-level label, and 2 that are a suffix under the converted list.
+- **Decision 2026-10-28T23:38Z (the Found of DOM-009, IDN rules):** `loadPsl` converts every rule that holds a character above 0x7f with `toAscii`. MEASURED with the fixture at 2026-10-28T15:48Z:
+  - `公司.cn` becomes `xn--55qx5d.cn`, and `個人.香港` becomes `xn--gmqw5a.xn--j6w193g`.
+  - `split('x.xn--55qx5d.cn')` gives `reg` `x.xn--55qx5d.cn`, and `split('a.xn--gmqw5a.xn--j6w193g')` gives `reg` `a.xn--gmqw5a.xn--j6w193g`.
+  - A planted defect that keeps the rules in Unicode fails 3 tests.
+- **Correction 2026-10-28T23:38Z (Approach, key order):** key order is the bytewise order of the key strings, and it is not label-by-label order: `np.com-x` sorts before `np.com.a` as a key and after it label by label. `key.test.ts` holds both facts. The seeded property test (mulberry32 with seeds 1, 2, 3 and 20261028, 600 names each) checks three things over every parent:
+  - `fromKey(key(n)) === n`;
+  - JavaScript string order equals `Buffer.compare` order;
+  - `[k + '.', k + '/')` holds exactly the descendants.
+- **Correction 2026-10-28T23:38Z (Prove, the planted defect):** with the start at `key + '.'`, the plant "key plus the highest code point as the upper bound" admits `np.com0` and `np.comz`, not `np.com-x`, because `np.com-x` sorts below the start. The plant that admits `np.com-x` starts the range at the parent key, which is the single range the Decision rejects. One test covers all three keys, and both plants fail it (2 of 5 tests each, on copies under `.tmp/dom015/plant/`).
+- **Found 2026-10-28T23:38Z (the fixture):** `packages/names/test/fixtures/psl-2026-10-27.dat` is a byte copy of the list that DOM-009's run read: 338,012 B, sha256 `0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca`, `// VERSION: 2026-10-22_08-36-41_UTC`, 6,949 ICANN rules and 3,448 private ones.
+  - MEASURED 2026-10-28T15:34:24Z: the live list at `https://publicsuffix.org/list/public_suffix_list.dat` has the same sha256, with Last-Modified Thu, 22 Oct 2026 08:36:50 GMT.
+  - Its private section names many vendors' domains. That is third-party domain data, not a credit: absolute 1 governs commit messages, and the hash test needs the published bytes.
+- **Found 2026-10-28T23:38Z (DOM-032):** `isPublicSuffix` follows the list's algorithm, so under the implicit rule `*` any single label is a public suffix, `zz` included. DOM-032's `suffix` parameter answers 400 `unknown-suffix` only if the Worker also checks the list's explicit rules. The package does not offer that check yet.
+- **Prove as it stands 2026-10-28T23:38Z:**
+  - `node scripts/test.mjs packages/names` exits 0. The tests cover:
+    - `*abc.`, `**.`, `a.Z.com` and `_dmarc.bücher.example`;
+    - a synthetic list with shared trie nodes and exceptions in each section;
+    - 13 planted defects (A to L), each failing its test.
+  - `node scripts/ref/fetch-psl.mjs` exits 0 at 2026-10-28T15:47:31Z and prints `sha256 0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca rules 10397`. `node scripts/test.mjs scripts --name fetch-psl` exits 0 with 7 tests: the 4 MiB cap is read at exactly the cap and refused one byte past it, and a list with an empty ICANN section is refused.
+  - Correction to the Prove's output: `node packages/names/bin/split.mjs api.example.com.np x.github.io` exits 0 and prints `name api.example.com.np suffix com.np reg example.com.np site example.com.np` and `name x.github.io suffix io reg github.io site x.github.io`. Each line starts with its named field `name N`, so a reader selects fields by name. A refused input prints `input "TEXT" refused REASON` and exits 1. `bin/split.test.mjs` holds the exact output.
+  - `tsconfig.worker.json` now also checks `packages/names/test/names-worker.ts` and the probe's test entries against the Workers types, and `scripts/check-config.test.mjs` holds the list.
+  - Gate part (c): the wave's three lenses. The guard mutation added the trie and exception cases, and the claim audit removed present-tense claims about DOM-019 from `split.mjs` and `fetch-psl.mjs`.
+  - Not yet seen: the `ci.yml` run of the pushed commit, the first Linux run of these tests and of the names workerd test.
 
 ## DOM-016 — The source registry and the adapter contract
 

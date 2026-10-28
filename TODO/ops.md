@@ -162,6 +162,7 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
   - **What to do.** Read the account's Workers plan before this entry's reading, and record it here. If the 48 hour read fails on a limit, record the answer and keep this entry open on it. The answer names its R2 list calls in `list_calls`.
   - **The arithmetic.** The arithmetic of the reader is `probes/worker/src/gaps.ts`, which the script imports. Its `RULE`, `BREAK_MIN` and `quantile()` are copies of those of `scripts/measure/clock-gaps.mjs`. The test "the probe and clock-gaps.mjs share the rule, the break threshold and the quantile" in `scripts/measure/worker-clock-gaps.test.mjs` (line 213) holds them equal. The quantile is the value at index `floor(n * q)` of the ascending list. So the median of an even count is the upper middle value.
   - **The cache.** The probe puts a `/gaps` answer in the Cache API for 60 s. A second read within 60 s may return the same answer, if workers.dev keeps the entry. Nobody has measured whether it does. Two reads within 60 s measure it: the same `now` in both answers means that the second came from the cache. `list_calls` does not tell the two apart, because a cached answer carries the count of the read that made it.
+- **MEASURED 2026-10-28T23:38Z (the account's plan):** `cf accounts subscriptions get` lists Workers Paid (`workers_paid`, state Paid) on the account that holds the `pkgforge.dev` zone. So the limits of Workers Paid in the Premise apply, and the 10 ms CPU limit of Workers Free does not. The probe's routes for DOM-005, DOM-007 and DOM-008 are deployed during this entry's window with `wrangler versions upload` and `versions deploy`, which leave the cron triggers as they are. The deploy's time is recorded here, so a gap at that minute can be attributed.
 
 ## DOM-061 — Deploy the probe Worker and its R2 bucket
 
@@ -278,6 +279,7 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
   - If the verdict is not `worker`: `node scripts/measure/clock-verdict.mjs --check` prints the Actions clock and this entry closes on the ruling.
 - **Operator:** run `npx wrangler@4.150.0 whoami` first and record the account name it prints in this entry's Closed line. Then deploy by hand: `cd apps/clock && npx wrangler@4.150.0 deploy`.
 - **Resources:** Worker `domains-pkgforge-clock`. Undo: `npx wrangler@4.150.0 delete --name domains-pkgforge-clock`. The Worker uses the bucket of DOM-031. Add the row to `docs/resources.md`.
+- **Found 2026-10-28T23:38Z (DOM-005):** DOM-005 judges CPU per 1,000 messages over full calls only (a call with `lag > 0` after it), and records the CPU of an empty call (`empty_call_cpu_ms`) beside it. At the head, a lane call reads only the few messages since the last one, so its cost is mostly that fixed cost per invocation. This entry budgets the fixed cost per invocation and the cost per message separately. DOM-005's figure does not cover `JSON.parse` of the values or the packing.
 
 ## DOM-034 — Watchdogs: keepalive, overdue dispatch and issues
 

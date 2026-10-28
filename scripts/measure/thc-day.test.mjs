@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { USER_AGENT } from '../lib/user-agent.mjs';
 import { checkAgreement, download, gnuSortVersion, PASS_SECONDS, RESULT_FORMAT, StageError, verdict } from './thc-day.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./thc-day.mjs', import.meta.url));
@@ -24,8 +25,10 @@ writeFileSync(gz, body);
 
 let server;
 let base;
+const agents = new Set();
 before(async () => {
   server = createServer((req, res) => {
+    agents.add(req.headers['user-agent']);
     if (req.url === '/missing') {
       res.writeHead(404).end('no');
     } else if (req.url === '/moved') {
@@ -109,6 +112,7 @@ test('thc day: the download falls back to the next source and follows a redirect
     ],
   );
   assert.deepEqual(readFileSync(dest), body);
+  assert.deepEqual([...agents], [USER_AGENT], 'every request sends the contact User-Agent (ruling 11)');
 });
 
 test('thc day: the download refuses a file whose size is not the listing size', async () => {

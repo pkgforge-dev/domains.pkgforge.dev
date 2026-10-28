@@ -1,7 +1,9 @@
 // The Worker program of `npm run typecheck`: the code that runs in workerd,
 // checked against the Workers runtime's types and without Node's, so an import
 // of a `node:` module fails here as it fails a deploy without nodejs_compat.
-// Tests are excluded: they run in Node and tsconfig.json checks them.
+// Tests are excluded: they run in Node and tsconfig.json checks them. The test
+// Worker entries (probes/*/test/*-entry.ts, packages/names/test/names-worker.ts)
+// run in workerd, so they are checked here as well.
 // Every packages/*/src is here as well as in tsconfig.json, so a new shared
 // package is checked as Worker code unless it is named below as Node-only:
 //   packages/testkit/src  the harness that drives workerd through Miniflare
@@ -21,7 +23,7 @@
   "compilerOptions": {
     "types": ["@cloudflare/workers-types"]
   },
-  "files": ["packages/testkit/test/smoke-worker.ts"],
-  "include": ["apps/*/src", "probes/*/src", "packages/*/src"],
+  "files": ["packages/testkit/test/smoke-worker.ts", "packages/names/test/names-worker.ts"],
+  "include": ["apps/*/src", "probes/*/src", "probes/*/test/*-entry.ts", "packages/*/src"],
   "exclude": ["packages/testkit/src", "**/*.test.ts", "**/*.test.mts", "**/*.test.cts", "**/node_modules"]
 }

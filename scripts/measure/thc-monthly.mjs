@@ -44,6 +44,7 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from '../lib/args.mjs';
+import { USER_AGENT } from '../lib/user-agent.mjs';
 
 export const SCHEMA = 'thc-monthly/1';
 // READ https://ip.thc.org/docs/bulk-data-access (2026-10-27): "Records: 6.36
@@ -436,7 +437,7 @@ function writeTo(stream, chunk) {
 
 function curlArgs(url, range) {
   const proto = protoFor(url);
-  const args = ['-sS', '-L', '-i', '--proto', proto, '--proto-redir', proto, '--max-redirs', '5', '--connect-timeout', '30', '--speed-limit', '1024', '--speed-time', '300'];
+  const args = ['-sS', '-L', '-i', '-A', USER_AGENT, '--proto', proto, '--proto-redir', proto, '--max-redirs', '5', '--connect-timeout', '30', '--speed-limit', '1024', '--speed-time', '300'];
   if (range !== null) args.push('-r', range);
   args.push(url);
   return args;

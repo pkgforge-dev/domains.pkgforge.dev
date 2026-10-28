@@ -38,6 +38,7 @@ import {
   verdictLines,
   verdictOf,
 } from './thc-monthly.mjs';
+import { USER_AGENT } from '../lib/user-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, 'thc-monthly.mjs');
@@ -467,7 +468,9 @@ test('thc-monthly awk program: only the first 20 suspects are kept, and every on
 // 100 ms), overlong (a body that runs past its declared range).
 async function serve(files) {
   const seen = new Map();
+  const agents = new Set();
   const server = createServer((req, res) => {
+    agents.add(req.headers['user-agent']);
     const [, kind, name] = new URL(req.url, 'http://local').pathname.split('/');
     const f = files[name];
     if (!f) {
@@ -529,6 +532,7 @@ async function serve(files) {
   return {
     url: (name) => `${base}/f/${name}`,
     seen,
+    agents,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -575,6 +579,7 @@ test("thc-monthly command line: the whole file, the network pass and another mon
     assert.equal(s.http.final_host, new URL(srv.url('x')).host);
     assert.equal(s.http.resumes, 0);
     assert.equal(s.http.attempts[0].status, 200);
+    assert.deepEqual([...srv.agents], [USER_AGENT], 'every curl request sends the contact User-Agent (ruling 11)');
     assert.equal(s.gzip.exit_code, 0);
     assert.equal(s.awk.exit_code, 0);
     assert.equal(s.uncompressed.bytes, SAMPLE.length);

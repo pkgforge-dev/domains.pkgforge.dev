@@ -100,7 +100,7 @@ will add.
 | A page nothing links to | not read, so not corrected. The state every stale document passes through. |
 | Ending a process by its image name: `taskkill /F /IM workerd.exe`, `pkill node`, `killall` | ends every process of that name on the machine: the operator's own `wrangler dev` sessions and another session's test run among them. The sibling repository's gate failed twice on 2026-10-27 after one such command. End a process by its PID. |
 | A provenance header or field that names a source, a tier or a transport the answer did not come from | a caller trusts an origin the record does not have. The header says what answered (AGENTS.md absolute 11). |
-| A workflow step or a script that deletes a GHCR package, tag or version: `gh api -X DELETE` on a package, `oras manifest delete`, `crane delete` | raw data is kept always and a deletion cannot be undone (the operator's ruling of 2026-10-27, `TODO/RULES.md` §5). |
+| A workflow step or a script that deletes a GHCR package, tag or version: `gh api -X DELETE` on a package, `oras manifest delete`, `crane delete` | raw data is kept always and a deletion cannot be undone (the operator's ruling of 2026-10-27, `TODO/RULES.md` §5). In a workflow, rule 10 of `scripts/check-workflows.mjs` refuses it at the gate. |
 
 ---
 

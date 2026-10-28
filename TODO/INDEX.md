@@ -99,15 +99,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 52 open, 6 partial, 1 blocked, 3 done.**
+**62 items. 47 open, 9 partial, 0 blocked, 6 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 34 | 6 | 1 | 3 | 44 |
+| P1 | 29 | 9 | 0 | 6 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 52 | 6 | 1 | 3 | 62 |
+| **All** | 47 | 9 | 0 | 6 | 62 |
 
 ## Entries
 
@@ -117,17 +117,17 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-002](ops.md) | P1 | ops | partial | Measure the Cloudflare cron clock with a probe Worker that writes a hot tier to R2 |
 | [DOM-003](ops.md) | P1 | ops | open | Decide the clock from the measurements |
 | [DOM-004](ingest.md) | P1 | ingest | **done** | Measure Kafka from a GitHub runner |
-| [DOM-005](ingest.md) | P1 | ingest | open | Measure Kafka from a Worker connect() |
-| [DOM-006](storage.md) | P1 | storage | partial | Measure a 1.5 GB push from a runner and that a first push comes out public |
-| [DOM-007](storage.md) | P1 | storage | open | Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second |
-| [DOM-008](storage.md) | P1 | storage | open | Measure deflate-raw decode CPU in workerd |
-| [DOM-009](ingest.md) | P1 | ingest | partial | Measure the THC daily job and the 54-day backfill |
-| [DOM-010](ingest.md) | P1 | ingest | partial | Measure THC's monthly database: columns, CNAMEs and stream speed |
-| [DOM-011](ingest.md) | P1 | ingest | open | Measure names-tile availability per log, Geomys's window and the overlap |
+| [DOM-005](ingest.md) | P1 | ingest | partial | Measure Kafka from a Worker connect() |
+| [DOM-006](storage.md) | P1 | storage | **done** | Measure a 1.5 GB push from a runner and that a first push comes out public |
+| [DOM-007](storage.md) | P1 | storage | partial | Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second |
+| [DOM-008](storage.md) | P1 | storage | partial | Measure deflate-raw decode CPU in workerd |
+| [DOM-009](ingest.md) | P1 | ingest | **done** | Measure the THC daily job and the 54-day backfill |
+| [DOM-010](ingest.md) | P1 | ingest | **done** | Measure THC's monthly database: columns, CNAMEs and stream speed |
+| [DOM-011](ingest.md) | P1 | ingest | partial | Measure names-tile availability per log, Geomys's window and the overlap |
 | [DOM-012](ingest.md) | P1 | ingest | partial | Measure when ISC and WhoisDS publish |
 | [DOM-013](foundation.md) | P1 | foundation | **done** | The workspace, the workerd test harness and CI |
-| [DOM-014](foundation.md) | P1 | foundation | open | Workflow policy check and pinned installers |
-| [DOM-015](foundation.md) | P1 | foundation | open | Names: normalisation, the Public Suffix List and reversed keys |
+| [DOM-014](foundation.md) | P1 | foundation | partial | Workflow policy check and pinned installers |
+| [DOM-015](foundation.md) | P1 | foundation | partial | Names: normalisation, the Public Suffix List and reversed keys |
 | [DOM-016](foundation.md) | P1 | foundation | open | The source registry and the adapter contract |
 | [DOM-017](storage.md) | P1 | storage | open | The pack format: writer, reader, merge and sparse index |
 | [DOM-018](storage.md) | P1 | storage | open | Verify a pack before it counts |
@@ -174,4 +174,4 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-059](serve.md) | P1 | serve | open | The route registry and the root documents |
 | [DOM-060](serve.md) | P1 | serve | open | The consumer contract and the reference reader |
 | [DOM-061](ops.md) | P1 | ops | **done** | Deploy the probe Worker and its R2 bucket |
-| [DOM-062](serve.md) | P1 | serve | blocked | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |
+| [DOM-062](serve.md) | P1 | serve | open | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |

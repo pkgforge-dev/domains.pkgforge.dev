@@ -1,0 +1,482 @@
+{
+ "schema": "dom-011-overlap/1",
+ "at": "2026-10-28T15:48:30.990Z",
+ "window": {
+  "from": "2026-10-27T17:50:00.000Z",
+  "to": "2026-10-27T17:55:00.000Z",
+  "day": "2026-10-27",
+  "picked_by": "run time"
+ },
+ "families": {
+  "sycamore": {
+   "logs": [
+    "sycamore2026h2",
+    "sycamore2027h1",
+    "sycamore2027h2"
+   ],
+   "complete": false,
+   "entries": 61956,
+   "distinct_names": 85777
+  },
+  "willow": {
+   "logs": [
+    "willow2026h2",
+    "willow2027h1",
+    "willow2027h2"
+   ],
+   "complete": false,
+   "entries": 63075,
+   "distinct_names": 86181
+  },
+  "tuscolo": {
+   "logs": [
+    "tuscolo2026h2",
+    "tuscolo2027h1",
+    "tuscolo2027h2"
+   ],
+   "complete": true,
+   "entries": 40952,
+   "distinct_names": 56538
+  },
+  "gouda": {
+   "logs": [
+    "gouda2026h2",
+    "gouda2027h1",
+    "gouda2027h2"
+   ],
+   "complete": false,
+   "entries": 32854,
+   "distinct_names": 41656
+  }
+ },
+ "logs": {
+  "sycamore2026h2": {
+   "mon": "https://mon.sycamore.ct.letsencrypt.org/2026h2/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 1046710589,
+   "last_full_tile": 4088712,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 4079343,
+   "bsearch_probes": 22,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 40,
+   "entries": 8777,
+   "distinct_names": 11069,
+   "gz_bytes": 277770,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 270351,
+   "raw_bytes": 1809632,
+   "gz_per_entry": 31.6,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.275Z",
+   "last": "2026-10-27T17:54:59.276Z"
+  },
+  "sycamore2027h1": {
+   "mon": "https://mon.sycamore.ct.letsencrypt.org/2027h1/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 822879857,
+   "last_full_tile": 3214373,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 3149325,
+   "bsearch_probes": 22,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 214,
+   "entries": 53179,
+   "distinct_names": 74805,
+   "gz_bytes": 1417585,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 1383831,
+   "raw_bytes": 8264946,
+   "gz_per_entry": 26.7,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.973Z",
+   "last": "2026-10-27T17:54:59.973Z"
+  },
+  "sycamore2027h2": {
+   "mon": "https://mon.sycamore.ct.letsencrypt.org/2027h2/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 20408,
+   "last_full_tile": 78,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 79,
+   "bsearch_probes": 6,
+   "cut_before": false,
+   "reached_end": true,
+   "complete": false,
+   "tiles_read": 0,
+   "entries": 0,
+   "distinct_names": 0,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 0,
+   "raw_bytes": 0,
+   "gz_per_entry": 0,
+   "throttled": 0,
+   "first": null,
+   "last": null
+  },
+  "willow2026h2": {
+   "mon": "https://mon.willow.ct.letsencrypt.org/2026h2/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 1004117676,
+   "last_full_tile": 3922333,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 3912988,
+   "bsearch_probes": 22,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 40,
+   "entries": 8770,
+   "distinct_names": 11230,
+   "gz_bytes": 279990,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 272822,
+   "raw_bytes": 1826482,
+   "gz_per_entry": 31.9,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.631Z",
+   "last": "2026-10-27T17:54:59.631Z"
+  },
+  "willow2027h1": {
+   "mon": "https://mon.willow.ct.letsencrypt.org/2027h1/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 817185168,
+   "last_full_tile": 3192128,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 3128421,
+   "bsearch_probes": 22,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 218,
+   "entries": 54305,
+   "distinct_names": 75076,
+   "gz_bytes": 1435169,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 1400536,
+   "raw_bytes": 8381486,
+   "gz_per_entry": 26.4,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.088Z",
+   "last": "2026-10-27T17:54:59.088Z"
+  },
+  "willow2027h2": {
+   "mon": "https://mon.willow.ct.letsencrypt.org/2027h2/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 20429,
+   "last_full_tile": 78,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 79,
+   "bsearch_probes": 6,
+   "cut_before": false,
+   "reached_end": true,
+   "complete": false,
+   "tiles_read": 0,
+   "entries": 0,
+   "distinct_names": 0,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 0,
+   "raw_bytes": 0,
+   "gz_per_entry": 0,
+   "throttled": 0,
+   "first": null,
+   "last": null
+  },
+  "tuscolo2026h2": {
+   "mon": "https://tuscolo2026h2.skylight.geomys.org/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 1023913747,
+   "last_full_tile": 3999662,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 3991599,
+   "bsearch_probes": 22,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 37,
+   "entries": 8057,
+   "distinct_names": 10344,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 37,
+   "gzip_local_bytes": 259607,
+   "raw_bytes": 1732003,
+   "gz_per_entry": null,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.077Z",
+   "last": "2026-10-27T17:54:59.877Z"
+  },
+  "tuscolo2027h1": {
+   "mon": "https://tuscolo2027h1.skylight.geomys.org/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 383786728,
+   "last_full_tile": 1499165,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 1457695,
+   "bsearch_probes": 21,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 134,
+   "entries": 32890,
+   "distinct_names": 46277,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 134,
+   "gzip_local_bytes": 889636,
+   "raw_bytes": 5149260,
+   "gz_per_entry": null,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.096Z",
+   "last": "2026-10-27T17:54:59.896Z"
+  },
+  "tuscolo2027h2": {
+   "mon": "https://tuscolo2027h2.skylight.geomys.org/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 88218,
+   "last_full_tile": 343,
+   "first_served_tile": 0,
+   "first_served_probes": 1,
+   "start_tile": 339,
+   "bsearch_probes": 8,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 5,
+   "entries": 5,
+   "distinct_names": 6,
+   "gz_bytes": 11150,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 11319,
+   "raw_bytes": 276376,
+   "gz_per_entry": 2230,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:05.314Z",
+   "last": "2026-10-27T17:54:10.315Z"
+  },
+  "gouda2026h2": {
+   "mon": "https://gouda2026h2.mon.ct.ipng.ch/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 1233141421,
+   "last_full_tile": 4816957,
+   "first_served_tile": 366929,
+   "first_served_probes": 24,
+   "start_tile": 4811715,
+   "bsearch_probes": 23,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 24,
+   "entries": 4577,
+   "distinct_names": 5131,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 24,
+   "gzip_local_bytes": 144574,
+   "raw_bytes": 1023913,
+   "gz_per_entry": null,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.570Z",
+   "last": "2026-10-27T17:54:59.570Z"
+  },
+  "gouda2027h1": {
+   "mon": "https://gouda2027h1.mon.ct.ipng.ch/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 249631088,
+   "last_full_tile": 975120,
+   "first_served_tile": 100748,
+   "first_served_probes": 22,
+   "start_tile": 936854,
+   "bsearch_probes": 20,
+   "cut_before": false,
+   "reached_end": false,
+   "complete": true,
+   "tiles_read": 117,
+   "entries": 28277,
+   "distinct_names": 36577,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 117,
+   "gzip_local_bytes": 715189,
+   "raw_bytes": 4174585,
+   "gz_per_entry": null,
+   "throttled": 0,
+   "first": "2026-10-27T17:50:00.740Z",
+   "last": "2026-10-27T17:54:59.740Z"
+  },
+  "gouda2027h2": {
+   "mon": "https://gouda2027h2.mon.ct.ipng.ch/",
+   "window": [
+    "2026-10-27T17:50:00.000Z",
+    "2026-10-27T17:55:00.000Z"
+   ],
+   "log_size": 20472,
+   "last_full_tile": 78,
+   "first_served_tile": 25,
+   "first_served_probes": 8,
+   "start_tile": 79,
+   "bsearch_probes": 5,
+   "cut_before": false,
+   "reached_end": true,
+   "complete": false,
+   "tiles_read": 0,
+   "entries": 0,
+   "distinct_names": 0,
+   "gz_bytes": 0,
+   "gz_unknown_tiles": 0,
+   "gzip_local_bytes": 0,
+   "raw_bytes": 0,
+   "gz_per_entry": 0,
+   "throttled": 0,
+   "first": null,
+   "last": null
+  }
+ },
+ "errors": [],
+ "kafka": {
+  "ok": true,
+  "cut": false,
+  "messages": 214088,
+  "distinct_names": 274997,
+  "first_seen": "2026-10-27T17:49:59.000Z",
+  "last_seen": "2026-10-27T17:54:59.000Z",
+  "json_errors": 0
+ },
+ "sets": {
+  "sycamore": 85777,
+  "willow": 86181,
+  "tuscolo": 56538,
+  "gouda": 41656,
+  "union4": 144170,
+  "kafka": 274997
+ },
+ "thc": {
+  "ok": true,
+  "day": "2026-10-27",
+  "source": "cs2",
+  "gz_bytes": 348643615,
+  "waited_min": 0,
+  "lines": 42161943,
+  "text_bytes": 1445374862,
+  "hits": 184419,
+  "seconds": 66
+ },
+ "matrix": {
+  "rows": [
+   "sycamore",
+   "willow",
+   "tuscolo",
+   "gouda",
+   "union4",
+   "kafka"
+  ],
+  "cols": [
+   "sycamore",
+   "willow",
+   "tuscolo",
+   "gouda",
+   "union4",
+   "kafka",
+   "thc"
+  ],
+  "cells": [
+   [
+    100,
+    78.2,
+    38.05,
+    19.97,
+    100,
+    73.28,
+    98.26
+   ],
+   [
+    77.84,
+    100,
+    38.26,
+    20.79,
+    100,
+    74.06,
+    98.19
+   ],
+   [
+    57.73,
+    58.32,
+    100,
+    20.49,
+    100,
+    61.01,
+    95.29
+   ],
+   [
+    41.13,
+    43.02,
+    27.82,
+    100,
+    100,
+    53.3,
+    91.57
+   ],
+   [
+    59.5,
+    59.78,
+    39.22,
+    28.89,
+    100,
+    61.53,
+    94.31
+   ],
+   [
+    22.86,
+    23.21,
+    12.54,
+    8.07,
+    32.26,
+    100,
+    49.88
+   ]
+  ]
+ }
+}

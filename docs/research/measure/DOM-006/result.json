@@ -1,0 +1,149 @@
+{
+  "schema": "domains.measure.push-summary.v1",
+  "entry": "DOM-006",
+  "run": {
+    "id": "40716636421",
+    "attempt": "1",
+    "sha": "306454b6bf16be533327aaa5da32812ae5f021df",
+    "ref": "refs/heads/main",
+    "image": "ubuntu24 20261026.354.1",
+    "oras": "1.3.4",
+    "curl": "8.5.0",
+    "started_at": "2026-10-28T15:30:38Z",
+    "finished_at": "2026-10-28T15:43:27Z",
+    "inputs": {
+      "size_mb": 1536,
+      "layers": 0
+    }
+  },
+  "package": "ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe",
+  "visibility": "public",
+  "package_record_status": 200,
+  "linked_repository": "pkgforge-dev/domains.pkgforge.dev",
+  "existed_before": true,
+  "anonymous_read": {
+    "ref": "size-1536m",
+    "status": 200,
+    "via": "qq",
+    "qq_status": 200,
+    "token_status": null,
+    "digest": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+    "blob_status": 307,
+    "range_status": 206
+  },
+  "pushes": [
+    {
+      "tag": "size-1536m",
+      "mib": 1536,
+      "bytes": 1610612736,
+      "seconds": 20.252,
+      "mb_per_s": 79.5,
+      "rc": 0,
+      "digest": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "error": null
+    },
+    {
+      "tag": "size-4096m",
+      "mib": 4096,
+      "bytes": 4294967296,
+      "seconds": 67.685,
+      "mb_per_s": 63.5,
+      "rc": 0,
+      "digest": "sha256:25c98276d494a703e2178f3139d7b84a00833259163a6ddf9fa3dca5acf9372c",
+      "error": null
+    }
+  ],
+  "layers": {
+    "largest_accepted": 256,
+    "smallest_refused": null,
+    "attempts": [
+      {
+        "n": 100,
+        "outcome": "accepted",
+        "seconds": 64.392,
+        "error": null
+      },
+      {
+        "n": 256,
+        "outcome": "accepted",
+        "seconds": 102.284,
+        "error": null
+      },
+      {
+        "n": 1000,
+        "outcome": "timeout",
+        "seconds": 480.005,
+        "error": null
+      }
+    ],
+    "stop": "layers-1000 ended timeout"
+  },
+  "retag": {
+    "a": "sha256:0ba3400d1616aa94953eaa8fa044af08bbc09d0b786773bcfc1f8672376744ad",
+    "b": "sha256:5fe7d8b7d9c236138e22cb803736bd2d06e3750aba4ffcbce5ea9aadfeb41806",
+    "tag_after_retag": {
+      "status": 200,
+      "via": "qq",
+      "digest": "sha256:5fe7d8b7d9c236138e22cb803736bd2d06e3750aba4ffcbce5ea9aadfeb41806"
+    },
+    "a_after_retag": {
+      "status": 200,
+      "via": "qq",
+      "digest": "sha256:0ba3400d1616aa94953eaa8fa044af08bbc09d0b786773bcfc1f8672376744ad"
+    },
+    "a_blob_after_retag": {
+      "status": 200,
+      "via": "qq",
+      "digest": "sha256:374c9f54a0ef5927e402795a25abb327702b2fc5049fd477f07e73e403004352"
+    },
+    "earlier": {
+      "status": "present",
+      "run": "40714201294",
+      "a": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa",
+      "untagged_since": "2026-10-28T15:17:39Z",
+      "b": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab",
+      "a_read": {
+        "status": 200,
+        "via": "qq",
+        "digest": "sha256:ff70c0b4fa3589e9417d2d8340a66da108b3ee6b16519bac933e92bd4f86c4fa"
+      },
+      "a_blob_read": {
+        "status": 200,
+        "via": "qq",
+        "digest": "sha256:73fc8f9c3ac63120c00c816d2225ff3e79a5ef7fb074fdfe9f355a7ee6534894"
+      },
+      "b_read": {
+        "status": 200,
+        "via": "qq",
+        "digest": "sha256:4413e1eacc4e0671b8572359c0c68508e8b727011cd1d7556669fee8452bb1ab"
+      }
+    }
+  },
+  "criteria": [
+    {
+      "name": "push-1536m-under-600s",
+      "verdict": "PASS",
+      "detail": "20.252 s, 79.5 MB/s"
+    },
+    {
+      "name": "push-4096m-under-600s",
+      "verdict": "PASS",
+      "detail": "67.685 s, 63.5 MB/s"
+    },
+    {
+      "name": "layers-at-least-128",
+      "verdict": "PASS",
+      "detail": "largest accepted 256, none refused; layers-1000 ended timeout"
+    },
+    {
+      "name": "anonymous-read",
+      "verdict": "PASS",
+      "detail": "size-1536m: 200 via Bearer QQ==, the digest of the push"
+    },
+    {
+      "name": "second-push-with-token",
+      "verdict": "PASS",
+      "detail": "the probe existed before this run (6 tags), and this run's token pushed size-1536m"
+    }
+  ]
+}

@@ -68,8 +68,10 @@ jobs:
           PSL_URL: https://publicsuffix.org/list/public_suffix_list.dat
         run: |
           mkdir -p "$RUNNER_TEMP/ref"
-          curl -fsS --retry 3 --max-time 120 -o "$RUNNER_TEMP/ref/listing.json" "$LISTING_URL"
-          curl -fsS --retry 3 --max-time 120 -o "$RUNNER_TEMP/ref/psl.dat" "$PSL_URL"
+          # Ruling 11: every reader sends the contact User-Agent.
+          ua="$(node --input-type=module -e "import { USER_AGENT } from './scripts/lib/user-agent.mjs'; process.stdout.write(USER_AGENT);")"
+          curl -fsS --retry 3 --max-time 120 -A "$ua" -o "$RUNNER_TEMP/ref/listing.json" "$LISTING_URL"
+          curl -fsS --retry 3 --max-time 120 -A "$ua" -o "$RUNNER_TEMP/ref/psl.dat" "$PSL_URL"
           node scripts/measure/psl.mjs --check "$RUNNER_TEMP/ref/psl.dat" > "$RUNNER_TEMP/ref/psl.check"
           cat "$RUNNER_TEMP/ref/psl.check"
           cat "$RUNNER_TEMP/ref/psl.check" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,230 @@
+# DOM-011 (TODO/ingest.md): which CT logs serve names tiles over 24 hours,
+# Geomys's window read with the contact User-Agent, and the overlap of the
+# four-log union with the Kafka window and THC's day. A chain of long jobs,
+# never a cron: a cron of this repository's kind ran every 229 minutes at the
+# median, not every 15 (DOM-001's premise), so a cron would not give 48 rounds
+# in 24 hours.
+#
+# A run has three jobs that start together, in the shape of measure-feeds.yml
+# (DOM-012). `measure-chain` starts the next run and holds the only token that
+# can dispatch one (actions: write); it reads no outside host. `rounds` holds a
+# read-only token and takes a round every 30 minutes counted from its own
+# start, for 340 minutes and never at or after until
+# (scripts/measure/tiles-availability.mjs), and uploads the rounds as the
+# artifact tiles-rounds-<run id>-<attempt>. `overlap` holds a read-only token;
+# it picks a 5-minute window 22 hours back, inside the Kafka retention, and
+# reads it from the four log families, the Kafka topic and THC's dump of that
+# day (scripts/measure/tiles-window.mjs --overlap), reads Geomys's window of
+# 2026-10-26T12:00Z to 12:05Z, and takes the rate of every log from two reads
+# 10 minutes apart (scripts/measure/ct-rates.mjs); it uploads them as
+# tiles-overlap-<run id>-<attempt>. A failure of the rounds or the overlap
+# cannot break the chain, and a failed dispatch fails the run.
+#
+# The concurrency group holds the successor until this run ends, so the seam
+# between two runs is a gap of a few minutes, which the verdict prints. About
+# five runs cover 24 hours: the run that holds until stops its rounds there,
+# and the run after it starts no successor and takes no round.
+#
+# An event made with GITHUB_TOKEN starts no run, except workflow_dispatch and
+# repository_dispatch, so the successor is dispatched with the run's own token.
+# queue: max keeps every waiting run in turn; GitHub refuses it with
+# cancel-in-progress: true.
+#
+# One chain at a time: a re-run (attempt 2 or more) starts no successor, since
+# attempt 1 started one, and a run that finds another run of main waiting
+# starts none either, so a second dispatch while a chain is alive merges into
+# it instead of forking it.
+#
+# Start, once: gh workflow run measure-tiles.yml --ref main -f until=<UTC instant>
+# with until the start plus 24 hours, such as 2026-10-29T16:00:00Z. An until
+# that is not such an instant starts nothing and fails the run. To stop early:
+# gh workflow disable measure-tiles.yml (a run then starts no successor). Read
+# it once the chain has ended:
+#   node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json
+name: Measure tiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      until:
+        description: 'The UTC instant after which no successor starts and no round is taken, such as 2026-10-29T16:00:00Z'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: measure-tiles
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure-chain:
+    # A run of another branch takes no round, reads no window and starts no
+    # successor, so it leaves the group at once and its artifacts never join
+    # the evidence.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # At most 3 dispatch tries 15 s apart.
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Start the successor while the time is before until
+        id: successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UNTIL: ${{ inputs.until }}
+        run: |
+          now=$(date +%s)
+          echo "run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT started=$(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ) until=$UNTIL" >> "$GITHUB_STEP_SUMMARY"
+
+          if ! [[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "::error::until is not an instant like 2026-10-29T16:00:00Z; no successor is started"
+            exit 1
+          fi
+          end=$(date -u -d "$UNTIL" +%s)
+          go=1
+          if [ "$now" -ge "$end" ]; then
+            echo "::notice::until $UNTIL has passed; the chain ends with this run"
+            go=0
+          fi
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::notice::a run on $GITHUB_REF starts no successor; only main carries the chain"
+            go=0
+          fi
+          if [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            echo "::notice::attempt $GITHUB_RUN_ATTEMPT is a re-run; attempt 1 started the successor"
+            go=0
+          fi
+          if [ "$go" -eq 1 ]; then
+            if state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/measure-tiles.yml" --jq .state); then
+              if [ "$state" != active ]; then
+                echo "::notice::the workflow is $state; the chain ends with this run"
+                go=0
+              fi
+            else
+              echo "::warning::could not read the workflow's state; starting the successor anyway"
+            fi
+          fi
+          # Another run of main that waits (any status but in_progress and
+          # completed) already carries a chain: starting one more would fork
+          # it. The predecessor is never waiting, so a lagging listing of it
+          # cannot end the chain.
+          if [ "$go" -eq 1 ]; then
+            others="[.[] | select(.databaseId != $GITHUB_RUN_ID and .status != \"completed\" and .status != \"in_progress\")] | length"
+            waiting=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow measure-tiles.yml --branch main --limit 50 --json databaseId,status --jq "$others") || waiting=""
+            if ! [[ "$waiting" =~ ^[0-9]+$ ]]; then
+              echo "::warning::could not list the workflow's runs; starting the successor anyway"
+            elif [ "$waiting" -gt 0 ]; then
+              echo "::notice::$waiting other run(s) of main are waiting; the chain goes on through them, so no successor is started"
+              go=0
+            fi
+          fi
+          if [ "$go" -eq 0 ]; then
+            echo "successor=none" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          tries=1
+          until gh workflow run measure-tiles.yml --ref main --repo "$GITHUB_REPOSITORY" -f until="$UNTIL"; do
+            if [ "$tries" -ge 3 ]; then
+              echo "::error::could not start the successor in 3 tries; the chain breaks after this run; start it again with gh workflow run measure-tiles.yml --ref main -f until=<UTC instant>"
+              exit 1
+            fi
+            echo "::warning::starting the successor failed (try $tries of 3); trying again in 15 s"
+            tries=$((tries + 1))
+            sleep 15
+          done
+          echo "successor=started tries=$tries" >> "$GITHUB_STEP_SUMMARY"
+
+  rounds:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # 12 rounds 30 minutes apart: the last starts 330 minutes in and ends
+    # within its 10-minute deadline; then the upload.
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - name: Record the job's start time
+        run: echo "JOB_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The scripts use Node's own modules, so nothing is installed or cached.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Take a round every 30 minutes from the job's start, for 340 minutes and before until
+        env:
+          UNTIL: ${{ inputs.until }}
+        run: node scripts/measure/tiles-availability.mjs --out "$RUNNER_TEMP/tiles/rounds.jsonl" --start "$JOB_START" --for-min 340 --interval-min 30 --until "$UNTIL"
+
+      # One artifact per attempt, so a re-run never replaces the rounds of the
+      # attempt before it; tiles-availability.mjs --download fetches each.
+      - name: Upload the rounds
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tiles-rounds-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/tiles/rounds.jsonl
+          if-no-files-found: error
+          overwrite: true
+
+  overlap:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # The overlap waits at most 120 minutes for THC's day; its reads, the
+    # Geomys window and the 10-minute rates take about 20 minutes more.
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # First: the Kafka retention moves while the job runs. A run that picks
+      # no window (until has passed, or the window would sit within 30 minutes
+      # of an end of its UTC day) writes why and passes.
+      - name: Read the overlap of a 5-minute window 22 hours back
+        env:
+          UNTIL: ${{ inputs.until }}
+        run: node scripts/measure/tiles-window.mjs --overlap --until "$UNTIL" --out "$RUNNER_TEMP/tiles/overlap.json" --data "$RUNNER_TEMP/tiles/data" --thc-wait-min 120
+
+      - name: Read Geomys's window of 2026-10-26T12:00Z to 12:05Z
+        if: ${{ !cancelled() }}
+        run: node scripts/measure/tiles-window.mjs --log tuscolo2027h1 --from 2026-10-26T12:00:00Z --to 2026-10-26T12:05:00Z --out "$RUNNER_TEMP/tiles/geomys-window.json" --data "$RUNNER_TEMP/tiles/data"
+
+      - name: Take every log's rate from two reads 10 minutes apart
+        if: ${{ !cancelled() }}
+        run: node scripts/measure/ct-rates.mjs --gap-s 600 --out "$RUNNER_TEMP/tiles/rates.json"
+
+      # The names files under data/ stay on the runner: the three JSON files
+      # hold every count the verdict reads.
+      - name: Upload the overlap, the Geomys window and the rates
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tiles-overlap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/tiles/overlap.json
+            ${{ runner.temp }}/tiles/geomys-window.json
+            ${{ runner.temp }}/tiles/rates.json
+          if-no-files-found: warn
+          overwrite: true

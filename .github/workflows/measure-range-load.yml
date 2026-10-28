@@ -1,0 +1,158 @@
+# DOM-007 (TODO/storage.md): Range reads of a GHCR blob made by the probe
+# Worker's /range route (probes/worker/src/range.ts), driven from a GitHub
+# runner: 30 reads of each size one at a time, cold then warm, then 60 s at
+# 20, 50 and 100 requests a second, cold then warm.
+# scripts/measure/range-load.mjs holds the steps and the pass rules. The same
+# commands run once from the operator's machine, and the entry compares the
+# two places.
+#
+# Read-only: it reads the probe Worker, which reads GHCR anonymously. It
+# installs nothing, holds no token (contents: read is the checkout's) and
+# writes nothing but its artifact `range-load`: one result file and one table
+# a run, and exits.txt. The artifact is uploaded either way; the job is green
+# only when every run passes.
+#
+# The probe's workers.dev host carries the account's own subdomain, which stays
+# out of the tree and the log (the secrets document under docs/security). It comes as the input
+# `url`, which the first step after the setup reads from the event file, not
+# through env:, and masks before anything prints it. range-load.mjs writes the
+# host without the subdomain.
+#
+# Started by hand on main, once the probe is deployed with /range:
+#   gh workflow run measure-range-load.yml --ref main -f url="$PROBE_URL/range"
+# One run at a time, so two loads never share the probe.
+name: Measure Range reads through the probe Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The probe Worker's /range URL, https://HOST/range (masked in the log)
+        type: string
+        required: true
+      tag:
+        description: The probe's tag or manifest digest; each run pins a tag to its digest first
+        type: string
+        default: size-1536m
+      seconds:
+        description: Seconds at each rate (1 to 120)
+        type: number
+        default: 60
+
+permissions: {}
+
+concurrency:
+  group: measure-range-load
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure:
+    # A measurement is evidence of main's code only.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      OUT: .tmp/measure/DOM-007
+    steps:
+      - name: Record the job's start time
+        run: printf 'JOB_STARTED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Read and mask the probe URL
+        run: |
+          url="$(node -e 'const e = JSON.parse(require("fs").readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")); process.stdout.write(String((e.inputs || {}).url || ""))')"
+          if [[ -n "$url" ]]; then
+            printf '::add-mask::%s\n' "$url"
+          fi
+          # The probe Worker's own host only: a free-text input never aims the
+          # load at another host.
+          if [[ ! "$url" =~ ^https://domains-probe\.[a-z0-9-]+\.workers\.dev/range$ ]]; then
+            printf 'the url input must be https://domains-probe.<account>.workers.dev/range\n' >&2
+            exit 2
+          fi
+          host="${url#https://}"
+          printf '::add-mask::%s\n' "${host%%/*}"
+          printf 'PROBE_URL=%s\n' "$url" >> "$GITHUB_ENV"
+      # Each run's exit code is read from its own process and recorded, so one
+      # FAIL does not stop the runs after it; the Verdict step reads them all.
+      - name: Single reads, 30 of each size, cold then warm
+        timeout-minutes: 12
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p "$OUT"
+          code=0
+          node scripts/measure/range-load.mjs --url "$PROBE_URL" --tag "$TAG" --mode single --count 30 --expect 206 --place runner --out "$OUT/runner-single.json" > "$OUT/runner-single.txt" || code=$?
+          cat "$OUT/runner-single.txt"
+          printf 'runner-single %s\n' "$code" >> "$OUT/exits.txt"
+      - name: Load at 20, 50 and 100 requests a second, cold then warm
+        timeout-minutes: 26
+        env:
+          TAG: ${{ inputs.tag }}
+          PER_RATE_S: ${{ inputs.seconds }}
+        run: |
+          if [[ ! "$PER_RATE_S" =~ ^([1-9]|[1-9][0-9]|1[01][0-9]|120)$ ]]; then
+            printf 'seconds must be a whole number from 1 to 120\n' >&2
+            exit 2
+          fi
+          mkdir -p "$OUT"
+          for mode in cold warm; do
+            for rps in 20 50 100; do
+              name="runner-$mode-$rps"
+              code=0
+              node scripts/measure/range-load.mjs --url "$PROBE_URL" --tag "$TAG" --mode "$mode" --rps "$rps" --seconds "$PER_RATE_S" --expect 206 --place runner --out "$OUT/$name.json" > "$OUT/$name.txt" || code=$?
+              cat "$OUT/$name.txt"
+              printf '%s %s\n' "$name" "$code" >> "$OUT/exits.txt"
+            done
+          done
+      - name: Write the tables to the job summary
+        if: always()
+        run: |
+          {
+            printf '## DOM-007: Range reads through the probe Worker, from a runner\n\n'
+            for f in "$OUT"/runner-*.txt; do
+              if [[ -f "$f" ]]; then
+                printf '```text\n'
+                cat "$f"
+                printf '```\n\n'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      # .tmp/ starts with a dot, and upload-artifact leaves out hidden paths
+      # unless told.
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: range-load
+          path: .tmp/measure/DOM-007/
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+      # Green only when all seven runs recorded exit 0: one single run and six loads.
+      - name: Verdict
+        if: always()
+        run: |
+          if [[ ! -f "$OUT/exits.txt" ]]; then
+            printf 'no run recorded an exit code\n' >&2
+            exit 1
+          fi
+          runs="$(wc -l < "$OUT/exits.txt")"
+          if [[ "$runs" -ne 7 ]]; then
+            printf '%s of the 7 runs recorded an exit code\n' "$runs" >&2
+            exit 1
+          fi
+          awk '$2 != "0" { bad = 1; printf "not PASS: %s (exit %s)\n", $1, $2 } END { exit bad }' "$OUT/exits.txt"

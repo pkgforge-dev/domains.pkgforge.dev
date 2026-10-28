@@ -45,7 +45,8 @@ function stubTree(overrides = {}) {
     copyFileSync(join(ROOT, rel), join(dir, rel));
   }
   const ok = "import { appendFileSync } from 'node:fs';\nappendFileSync('.tmp-ran.txt', process.argv[1] + '\\n');\n";
-  for (const rel of ['scripts/todo/check.mjs', 'scripts/todo/count.mjs', 'scripts/text-check.mjs', 'scripts/scan-secrets.mjs', 'scripts/check-hooks.mjs']) put(rel, overrides[rel] ?? ok);
+  for (const rel of ['scripts/todo/check.mjs', 'scripts/todo/count.mjs', 'scripts/check-workflows.mjs', 'scripts/text-check.mjs', 'scripts/scan-secrets.mjs', 'scripts/check-hooks.mjs'])
+    put(rel, overrides[rel] ?? ok);
   const pass = 'node -e "process.exit(0)"';
   put('package.json', JSON.stringify({ name: 'stub', private: true, scripts: { test: pass, lint: pass, typecheck: pass, ...overrides.scripts } }));
   put('.gitignore', '.tmp/\n.tmp-ran.txt\nnode_modules/\n');
@@ -74,6 +75,15 @@ test('a failing step exits 1, names the step and its exit code, runs the later s
   assert.match(r.stderr, /FAIL node scripts\/text-check\.mjs \(exit 3\)/);
   assert.match(readFileSync(join(dir, '.tmp-ran.txt'), 'utf8'), /scan-secrets\.mjs/, 'the step after the failure still ran');
   assert.doesNotMatch(r.stdout, /gate: all steps passed/);
+  assert.deepEqual(passesOf(dir), []);
+});
+
+test('a workflow that breaks the policy fails the run, the suites still run, and no pass is recorded', () => {
+  const dir = stubTree({ 'scripts/check-workflows.mjs': "process.stderr.write('.github/workflows/x.yml:3: rule 1: top-level permissions\\n');\nprocess.exit(1);\n" });
+  const r = runGate(dir);
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /FAIL node scripts\/check-workflows\.mjs \(exit 1\)/);
+  assert.match(readFileSync(join(dir, '.tmp-ran.txt'), 'utf8'), /text-check\.mjs/, 'the steps after it still ran');
   assert.deepEqual(passesOf(dir), []);
 });
 

@@ -9,8 +9,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-006 — Measure a 1.5 GB push from a runner and that a first push comes out public
 
-- **Status:** partial
-- **Waiting:** until 2026-10-28T17:00:00Z; dispatch measure-push.yml twice, run scripts/measure/push-summary.mjs --run on the second run, read the package anonymously, fill the ledger date, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator's ruling 6 of 2026-10-27: "no tokens are necessary, the mirror archlinux agent did everything using actions own tokens at runtime, didn't even need me to manually make any packages public, it did that on its own too". Design A section 13 and design B section 11 list every GHCR write as unmeasured.
@@ -47,10 +46,25 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Correction 2026-10-28T14:24Z:** the Resources line read about 6 GiB. With the default inputs, each run pushes 1,536 MiB and 4,096 MiB of new random bytes (`.github/workflows/measure-push.yml` lines 210 to 224 and 310 to 322). It also pushes about 1 MiB of 1 KiB layers and 2 blobs of 64 KiB for the retag (lines 264 to 277 and 326 to 363). That is about 5.5 GiB a run, derived from the workflow and not measured. The Prove needs two runs, so the probe holds about 11 GiB after them. Every later dispatch at the default inputs adds about 5.5 GiB, because nothing is deleted. The Resources line now says so, and `docs/resources.md` states the growth.
 - **Correction 2026-10-28T14:36Z:** the Approach read that the job holds `issues: write`, so that a failed anonymous read raises `visibility-<package>`. `scripts/track-issue` (DOM-034) raises that issue, and at 2026-10-28T14:35Z it is not in the tree (`ls scripts/track-issue` fails). No step of the job uses that grant, and `docs/security/secrets.md` line 67 gives a job the narrowest `permissions:` block it needs. The job holds `contents: read` and `packages: write` only (`.github/workflows/measure-push.yml` lines 78 to 80). Its last step runs `push-summary.mjs --file` with `--require anonymous-read` (line 503), so a failed anonymous read fails the job. `issues: write` joins in the commit that adds `scripts/track-issue`. The Approach now says so.
 - **Correction 2026-10-28T14:36Z:** the Approach read that the second run pushes "with the same token". That is wrong. GitHub mints the `GITHUB_TOKEN` for one job, and it expires with the job (`docs/security/secrets.md` line 6, read, not measured). So the second run pushes with a token the first run never held. The criterion `second-push-with-token` passes only when the probe existed before the run and the run's first push exited 0 (`scripts/measure/push-summary.mjs` lines 215 to 226). The Approach now says "a token the first run never held".
+- **Closed 2026-10-28T15:44Z (proven):** two runs of `measure-push.yml` on `main` pushed with the job's own `GITHUB_TOKEN`, and the package came out public and linked with no manual step.
+  - Run 1, 40714201294 on 69eff0d, 2026-10-28T15:16:18Z to 15:26:57Z, created the package (`tags/list` 404 before it). `node scripts/measure/push-summary.mjs --run 40714201294` exits 1, failing only `second-push-with-token` as expected for a first run. Its pushes: 1,536 MiB in 15.823 s (101.8 MB/s), 4,096 MiB in 35.385 s (121.4 MB/s). Layers 100, 256 and 1,000 were accepted, the last in 404.011 s.
+  - Run 2, 40716636421 on 306454b, 2026-10-28T15:30:38Z to 15:43:27Z. `node scripts/measure/push-summary.mjs --run 40716636421` exits 0 and prints:
+
+        PASS push-1536m-under-600s  20.252 s, 79.5 MB/s
+        PASS push-4096m-under-600s  67.685 s, 63.5 MB/s
+        PASS layers-at-least-128  largest accepted 256, none refused; layers-1000 ended timeout
+        PASS anonymous-read  size-1536m: 200 via Bearer QQ==, the digest of the push
+        PASS second-push-with-token  the probe existed before this run (6 tags), and this run's token pushed size-1536m
+
+  - `curl -sS -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/probe/manifests/size-1536m` prints `200` at 2026-10-28T15:43:48Z.
+  - `docs/research/measure/DOM-006/result.json` names `visibility` `public` with `package_record_status` 200, so the job's token may read the package record. `repository` is `pkgforge-dev/domains.pkgforge.dev`, so a repository path whose first segment holds dots links to the repository. `layers.largest_accepted` is 256, `pushes[].mb_per_s` 79.5 and 63.5, and `retag.a_after_retag.digest` sha256:0ba3400d1616. Both push-result files are kept beside it.
+  - What the premise listed as unmeasured, now measured: a manifest of 1,000 layers of 1 KiB was accepted once in 404 s and timed out at the 480 s cap once, so 256 is the count both runs accepted, above the floor of 128. A manifest untagged by a retag stays readable by digest, with its blob: run 1's A, untagged since 2026-10-28T15:17:39Z, read 200 anonymously in run 2. Push speed varies by a factor of about 2 between runs (63.5 to 121.4 MB/s), all far inside the 10-minute limit.
+  - Gate part (b) is the anonymous read above; part (c) is the wave's three lenses, which ran on this entry's workflow and script before the commit.
 
 ## DOM-007 — Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-30T16:00:00Z; deploy the probe routes, read `/range` once and twice with `cache=block` to see whether workers.dev keeps the entry, run the single reads, and after DOM-002 sets `crons = []` run the cold and warm loads at 20, 50 and 100 requests a second from this machine and from a runner, merge, replace the [E] latencies of `docs/architecture.md` section 4.3, and close
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 13 and design B section 11 Phase 0 items 1 and 3: every read measurement so far came from a laptop in Nepal, none from a Worker.
@@ -76,10 +90,64 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The same command with `--mode warm` prints `PASS` when p95 is under 300 ms.
   - `node scripts/test.mjs probes/worker --name "range"` passes in workerd with a mock registry.
 - **Found 2026-10-28T14:24Z (DOM-006):** the Target blob is `probe:size-1536m`, and that tag moves. Every dispatch of `.github/workflows/measure-push.yml` with the default `size_mb` pushes 1,536 MiB of new random bytes to `size-1536m` (lines 210 to 224 and 310 to 322). Such a dispatch during a load run therefore changes the blob between two requests of that run. The route must take the manifest digest of DOM-006's push as its reference, not the tag. `docs/research/measure/DOM-006/result.json` records that digest as `pushes[].digest` of the push whose `tag` is `size-1536m`. Name it in the result file of this entry.
+- **Built 2026-10-28T23:38Z:** `probes/worker/src/range.ts` exports `rangeRoute` (GET `/range`).
+  - **Query.**
+    - `repo` defaults to `pkgforge-dev/domains.pkgforge.dev/probe`.
+    - `tag` is a tag or a manifest digest, and required.
+    - `offset` defaults to 0.
+    - `length` is 1 to 1,048,576, default 1,024.
+    - `cache` is `none`, `signed` or `block`, default `none`.
+  - **Steps.**
+    1. The manifest GET sends `Authorization: Bearer QQ==` and the OCI Accept list, and reads the largest layer.
+    2. The blob GET uses `redirect: "manual"`. The Location is accepted only as https; a host outside `*.githubusercontent.com` is followed but reported `expected_host: false`.
+    3. A GET of the signed URL sends `Range: bytes=OFFSET-END` and no Authorization.
+    A 401 or 403 to the dummy token runs the anonymous token flow once: the realm must be https on `ghcr.io`, and the token is used once and never kept.
+  - **The answer.** JSON with HTTP 200 whenever the read was attempted: `ok`, `status`, `failed_at`, each step's status and ms, `subrequests`, `total_ms`, the manifest digest, the signed host and its `se`, the bytes read with their first and last 16 bytes and sha256, the cache states read, and the limits. A bad query, or an offset past the layer's end, answers 400.
+  - **Bounds (`LIMITS`).** A query of 512 characters; a manifest of 64 KiB; a token answer of 4,096 B; 10 s a subrequest, 25 s for all of one answer, and at most 9 subrequests.
+  - **Cache TTLs.**
+    - A manifest by digest: 1 year. By tag: 30 s.
+    - A signed URL: until `se` - 120 s, at most 600 s. A TTL under 1 s is not kept.
+    - A block: one day, under the key `DIGEST/OFFSET-LENGTH`.
+  - **Not an open proxy.**
+    - `repo` must match `pkgforge-dev/domains.pkgforge.dev/NAME`.
+    - The only other host asked is the one GHCR's 307 names.
+    - The answer never carries the block, the signed URL or a token.
+    - Error texts drop every URL query.
+  - `scripts/measure/range-load.mjs` is open loop: request i starts at `t0 + i * 1000 / rps` ms. A test plants a 300 ms server delay and sees at least 4 requests in flight.
+    - **Modes.** `cold` asks blocks never asked before in the run, drawn without repetition from a recorded seed. `warm` reads 50 fixed blocks with `cache=block` after an uncounted prefill. `single` reads each size 30 times, one at a time.
+    - **Units.** The entry's sizes are binary: 1,024, 25,600, 65,536 and 1,048,576 B. Latency is the client's, from request start to the last byte, over every request. Percentiles use `quantile()` of `probes/worker/src/gaps.ts`.
+    - **The verdict.** The entry's three criteria, plus three of the script's own: at least 1 request; at most 1% other answers (so a run of 404s cannot pass on latency); and, for `warm`, more than half the expected answers from the block cache. `--expect 206` counts an answer when the Worker answered `ok: true` with status 206.
+    - **`--merge`.** It builds `docs/research/measure/DOM-007/result.json`, refuses a file whose verdict does not follow from its own criteria, needs the whole plan at every place, and records `places` and `refs`.
+  - `.github/workflows/measure-range-load.yml` is `workflow_dispatch` only, on main, with the inputs `url`, `tag` and `seconds`.
+    - The `url` input must match `^https://domains-probe\.[a-z0-9-]+\.workers\.dev/range$`. It is read from `GITHUB_EVENT_PATH` and masked before anything prints it, and `getAnswer` refuses redirects.
+    - The job runs single reads, then cold and warm at 20, 50 and 100 rps, and uploads the artifact `range-load`. It is green only when all 7 runs exit 0.
+- **Correction 2026-10-28T23:38Z (the Target blob):** the Approach names mirror-archlinux's 199 MiB blob as a second target. The route reads only this project's namespace, a bound the door sweep relies on, so that target is dropped. The probe package already holds layers of 1,610,612,736 B and 4,294,967,296 B.
+- **MEASURED 2026-10-28T15:30:59Z to 15:36:20Z (the target, from the operator's workstation):**
+  - The manifests `size-1536m` and `size-4096m` answer 200 to `Bearer QQ==`: 720 B each, one layer `payload.bin`.
+  - The blob answers 307 in 0.42 s to `pkg-containers.githubusercontent.com`, with `se` about 8.8 minutes ahead.
+  - A ranged GET of the signed URL answers 206 with 25,601 B in 0.91 s: `Content-Range bytes 26214400-26240000/1610612736`, `Server: Windows-Azure-Blob/1.0`.
+  - With no Authorization the manifest answers 401, with `Bearer realm="https://ghcr.io/token"`. The token answer is 200, 97 B, holding only the key `token` and no `expires_in`.
+- **Found 2026-10-28T15:55:07Z (the tag moved, as the Found of 14:24Z predicted):** `size-1536m` now names `sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c`, the digest that `docs/research/measure/DOM-006/result.json` records. At 15:30:59Z it named `sha256:080d216a…`, which still reads 206 by digest. So every run passes `--tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c`, and the Prove lines below carry it. Without the flag, `range-load.mjs` pins the tag to its digest with one uncounted first read.
+- **MEASURED 2026-10-28T15:55:07Z (the route's code in Node, not in a Worker; a ceiling, not a Worker number):** manifest 200 in 576 ms, blob 307 in 271 ms, range 206 in 876 ms (head 516 ms). In all 1,730 ms, with 3 subrequests and `se` 592 s ahead. By digest at 15:55:09Z: 1,494 ms.
+- **Correction 2026-10-28T23:38Z (deploy and schedule):**
+  - The probe is redeployed with `cd probes/worker && npx wrangler@4.150.0 versions upload`, then `npx wrangler@4.150.0 versions deploy VERSION_ID@100% --yes` during DOM-002's window, and the deploy time goes in DOM-002.
+  - The single reads and the cache check run after that deploy.
+  - The loads at 20, 50 and 100 requests a second wait until DOM-002 has set `crons = []`, so that they do not share the probe with the clock it measures.
+  - The Prove lines carry `--tag` with the pinned digest.
+- **Prove as it stands 2026-10-28T23:38Z:**
+  - `node scripts/test.mjs probes/worker --name range` exits 0. It runs 30 Node tests of `range.test.ts` against the testkit's GHCR stand-in, and 2 workerd tests through `test/range-entry.ts`. The workerd tests show that workerd hands a `redirect: "manual"` 307 back to the route, and that Miniflare's Cache API keeps a binary block.
+  - `node scripts/test.mjs scripts/measure --name "range load"` exits 0 with 14 tests, and `node --test scripts/measure/range-load.test.mjs` passed 20 isolated runs in a row (2026-10-28T23:31Z to 23:38:50Z, 20 of 20). Latency is no longer asserted in the warm-cache test or the merge test.
+  - 16 planted defects were each caught by their test.
+  - All registries, blobs, digests and signed URLs in the tests are synthetic and labelled so.
+  - Gate part (c): the wave's three lenses. The door sweep bound the `url` input and refused redirects. The guard mutation covered the query and repo caps, the Content-Range checks, the token size, the realm `evilghcr.io` and the 25 s budget.
+  - Not yet measured:
+    - whether workers.dev keeps Cache API entries, on which the warm Prove depends;
+    - whether GitHub shows a `workflow_dispatch` input on the public run page.
 
 ## DOM-008 — Measure deflate-raw decode CPU in workerd
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-30T16:00:00Z; upload the three sample packs and read one back, deploy the probe routes, smoke-read `/decode`, and after DOM-002 sets `crons = []` run `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 200 --manifest .tmp/measure/DOM-008/sample/manifest.json --out docs/research/measure/DOM-008/result.json`, commit the result with `sample-manifest.json`, and close
 - **Priority:** P1
 - **Effort:** S
 - **Source:** design B section 2.4 item 3 and section 11 item 2; design A section 12 ("Block decode CPU in Workers is unmeasured"). The design in `docs/architecture.md` section 4.4 chooses `deflate-raw` because Workers decode it with `DecompressionStream`.
@@ -105,6 +173,63 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Prove:** `node scripts/measure/decode-cpu.mjs --url https://WORKER_HOST/decode --requests 200` prints p50 and p99 CPU for each block size and `PASS` when 4,096 names decode in at most 3 ms of CPU at p99. WORKER_HOST is the probe's workers.dev host.
   - `node scripts/test.mjs probes/worker --name "decode"` passes under Miniflare.
   - The result file `docs/research/measure/DOM-008/result.json` names the source of the CPU numbers (`logs`, `tail` or `limit-probe`).
+- **Built 2026-10-28T23:38Z:**
+  - `probes/worker/src/decode.ts` exports `decodeRoute` (GET `/decode`), tested in `src/decode.test.ts`, and in workerd through the test-only entry `test/decode-entry.ts`.
+  - `scripts/measure/make-sample-pack.mjs` and `scripts/measure/decode-cpu.mjs` each have a test. The fixtures in `scripts/measure/fixtures/decode/` are synthetic.
+  - `ProbeBucket` in `src/types.ts` gains an optional `get(key, {range})`. The R2 binding always has it, and `decode.ts` answers 500 for a binding without it.
+- **The route 2026-10-28T23:38Z:**
+  - **Query.** `blocks=N` is 1 to 16, and at most the blocks the pack holds. `rows=R` is 1 to 10,000, the JSON page limit of `docs/architecture.md` section 7.6. `per` is 1024, 4096 (the default) or 16384. `tag` is 1 to 64 characters of `[A-Za-z0-9._-]`, echoed back. Any other parameter is a 400, and every answer is `cache-control: no-store`.
+  - **One request.** It makes two ranged R2 gets: the head with the first N table entries, then the N blocks back to back. It holds one inflated block at a time. Each block is inflated with `DecompressionStream("deflate-raw")` and its bytes counted against the table's raw length. The route then checks the CRC-32 through the block against the table, scans every record, and checks that keys ascend across blocks.
+  - **The answer.** `names`, `packed_bytes`, `raw_bytes`, `crc32`, `first_key` and `last_key`. `rows` mode adds rows of `{name, exact, wildcard}`. A missing pack answers 503, a corrupt one 500, and a short R2 read 502.
+- **The sample layout 2026-10-28T23:38Z (measurement only, not DPK1):** one object per block size, `sample/v1/per-P.pack`.
+  - A 32 B head: magic `DSP1`, version 1, codec 1 (deflate-raw), P, blocks, records, object bytes.
+  - 20 B a block: offset, packed, raw, records, and the CRC-32 of raw blocks 0 to i read as one stream.
+  - Then the blocks, in the record layout of `blockenc.mjs`, at level 9.
+  - `writeSampleHead` in `decode.ts` is the one writer of the head.
+- **MEASURED 2026-10-28T15:45:11Z to 15:47:47Z (the sample):** `gzip -dc .tmp/measure/DOM-009/2026-10-26.txt.gz | node scripts/measure/make-sample-pack.mjs --out .tmp/measure/DOM-008/sample` exits 0 (Node v26.7.0, zlib 1.3.2.1-motley). It reads 38,474,309 lines, refuses 0, and keeps the 262,144 smallest reversed keys: 16 blocks of 16,384, the route's cap.
+  - 1,024 a block: 256 blocks, 1,568,193 B, 10.08 B front and 5.96 B deflate a name, sha256 `ac4fe8d5aa5ee9007effb00c23ae5c3a20fe4a09754b9c3877044fa811cc6d09`.
+  - 4,096 a block: 64 blocks, 1,506,118 B, 10.07 and 5.74 B a name, sha256 `b601f87dec6aecb81e86e1faa0967f7ec0d107de81c97da7c6227b9fd7a7cee8`, first block CRC `98a46914`.
+  - 16,384 a block: 16 blocks, 1,472,780 B, 10.07 and 5.62 B a name, sha256 `fdccdcb2b06205d7d6d415e835f12f1b80d89da1bca962f99f08a2896feb9e92`, CRC through block 15 `ce181e2a`.
+- **Correction 2026-10-28T23:38Z (Premise, sample density):** none of the five slices tried matches the day's mean. MEASURED 2026-10-28T15:45:14Z to 15:52:44Z, front and deflate B a name at 4,096, for slices that start at:
+  - `com.`: 8.00 and 4.49;
+  - `de.`: 10.27 and 5.65;
+  - `net.`: 8.90 and 3.01;
+  - `org.`: 9.65 and 5.43.
+  The default slice (10.07 and 5.74) is among the heaviest and was kept. A block of it holds about 0.84 times the raw bytes of a mean block of the whole day (10.07 against design B's 11.98 B front a name). `decode-cpu.mjs` carries `raw_bytes` and `packed_bytes` for each combination. A verdict near its line may be scaled by about 1.19, but that scale assumes CPU linear in raw bytes, which is not measured.
+- **Correction 2026-10-28T23:38Z (where CPU is read):** the script's source is `tail`, the entry's second choice. `decode-cpu.mjs` spawns the pinned wrangler's `tail domains-probe --format json` under the local login, and reads `cpuTime` of each trace event. It keeps `wallTime` and the client's time as separate wall-time fields, never read as CPU.
+  - Whether the tail's JSON carries `cpuTime`, and in what unit, is first seen on the live run. If no event carries it, the script exits 2 and keeps the run.
+  - Workers Logs, the first choice, is read in the dashboard only, because its API needs a token (absolutes 4 and 14).
+  - The third choice, deployments with `[limits] cpu_ms`, would cap the cron invocations that DOM-002 measures, so it waits for DOM-002's `crons = []`.
+- **Decision reading 2026-10-28T23:38Z:**
+  - `decode-4096-p99-at-most-3ms` judges the p99 CPU of a whole `/decode?blocks=1&per=4096` invocation: two R2 gets, the inflate, the CRC-32, the scan and the JSON answer. That is an upper bound on one block's decode.
+  - `rows-1000-p99-at-most-15ms` judges the whole `/decode?rows=1000` invocation.
+  - A criterion also fails if any invocation of its combination is not 200 or does not end `ok`.
+  - The plan is 200 requests to each of 10 combinations, round robin, 4 at a time. Blocks 1, 4 and 16 at each of the 3 sizes make 9 of them, and `rows=1000` the tenth.
+  - A combination needs at least 90% of its requests traced, and its answers must agree on `names` and `crc32` (and with the manifest when `--manifest` is given).
+- **MEASURED 2026-10-28T15:54:44Z to 15:54:49Z (local workerd 1.20261006.1, through `@domains/testkit`):** the real sample packs, in an in-memory R2, answered 200 for all 10 combinations, each with the manifest's CRC-32. `blocks=1&per=4096` read 41,808 raw and 20,624 packed bytes. `blocks=16&per=16384` read 262,144 names, 2,639,805 raw and 1,472,428 packed bytes.
+- **Found 2026-10-28T15:54Z (DOM-017, the compatibility date):** a `DecompressionStream` and `CompressionStream("deflate-raw")` round trip answered 200 at every date tried, under `no_nodejs_compat` and `no_nodejs_compat_v2`. The dates: 2021-01-01, 2021-11-03, 2022-01-01, 2022-06-01, 2023-01-01, 2023-06-01, 2023-08-01, 2024-01-01, 2025-01-01 and 2026-10-13. So in that workerd binary, no date from 2021-01-01 on and no flag gates `deflate-raw`. Cloudflare's own runtime was not tried at an older date.
+- **Correction 2026-10-28T23:38Z (deploy and schedule):**
+  - The three packs are uploaded to `domains-probe/sample/v1/` with `npx wrangler@4.150.0 r2 object put … --remote`, and one is read back against its sha256. The bucket's lifecycle rule covers only `hot/`, so they stay until DOM-056 deletes the bucket.
+  - The probe is redeployed with `cd probes/worker && npx wrangler@4.150.0 versions upload`, then `npx wrangler@4.150.0 versions deploy VERSION_ID@100% --yes` during DOM-002's window, and the smoke reads run after it.
+  - The 2,000-request run waits until DOM-002 has set `crons = []`.
+- **Prove as it stands 2026-10-28T23:38Z:**
+  - `node scripts/test.mjs probes/worker --name decode` exits 0: 12 Node and 3 workerd tests of the route.
+  - `node scripts/test.mjs scripts/measure --name "sample pack"` and `--name "decode cpu"` exit 0. The decode-cpu tests cover events with `cpu_ms: null` (exit 2), a plan missing a judged combination, and a manifest pack with too few blocks.
+  - 15 guards were each disabled once and their tests failed (15 of 15 killed). They are:
+    - the CRC chain;
+    - key order;
+    - the inflate cap;
+    - the record count;
+    - the table tiling;
+    - both short reads;
+    - `cpuTime` never replaced by `wallTime`;
+    - the no-`cpuTime` refusal;
+    - the 90% coverage;
+    - answer agreement;
+    - errors failing a criterion;
+    - the selector's ceiling;
+    - the writer's read-back CRC.
+  - Gate part (c): the wave's three lenses. The claim audit removed a density figure that nothing in the tree backs.
 
 ## DOM-017 — The pack format: writer, reader, merge and sparse index
 
@@ -140,6 +265,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `node scripts/bench/pack.mjs --names 1000000` prints bytes a name, and exits 0 when a 1-source names pack is at most 12 B a name and a lookup reads at most two range reads.
   - A planted defect that drops the `last` update in `mergePacks` makes the `max(last)` test fail.
   - `node scripts/test.mjs packages/pack --name "workerd"` runs the reader in Miniflare workerd on the vectors (uses DOM-013's testkit).
+- **Found 2026-10-28T15:54Z (DOM-008):** in workerd 1.20261006.1, a `deflate-raw` round trip through `DecompressionStream` and `CompressionStream` answers at every compatibility date tried from 2021-01-01 to 2026-10-13, under `no_nodejs_compat` and `no_nodejs_compat_v2`. No date and no flag gates it there. Cloudflare's own runtime was not tried at an older date. That is the line for `docs/format.md`.
 
 ## DOM-018 — Verify a pack before it counts
 
@@ -223,6 +349,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `node scripts/root/promote.mjs --fixture stale` exits 1. Read the exit code unpiped.
   - After the first run of `root-promote.yml`: `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq -r .artifactType` prints `application/vnd.pkgforge.domains.root.v1`.
   - `node scripts/root/show.mjs --ref latest` prints `root_seq`, `as_of` and the live packs.
+- **Found 2026-10-28T23:38Z (DOM-014):** rule 13 of `scripts/check-workflows.mjs`, read literally, puts the group `root-writer` on a workflow whose job calls `root-promote.yml`. This entry puts the group in `root-promote.yml` itself, and a caller and a called workflow in one group would wait on each other (read, not measured). The check implements the literal rule. This entry settles the rule with a measured run when it writes `root-promote.yml`. The recommendation is to exempt a caller of `root-promote.yml` and require the group in the called file. `TODO/PROGRESS.md` "Open questions" carries it.
 
 ## DOM-021 — The domain table: exact first and last seen, and the provisional filter
 
@@ -422,6 +549,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - After the August run: `node scripts/rev/lookup.mjs --month 2026-08 --ip 190.0.0.1 --count` prints a count of at least 4,000.
   - After the September run: `node scripts/rev/lookup.mjs --month 2026-09 --verify-total` prints `OK records N dropped D scan S` where N plus D equals S from DOM-010's result, and exits 0. Read the exit code unpiped.
   - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/rev/manifests/rev-m-202609 | jq -r .artifactType` prints `application/vnd.pkgforge.domains.pack.v1`.
+- **Found 2026-10-28T21:46Z (DOM-010):** the whole September file streams through gzip and mawk in 1,969.89 s on one runner, 18.8 MB/s compressed and 131 MB/s uncompressed, 3.23 million records a second. awk used 1,936.73 s of CPU and gzip 890.17 s, so a single awk is the bound and a pack builder that splits the parse over cores is faster. The file's addresses come in 93,473 runs of one family, 6,339,801,095 IPv4 and 24,310,628 IPv6 records, and it is not sorted by address (run 40714223764, `docs/research/measure/DOM-010/result.json`).
 
 ## DOM-053 — Rebuild R2 from GHCR and serve with R2 empty
 

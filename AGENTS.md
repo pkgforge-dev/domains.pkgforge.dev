@@ -232,13 +232,13 @@ adapters/<source>/   one source adapter each: source.json, a module, fixtures an
 probes/<name>/       temporary measurement Workers, such as probes/worker/ (created by DOM-061, deleted when the measurements close)
 config/              decided facts the code reads: clock.json, source-bits.json, sources.json (created by the foundation and ops entries)
 .github/workflows/   ingest, publish and check workflows (created by the ingest entries)
-scripts/             the gate, the test runner, the record guard (todo/), the text and secret sweeps, the measurement scripts (measure/)
+scripts/             the gate, the test runner, the record guard (todo/), the workflow policy, the text and secret sweeps, the PSL fetch (ref/), the measurement scripts (measure/)
 .githooks/           commit-msg: refuses a commit that credits a tool
 ```
 
 `TODO/` with its entry files, the architecture, the source catalogue, the
 ledger, the methodology, the conventions and the research reports exist. So do
-`packages/core/` and `packages/testkit/` (DOM-013), `probes/worker/` (DOM-061),
+`packages/core/` and `packages/testkit/` (DOM-013), `packages/names/` (DOM-015), `probes/worker/` (DOM-061),
 the measurement workflows and `ci.yml` under `.github/workflows/`, and
 `docs/research/measure/`, where each measurement writes its results under its
 entry id.

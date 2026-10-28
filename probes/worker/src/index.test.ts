@@ -184,8 +184,19 @@ test("probe routes: GET / lists the route table", async () => {
   );
   assert.deepEqual(
     ROUTES.map((route) => route.path),
-    ["/", "/gaps"],
+    ["/", "/gaps", "/kafka", "/range", "/decode"],
   );
+  assert.deepEqual(
+    ROUTES.map((route) => [route.path, route.entry]),
+    [
+      ["/", "DOM-061"],
+      ["/gaps", "DOM-061"],
+      ["/kafka", "DOM-005"],
+      ["/range", "DOM-007"],
+      ["/decode", "DOM-008"],
+    ],
+  );
+  for (const route of ROUTES) assert.equal(route.method, "GET", `${route.path} answers GET`);
 });
 
 test("probe routes: an unknown path answers 404 and another method 405", async () => {
