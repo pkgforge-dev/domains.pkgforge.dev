@@ -1,0 +1,11 @@
+{
+  "name": "@domains/testkit",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The test harness: withWorker runs a Worker in workerd through Miniflare under node:test, and world stands in for GHCR and the Cache API in Node. miniflare and esbuild come from the root devDependencies.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

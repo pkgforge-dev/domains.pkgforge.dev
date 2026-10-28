@@ -237,12 +237,15 @@ scripts/             the gate, the test runner, the record guard (todo/), the te
 ```
 
 `TODO/` with its entry files, the architecture, the source catalogue, the
-ledger, the methodology, the conventions and the research reports exist.
+ledger, the methodology, the conventions and the research reports exist. So do
+`packages/core/` and `packages/testkit/` (DOM-013), `probes/worker/` (DOM-061),
+the measurement workflows and `ci.yml` under `.github/workflows/`, and
+`docs/research/measure/`, where each measurement writes its results under its
+entry id.
 
 ⚠ Not yet created, each by the entry whose row says so: `apps/<worker>/`,
-`packages/<name>/`, `adapters/<source>/`, `probes/<name>/`, `config/` and
-`.github/workflows/<name>.yml`. Not yet created either: `docs/research/measure/`,
-where each measurement writes its results under its entry id.
+`adapters/<source>/`, `config/`, and every other `packages/<name>/`,
+`probes/<name>/` and `.github/workflows/<name>.yml`.
 
 ## 7. What a session owes at its end
 

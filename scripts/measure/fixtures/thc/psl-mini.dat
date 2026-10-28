@@ -1,0 +1,31 @@
+// A test fixture for scripts/measure/psl.mjs: a small Public Suffix List with
+// one rule of each kind (plain, wildcard, exception, IDN, private section).
+// The real list is https://publicsuffix.org/list/public_suffix_list.dat.
+
+// ===BEGIN ICANN DOMAINS===
+
+com
+net
+uk
+co.uk
+jp
+*.kawasaki.jp
+!city.kawasaki.jp
+np
+com.np
+io
+ck
+*.ck
+!www.ck
+de
+cn
+公司.cn
+
+// ===END ICANN DOMAINS===
+// ===BEGIN PRIVATE DOMAINS===
+
+github.io
+s3.amazonaws.com
+*.compute.amazonaws.com
+
+// ===END PRIVATE DOMAINS===

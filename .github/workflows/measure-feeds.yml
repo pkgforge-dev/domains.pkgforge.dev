@@ -1,0 +1,168 @@
+# DOM-012 (TODO/ingest.md): when ISC, WhoisDS, cenk and hagezi publish. A
+# chain of long jobs, never a cron: a cron of this repository's kind runs
+# hours late (DOM-001's premise), and these publication times are a matter of
+# minutes.
+#
+# A run has two jobs that start together. `measure-chain` starts the next run
+# and holds the only token that can dispatch one (actions: write). `poll` holds a
+# read-only token and polls the four feeds 34 times, 10 minutes apart counted
+# from its own start (scripts/measure/feed-poll.mjs), and uploads the polls as
+# the artifact feeds-<run id>-<attempt>. A failure of the polls cannot break
+# the chain, and a failed dispatch fails the run. The concurrency group holds
+# the successor until this run ends, so the seam between two runs is a gap of
+# a few minutes, which scripts/measure/feed-times.mjs reports. About 30 runs
+# cover 7 days.
+#
+# An event made with GITHUB_TOKEN starts no run, except workflow_dispatch and
+# repository_dispatch, so the successor is dispatched with the run's own token.
+# queue: max keeps every waiting run in turn; GitHub refuses it with
+# cancel-in-progress: true.
+#
+# One chain at a time: a re-run (attempt 2 or more) starts no successor, since
+# attempt 1 started one, and a run that finds another run of main waiting
+# starts none either, so a second dispatch while a chain is alive merges into
+# it instead of forking it.
+#
+# Start, once: gh workflow run measure-feeds.yml --ref main -f until=<UTC instant>
+# with until the start plus 7 days, such as 2026-11-04T12:00:00Z. A run that
+# starts at or after until starts no successor, and the chain ends by itself. An
+# until that is not such an instant starts nothing and fails the run. To stop
+# early: gh workflow disable measure-feeds.yml (a run then starts no
+# successor).
+name: Measure feeds
+
+on:
+  workflow_dispatch:
+    inputs:
+      until:
+        description: 'The UTC instant after which no successor starts, such as 2026-11-04T12:00:00Z'
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: measure-feeds
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure-chain:
+    runs-on: ubuntu-24.04
+    # At most 3 dispatch tries 15 s apart.
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Start the successor while the time is before until
+        id: successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UNTIL: ${{ inputs.until }}
+        run: |
+          now=$(date +%s)
+          echo "run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT started=$(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ) until=$UNTIL" >> "$GITHUB_STEP_SUMMARY"
+
+          if ! [[ "$UNTIL" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "::error::until is not an instant like 2026-11-04T12:00:00Z; no successor is started"
+            exit 1
+          fi
+          end=$(date -u -d "$UNTIL" +%s)
+          go=1
+          if [ "$now" -ge "$end" ]; then
+            echo "::notice::until $UNTIL has passed; the chain ends with this run"
+            go=0
+          fi
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::notice::a run on $GITHUB_REF starts no successor; only main carries the chain"
+            go=0
+          fi
+          if [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            echo "::notice::attempt $GITHUB_RUN_ATTEMPT is a re-run; attempt 1 started the successor"
+            go=0
+          fi
+          if [ "$go" -eq 1 ]; then
+            if state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/measure-feeds.yml" --jq .state); then
+              if [ "$state" != active ]; then
+                echo "::notice::the workflow is $state; the chain ends with this run"
+                go=0
+              fi
+            else
+              echo "::warning::could not read the workflow's state; starting the successor anyway"
+            fi
+          fi
+          # Another run of main that waits (any status but in_progress and
+          # completed) already carries a chain: starting one more would fork
+          # it. The predecessor is never waiting, so a lagging listing of it
+          # cannot end the chain.
+          if [ "$go" -eq 1 ]; then
+            others="[.[] | select(.databaseId != $GITHUB_RUN_ID and .status != \"completed\" and .status != \"in_progress\")] | length"
+            waiting=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow measure-feeds.yml --branch main --limit 50 --json databaseId,status --jq "$others") || waiting=""
+            if ! [[ "$waiting" =~ ^[0-9]+$ ]]; then
+              echo "::warning::could not list the workflow's runs; starting the successor anyway"
+            elif [ "$waiting" -gt 0 ]; then
+              echo "::notice::$waiting other run(s) of main are waiting; the chain goes on through them, so no successor is started"
+              go=0
+            fi
+          fi
+          if [ "$go" -eq 0 ]; then
+            echo "successor=none" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          tries=1
+          until gh workflow run measure-feeds.yml --ref main --repo "$GITHUB_REPOSITORY" -f until="$UNTIL"; do
+            if [ "$tries" -ge 3 ]; then
+              echo "::error::could not start the successor in 3 tries; the chain breaks after this run; start it again with gh workflow run measure-feeds.yml --ref main -f until=<UTC instant>"
+              exit 1
+            fi
+            echo "::warning::starting the successor failed (try $tries of 3); trying again in 15 s"
+            tries=$((tries + 1))
+            sleep 15
+          done
+          echo "successor=started tries=$tries" >> "$GITHUB_STEP_SUMMARY"
+
+  poll:
+    runs-on: ubuntu-24.04
+    # 34 polls 10 minutes apart: the last starts 330 minutes in and takes about
+    # a minute; then the upload.
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    steps:
+      - name: Record the job's start time
+        run: printf 'JOB_START=%s
+' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The poller has no dependency, so nothing is installed or cached.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The token reads cenk's and hagezi's public commits under the API's
+      # authenticated rate limit; it can read, and nothing more.
+      - name: Poll the feeds 34 times, 10 minutes apart from the job's start
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/measure/feed-poll.mjs --out "$RUNNER_TEMP/feeds/polls.jsonl" --polls 34 --interval-min 10 --start "$JOB_START"
+
+      # One artifact per attempt, so a re-run never replaces the polls of the
+      # attempt before it; feed-times.mjs --download fetches every attempt.
+      - name: Upload the polls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: feeds-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/feeds/polls.jsonl
+          if-no-files-found: error
+          overwrite: true

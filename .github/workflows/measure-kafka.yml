@@ -1,0 +1,65 @@
+# DOM-004: measure OpenINTEL's Kafka broker (kafka.zonestream.openintel.nl)
+# from a GitHub runner: the reach of ports 9092 and 9091, the offsets of every
+# topic, ten minutes of certstream_domains and of the three NRD topics, the
+# decode of every batch, and design A's 5-minute window, timed
+# (scripts/measure/kafka-runner.mjs holds the steps and the pass rule).
+#
+# Read-only against the broker. It installs nothing (the scripts use Node's own
+# modules), holds no secret, and writes nothing but its artifact `result`, which
+# holds result.json. The job is green only when the verdict passes; the
+# artifact is uploaded either way, so a failed run still shows what it measured.
+#
+# Started by hand: gh workflow run measure-kafka.yml. One run at a time, so
+# two measurements never share the broker's bandwidth.
+name: measure-kafka
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: measure-kafka
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Record the job's start time
+        run: printf 'JOB_STARTED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      # Each of the five reads is capped at 6 minutes (--wall-cap-min), so the
+      # step ends inside its own limit and the upload still runs.
+      - name: Measure
+        timeout-minutes: 36
+        run: node scripts/measure/kafka-runner.mjs --data .tmp/measure/DOM-004
+      # .tmp/ starts with a dot, and upload-artifact leaves out hidden paths
+      # unless told; the path names one file, so nothing else comes with it.
+      - name: Upload result.json
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result
+          path: .tmp/measure/DOM-004/result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+      - name: Verdict
+        if: always()
+        run: node scripts/measure/kafka-runner.mjs --verdict .tmp/measure/DOM-004/result.json

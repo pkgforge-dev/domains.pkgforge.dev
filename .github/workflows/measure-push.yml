@@ -1,0 +1,510 @@
+# DOM-006 (TODO/storage.md): does a push of 1536 MiB, and one of 4096 MiB
+# (the raw chunk of DOM-042), finish inside GHCR's 10-minute upload limit
+# from a runner; how many layers does one manifest take (a year pack needs
+# 128); does a rewritten tag leave the old manifest and its blob readable; and
+# does a package that this workflow's own GITHUB_TOKEN first pushes come out
+# public and linked to this repository, with no manual step (ruling 6)?
+#
+# Every push goes to ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe, as the
+# tags size-<MiB>m, layers-<N> and retag. Nothing here removes anything from
+# GHCR (AGENTS.md absolute 13): the probe stays, and docs/resources.md names
+# it.
+#
+# Each measurement is one JSON record a line in records.ndjson. The job wraps
+# them into push-result.json, the artifact push-result, and every verdict is
+# scripts/measure/push-summary.mjs: here with --require anonymous-read, so a
+# failed anonymous read fails the job red (scripts/track-issue, which raises
+# visibility-<package>, comes with DOM-034), and from any machine with
+# --run RUN_ID for all five criteria.
+#
+# The link is proven by a second run: its "existed" record shows the probe was
+# there before its first push, and that push, made with a token the earlier
+# run never held, succeeds. Dispatch, wait for the run to end, dispatch again,
+# and summarise the second run:
+#   gh workflow run measure-push.yml --ref main
+#   node scripts/measure/push-summary.mjs --run RUN_ID
+#
+# The concurrency group holds a second dispatch until the running one ends, so
+# two runs never move the retag tag at once.
+name: Measure a GHCR push
+
+on:
+  workflow_dispatch:
+    inputs:
+      size_mb:
+        description: MiB of the first push (1 to 8192); a push of 4096 MiB follows it
+        type: number
+        default: 1536
+      layers:
+        description: 0 pushes 100, 256 and 1000 layers and bisects below a refusal; N (up to 4096) pushes one manifest of N layers
+        type: number
+        default: 0
+
+permissions: {}
+
+concurrency:
+  group: measure-push
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+  PROBE: ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe
+  PROBE_REPO: pkgforge-dev/domains.pkgforge.dev/probe
+  ARTIFACT_TYPE: application/vnd.pkgforge.domains.probe.v1
+  SOURCE_URL: https://github.com/pkgforge-dev/domains.pkgforge.dev
+  # A fixed created annotation, as TODO/storage.md DOM-006 writes the push.
+  CREATED: 2026-10-27T00:00:00Z
+  # jq helpers every record uses: "" is null, an HTTP status is a number (0
+  # when nothing answered).
+  JQ_DEFS: 'def nz: if . == "" then null else . end; def code: (tonumber? // 0); def ncode: if . == "" then null else code end; def num: if . == "" then null else tonumber end;'
+
+jobs:
+  measure-push:
+    # Every run pushes to the one shared probe package and moves its retag
+    # tag, so only main's code may: a dispatch on another branch is skipped
+    # whole, and push-summary.mjs --run refuses a run off main as well.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # The pushes stop starting new layer attempts after 21 minutes of their
+    # step (BUDGET), so the reads, the artifact and the verdict always fit.
+    timeout-minutes: 40
+    # No issues: write: scripts/track-issue (DOM-034), which raises
+    # visibility-<package>, does not exist yet, and the grant comes in its
+    # commit. Until then a failed anonymous read fails the job instead.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The only `run:` step that holds the job's own GITHUB_TOKEN,
+      # for the login, the "existed" read and the package record. The token
+      # reaches oras and curl on stdin, never on a command line.
+      - name: Push the probes
+        timeout-minutes: 34
+        env:
+          SIZE_MB: ${{ inputs.size_mb }}
+          LAYERS: ${{ inputs.layers }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/push"
+          CONFIG="$RUNNER_TEMP/oras-login/config.json"
+          BUDGET=1260
+          mkdir -p "$WORK" "$RUNNER_TEMP/oras-login"
+          : > "$WORK/records.ndjson"
+          rec() { jq -nc "$@" >> "$WORK/records.ndjson"; }
+          is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+          elapsed() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f", b - a }'; }
+          # The first "Error" line of a log, else its last line, with every
+          # query string cut (an upload URL carries its session state there).
+          excerpt() { awk '/^Error/ && e == "" { e = $0 } NF { l = $0 } END { x = (e != "" ? e : l); gsub(/[?][^ \t"]*/, "", x); print substr(x, 1, 300) }' "$1"; }
+          # GHCR's 429, in its words or in oras's (mirror-archlinux scripts/lib.sh rate_limited).
+          rate_limited() { grep -qiE 'toomanyrequests|status code 429|429 Too Many' "$1"; }
+
+          case "$SIZE_MB" in '' | *[!0-9]*) echo "::error::size_mb must be a whole number of MiB from 1 to 8192"; exit 2 ;; esac
+          case "$LAYERS" in '' | *[!0-9]*) echo "::error::layers must be 0 or a whole number up to 4096"; exit 2 ;; esac
+          SIZE_MB=$((10#$SIZE_MB))
+          LAYERS=$((10#$LAYERS))
+          # 8192 MiB keeps one payload well inside the runner's 14 GB; 4096
+          # layers keeps one attempt inside its 480 s at 2 uploads at a time.
+          if [ "$SIZE_MB" -lt 1 ] || [ "$SIZE_MB" -gt 8192 ]; then echo "::error::size_mb must be from 1 to 8192"; exit 2; fi
+          if [ "$LAYERS" -gt 4096 ]; then echo "::error::layers must be at most 4096"; exit 2; fi
+
+          oras_version="$(oras version | awk '/^Version:/ && v == "" { v = $2 } END { print v }')"
+          curl_version="$(curl --version | awk 'NR == 1 { print $2 }')"
+          rec --arg id "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" --arg repository "$GITHUB_REPOSITORY" \
+            --arg started_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg image "${ImageOS:-}${ImageVersion:+ $ImageVersion}" \
+            --arg oras "$oras_version" --arg curl "$curl_version" --argjson size_mb "$SIZE_MB" --argjson layers "$LAYERS" \
+            "$JQ_DEFS"'{kind: "run", id: $id, attempt: $attempt, sha: $sha, ref: $ref, workflow_ref: $workflow_ref, repository: $repository, started_at: $started_at, image: ($image | nz), oras: ($oras | nz), curl: ($curl | nz), inputs: {size_mb: $size_mb, layers: $layers}}'
+          df -h "$RUNNER_TEMP"
+
+          if ! printf '%s' "$REGISTRY_TOKEN" | timeout 120 oras login --registry-config "$CONFIG" --username "$REGISTRY_USER" --password-stdin ghcr.io > /dev/null; then
+            rec '{kind: "stop", reason: "oras login to ghcr.io failed, so nothing was pushed"}'
+            echo "::error::oras login to ghcr.io failed"
+            exit 1
+          fi
+
+          # Whether the probe existed before this run's first push, read with
+          # this job's token so a private package counts too: tags/list 200 is
+          # yes, 404 is no, anything else is unknown.
+          token_code=000
+          tags_code=000
+          tags=""
+          token_code="$(printf 'user = "%s:%s"\n' "$REGISTRY_USER" "$REGISTRY_TOKEN" | curl -q -sS --config - --connect-timeout 20 --max-time 60 \
+            --retry 3 --retry-delay 2 --get --data-urlencode service=ghcr.io --data-urlencode "scope=repository:$PROBE_REPO:pull" \
+            -o "$WORK/pull-token.json" -w '%{http_code}' https://ghcr.io/token)" || token_code=000
+          if [ "$token_code" = 200 ] && tok="$(jq -r '.token // empty' "$WORK/pull-token.json")" && [ -n "$tok" ]; then
+            tags_code="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -q -sS --config - --connect-timeout 20 --max-time 60 \
+              --retry 3 --retry-delay 2 -o "$WORK/tags.json" -w '%{http_code}' "https://ghcr.io/v2/$PROBE_REPO/tags/list?n=10000")" || tags_code=000
+            if [ "$tags_code" = 200 ]; then tags="$(jq '.tags // [] | length' "$WORK/tags.json")"; fi
+          fi
+          rm -f "$WORK/pull-token.json"
+          tok=""
+          present=null
+          case "$tags_code" in 200) present=true ;; 404) present=false ;; esac
+          rec --arg token_status "$token_code" --arg status "$tags_code" --argjson present "$present" --arg tags "$tags" \
+            "$JQ_DEFS"'{kind: "existed", token_status: ($token_status | code), status: ($status | code), present: $present, tags: ($tags | num)}'
+
+          # push_probe TAG DIR LIMIT CONCURRENCY FILE...: oras push from DIR,
+          # with the annotations in EXTRA. A 429 costs no attempt: it pauses
+          # 60 s, at most 3 times. Sets P_RC, P_SECONDS (the last attempt's),
+          # P_DIGEST, P_PAUSES and P_ERROR.
+          EXTRA=()
+          push_probe() {
+            local tag="$1" dir="$2" limit="$3" conc="$4" t0 t1
+            shift 4
+            P_PAUSES=0
+            while :; do
+              P_RC=0
+              t0="$EPOCHREALTIME"
+              (cd "$dir" && timeout -k 30 "$limit" oras push --registry-config "$CONFIG" --concurrency "$conc" --format json \
+                --artifact-type "$ARTIFACT_TYPE" \
+                --annotation "org.opencontainers.image.source=$SOURCE_URL" \
+                --annotation "org.opencontainers.image.created=$CREATED" \
+                --annotation "dev.pkgforge.domains.run=$GITHUB_RUN_ID" \
+                "${EXTRA[@]}" "$PROBE:$tag" "$@" > "$dir/push.out" 2> "$dir/push.err") || P_RC=$?
+              t1="$EPOCHREALTIME"
+              P_SECONDS="$(elapsed "$t0" "$t1")"
+              if [ "$P_RC" -ne 0 ] && rate_limited "$dir/push.err" && [ "$P_PAUSES" -lt 3 ]; then
+                P_PAUSES=$((P_PAUSES + 1))
+                echo "::warning::$tag: GHCR answered 429; pause $P_PAUSES of at most 3, 60 s"
+                sleep 60
+                continue
+              fi
+              break
+            done
+            P_DIGEST=""
+            P_ERROR=""
+            if [ "$P_RC" -eq 0 ]; then
+              if ! P_DIGEST="$(jq -r '.digest // empty' "$dir/push.out")" || ! is_digest "$P_DIGEST"; then
+                echo "::warning::$tag: oras exited 0 and printed no manifest digest"
+                P_DIGEST=""
+              fi
+            else
+              P_ERROR="$(excerpt "$dir/push.err")"
+              echo "::warning::$tag: oras push exited $P_RC after $P_SECONDS s: $P_ERROR"
+            fi
+          }
+
+          push_size() {
+            local mib="$1" dir="$WORK/size" bytes sha
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            # /dev/urandom: incompressible, the worst case for the wire.
+            head -c "$((mib * 1048576))" /dev/urandom > "$dir/payload.bin"
+            bytes="$(stat -c %s "$dir/payload.bin")"
+            sha="sha256:$(sha256sum "$dir/payload.bin" | cut -d ' ' -f 1)"
+            EXTRA=()
+            push_probe "size-${mib}m" "$dir" 660 5 ./payload.bin:application/octet-stream
+            rec --arg tag "size-${mib}m" --argjson mib "$mib" --argjson bytes "$bytes" --arg sha "$sha" \
+              --argjson seconds "$P_SECONDS" --argjson rc "$P_RC" --arg digest "$P_DIGEST" --argjson pauses "$P_PAUSES" --arg error "$P_ERROR" \
+              "$JQ_DEFS"'{kind: "push", tag: $tag, mib: $mib, bytes: $bytes, payload_sha256: $sha, seconds: $seconds, rc: $rc, digest: ($digest | nz), rate_limit_pauses: $pauses, error: ($error | nz)}'
+            rm -f "$dir/payload.bin"
+          }
+
+          package_record() {
+            local code
+            code="$(printf 'header = "Authorization: Bearer %s"\n' "$REGISTRY_TOKEN" | curl -q -sS --config - --connect-timeout 20 --max-time 60 \
+              --retry 3 --retry-delay 2 -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' \
+              -o "$WORK/package.json" -w '%{http_code}' "https://api.github.com/orgs/pkgforge-dev/packages/container/domains.pkgforge.dev%2Fprobe")" || code=000
+            if jq -e 'type == "object"' "$WORK/package.json" > /dev/null 2>&1; then
+              rec --arg status "$code" --slurpfile body "$WORK/package.json" \
+                "$JQ_DEFS"'$body[0] as $p | {kind: "package", status: ($status | code), visibility: ($p.visibility // null), repository: ($p.repository.full_name // null), created_at: ($p.created_at // null), updated_at: ($p.updated_at // null), message: ($p.message // null)}'
+            else
+              rec --arg status "$code" \
+                "$JQ_DEFS"'{kind: "package", status: ($status | code), visibility: null, repository: null, created_at: null, updated_at: null, message: "the answer was not a JSON object"}'
+            fi
+          }
+
+          # The retag probe: the tag's earlier manifest first, read with the
+          # token before this run moves the tag (the B of the earlier run names
+          # its A in an annotation, untagged since its own push), then A, then
+          # B on the same tag. A probe only: production never rewrites a tag.
+          retag() {
+            local dir="$WORK/retag" rc=0 status eb="" ea="" erun="" eat="" err="" sha a_digest=""
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            timeout -k 10 120 oras manifest fetch --registry-config "$CONFIG" --output "$dir/earlier.json" "$PROBE:retag" 2> "$dir/earlier.err" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              status=present
+              eb="sha256:$(sha256sum "$dir/earlier.json" | cut -d ' ' -f 1)"
+              if ! ea="$(jq -r '.annotations["dev.pkgforge.domains.probe.untagged"] // empty' "$dir/earlier.json")" || ! is_digest "$ea"; then ea=""; fi
+              erun="$(jq -r '.annotations["dev.pkgforge.domains.run"] // empty' "$dir/earlier.json")" || erun=""
+              eat="$(jq -r '.annotations["dev.pkgforge.domains.probe.at"] // empty' "$dir/earlier.json")" || eat=""
+            elif grep -qiE 'not found|manifest unknown|name unknown' "$dir/earlier.err"; then
+              status=absent
+            else
+              status=error
+              err="$(excerpt "$dir/earlier.err")"
+            fi
+            rec --arg status "$status" --arg b "$eb" --arg a "$ea" --arg run "$erun" --arg at "$eat" --arg error "$err" \
+              "$JQ_DEFS"'{kind: "retag-earlier", status: $status, b_digest: ($b | nz), a_digest: ($a | nz), run: ($run | nz), at: ($at | nz), error: ($error | nz)}'
+
+            for which in a b; do
+              head -c 65536 /dev/urandom > "$dir/$which.bin"
+              sha="sha256:$(sha256sum "$dir/$which.bin" | cut -d ' ' -f 1)"
+              EXTRA=()
+              if [ "$which" = b ]; then
+                EXTRA=(--annotation "dev.pkgforge.domains.probe.at=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+                if [ -n "$a_digest" ]; then EXTRA+=(--annotation "dev.pkgforge.domains.probe.untagged=$a_digest"); fi
+              fi
+              push_probe retag "$dir" 300 5 "./$which.bin:application/octet-stream"
+              if [ "$which" = a ]; then a_digest="$P_DIGEST"; fi
+              rec --arg which "$which" --arg sha "$sha" --argjson seconds "$P_SECONDS" --argjson rc "$P_RC" --arg digest "$P_DIGEST" \
+                --argjson pauses "$P_PAUSES" --arg error "$P_ERROR" \
+                "$JQ_DEFS"'{kind: "retag-push", which: $which, payload_sha256: $sha, seconds: $seconds, rc: $rc, digest: ($digest | nz), rate_limit_pauses: $pauses, error: ($error | nz)}'
+            done
+          }
+
+          # push_layers N: one manifest of the files l0000.bin to l(N-1).bin.
+          # Blobs an earlier attempt uploaded are found and not sent again, so
+          # an attempt after the first costs about one request a layer. 2 at a
+          # time keeps the job well under GHCR's 2000 requests a minute.
+          push_layers() {
+            local n="$1" files=() i f outcome
+            for ((i = 0; i < n; i++)); do
+              printf -v f './l%04d.bin:application/octet-stream' "$i"
+              files+=("$f")
+            done
+            EXTRA=()
+            push_probe "layers-$n" "$LDIR" 480 2 "${files[@]}"
+            if [ "$P_RC" -eq 0 ]; then
+              outcome=accepted
+            elif rate_limited "$LDIR/push.err"; then
+              outcome=rate-limited
+            elif [ "$P_RC" -eq 124 ] || [ "$P_RC" -eq 137 ]; then
+              outcome=timeout
+            elif grep -qE '/manifests/[^ "]*"?: response status code 4[0-9]{2}' "$LDIR/push.err"; then
+              # The registry answered the manifest itself with a 4xx.
+              outcome=refused
+            else
+              outcome=error
+            fi
+            rec --argjson n "$n" --arg outcome "$outcome" --argjson seconds "$P_SECONDS" --argjson rc "$P_RC" --arg digest "$P_DIGEST" \
+              --argjson pauses "$P_PAUSES" --arg error "$P_ERROR" \
+              "$JQ_DEFS"'{kind: "layers", n: $n, outcome: $outcome, seconds: $seconds, rc: $rc, digest: ($digest | nz), rate_limit_pauses: $pauses, error: ($error | nz)}'
+            L_OUTCOME="$outcome"
+          }
+
+          sizes=("$SIZE_MB")
+          if [ "$SIZE_MB" -ne 4096 ]; then sizes+=(4096); fi
+          for mib in "${sizes[@]}"; do
+            push_size "$mib"
+            if [ "$mib" -eq "$SIZE_MB" ]; then
+              if [ "$P_RC" -ne 0 ]; then
+                rec --arg reason "the first push (size-${mib}m) failed, so nothing else was pushed" '{kind: "stop", reason: $reason}'
+                echo "::error::the first push (size-${mib}m) failed: $P_ERROR"
+                exit 1
+              fi
+              package_record
+            fi
+          done
+
+          retag
+
+          LDIR="$WORK/layers"
+          # The series ascends, so its last count is the most files any attempt needs.
+          if [ "$LAYERS" -eq 0 ]; then series=(100 256 1000); else series=("$LAYERS"); fi
+          most="${series[-1]}"
+          rm -rf "$LDIR"
+          mkdir -p "$LDIR"
+          head -c "$((most * 1024))" /dev/urandom | split -b 1024 -d -a 4 --additional-suffix=.bin - "$LDIR/l"
+          made="$(find "$LDIR" -name 'l*.bin' | wc -l)"
+          if [ "$made" -ne "$most" ]; then echo "::error::made $made layer files, not $most"; exit 1; fi
+          largest=0
+          refused=0
+          stop=""
+          for n in "${series[@]}"; do
+            if [ "$SECONDS" -ge "$BUDGET" ]; then stop="the step's budget of $BUDGET s ran out before layers-$n"; break; fi
+            push_layers "$n"
+            case "$L_OUTCOME" in
+              accepted) largest="$n" ;;
+              refused) refused="$n"; break ;;
+              *) stop="layers-$n ended $L_OUTCOME"; break ;;
+            esac
+          done
+          # Bisect between the largest accepted count and the smallest refused
+          # one, until they are 16 apart.
+          if [ "$refused" -gt 0 ] && [ -z "$stop" ]; then
+            lo="$largest"
+            hi="$refused"
+            while [ $((hi - lo)) -gt 16 ]; do
+              if [ "$SECONDS" -ge "$BUDGET" ]; then stop="the step's budget of $BUDGET s ran out while bisecting between $lo and $hi"; break; fi
+              mid=$(((lo + hi) / 2))
+              push_layers "$mid"
+              case "$L_OUTCOME" in
+                accepted) lo="$mid" ;;
+                refused) hi="$mid" ;;
+                *) stop="layers-$mid ended $L_OUTCOME"; break ;;
+              esac
+            done
+          fi
+          if [ -n "$stop" ]; then rec --arg reason "$stop" '{kind: "layers-stop", reason: $reason}'; fi
+
+      - name: Remove the registry login
+        if: ${{ always() }}
+        run: |
+          rm -rf "$RUNNER_TEMP/oras-login"
+          if [ -e "$RUNNER_TEMP/oras-login" ]; then
+            echo "::error::$RUNNER_TEMP/oras-login is still there"
+            exit 1
+          fi
+
+      # No credential in this step's environment and none sent: every read is
+      # a consumer's (docs/architecture.md section 4.3).
+      - name: Read the probes anonymously
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/push"
+          R="$WORK/records.ndjson"
+          A="$WORK/anon"
+          mkdir -p "$A"
+          if [ ! -f "$R" ]; then : > "$R"; fi
+          rec() { jq -nc "$@" >> "$R"; }
+          is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+          # pick KIND FIELD [WHICH]: that field of the first record of KIND
+          # (and WHICH), or nothing.
+          pick() { jq -rs --arg k "$1" --arg f "$2" --arg w "${3:-}" 'map(select(.kind == $k and ($w == "" or .which == $w)))[0][$f] // empty' "$R"; }
+
+          # anon_curl TOKEN PATH OUT CURL_ARGS...: the HTTP status of GET
+          # https://ghcr.io/v2/PATH, 000 when nothing answered.
+          anon_curl() {
+            local tok="$1" path="$2" out="$3" code
+            shift 3
+            code="$(curl -q -sS --connect-timeout 20 --max-time 300 --retry 3 --retry-delay 2 --retry-connrefused \
+              -H "Authorization: Bearer $tok" "$@" -o "$out" -w '%{http_code}' "https://ghcr.io/v2/$path")" || code=000
+            printf '%s' "${code:-000}"
+          }
+
+          # anon_read WHAT REF PATH CURL_ARGS...: Bearer QQ== first. After a
+          # 401 or a 403, and after a 404 too (GHCR answers QQ== with 404 for a
+          # package it does not show, mirror-archlinux 2026-10-14), a pull
+          # token from the anonymous token endpoint, and the read once more.
+          # Records the answer, the sha256 of a 200 or 206 body and, for a
+          # manifest, its first layer; ANON_LAYER keeps that layer.
+          anon_read() {
+            local what="$1" ref="$2" path="$3" out="$A/$1.body" qq tokc="" status via=qq tok="" dig="" layer="" count="" bytes=""
+            shift 3
+            rm -f "$out"
+            qq="$(anon_curl 'QQ==' "$path" "$out" "$@")"
+            status="$qq"
+            case "$qq" in
+              401 | 403 | 404)
+                tokc="$(curl -q -sS --connect-timeout 20 --max-time 60 --retry 3 --retry-delay 2 --get --data-urlencode service=ghcr.io \
+                  --data-urlencode "scope=repository:$PROBE_REPO:pull" -o "$A/token.json" -w '%{http_code}' https://ghcr.io/token)" || tokc=000
+                if [ "$tokc" = 200 ] && tok="$(jq -r '.token // empty' "$A/token.json")" && [ -n "$tok" ]; then
+                  rm -f "$out"
+                  status="$(anon_curl "$tok" "$path" "$out" "$@")"
+                  via=token
+                else
+                  via=none
+                fi
+                rm -f "$A/token.json"
+                echo "::warning::$what: Bearer QQ== answered $qq; the anonymous token endpoint answered $tokc, and the read $status"
+                ;;
+            esac
+            if { [ "$status" = 200 ] || [ "$status" = 206 ]; } && [ -f "$out" ]; then
+              bytes="$(stat -c %s "$out")"
+              dig="sha256:$(sha256sum "$out" | cut -d ' ' -f 1)"
+              case "$path" in
+                */manifests/*)
+                  if ! layer="$(jq -r '.layers[0].digest // empty' "$out")" || ! is_digest "$layer"; then layer=""; fi
+                  count="$(jq '.layers | length' "$out")" || count=""
+                  ;;
+              esac
+            fi
+            rec --arg what "$what" --arg ref "$ref" --arg status "$status" --arg via "$via" --arg qq "$qq" --arg tokc "$tokc" \
+              --arg digest "$dig" --arg layer "$layer" --arg count "$count" --arg bytes "$bytes" \
+              "$JQ_DEFS"'{kind: "anon", what: $what, ref: $ref, status: ($status | code), via: $via, qq_status: ($qq | code), token_status: ($tokc | ncode), digest: ($digest | nz), layer_digest: ($layer | nz), layers: ($count | num), bytes: ($bytes | num)}'
+            ANON_LAYER="$layer"
+          }
+
+          MANIFEST=(-H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json' --max-filesize 4194304)
+          SMALL=(--max-filesize 1048576)
+
+          size_mb="$(jq -rs 'map(select(.kind == "run"))[0].inputs.size_mb // empty' "$R")"
+          if [ -n "$size_mb" ]; then
+            anon_read size-manifest "size-${size_mb}m" "$PROBE_REPO/manifests/size-${size_mb}m" "${MANIFEST[@]}"
+            layer="$ANON_LAYER"
+            if [ -n "$layer" ]; then
+              # The 307 to the signed URL, not followed; then 1 KiB of the blob
+              # through it. curl sends the Authorization header to ghcr.io only.
+              anon_read size-blob "$layer" "$PROBE_REPO/blobs/$layer" "${SMALL[@]}"
+              anon_read size-blob-range "$layer" "$PROBE_REPO/blobs/$layer" -L -r 0-1023 "${SMALL[@]}"
+            fi
+          fi
+
+          a="$(pick retag-push digest a)"
+          anon_read retag-tag retag "$PROBE_REPO/manifests/retag" "${MANIFEST[@]}"
+          if is_digest "$a"; then
+            anon_read retag-a-manifest "$a" "$PROBE_REPO/manifests/$a" "${MANIFEST[@]}"
+            layer="$ANON_LAYER"
+            if [ -n "$layer" ]; then anon_read retag-a-blob "$layer" "$PROBE_REPO/blobs/$layer" -L "${SMALL[@]}"; fi
+          fi
+          eb="$(pick retag-earlier b_digest)"
+          ea="$(pick retag-earlier a_digest)"
+          if is_digest "$eb"; then anon_read earlier-b-manifest "$eb" "$PROBE_REPO/manifests/$eb" "${MANIFEST[@]}"; fi
+          if is_digest "$ea"; then
+            anon_read earlier-a-manifest "$ea" "$PROBE_REPO/manifests/$ea" "${MANIFEST[@]}"
+            layer="$ANON_LAYER"
+            if [ -n "$layer" ]; then anon_read earlier-a-blob "$layer" "$PROBE_REPO/blobs/$layer" -L "${SMALL[@]}"; fi
+          fi
+
+      - name: Write push-result.json
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/push"
+          mkdir -p "$WORK/out"
+          if [ ! -f "$WORK/records.ndjson" ]; then : > "$WORK/records.ndjson"; fi
+          jq -nc --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{kind: "end", finished_at: $at}' >> "$WORK/records.ndjson"
+          jq -n --slurpfile records "$WORK/records.ndjson" '{schema: "domains.measure.push.v1", entry: "DOM-006", records: $records}' > "$WORK/out/push-result.json"
+          jq -r '.records | map(.kind) | group_by(.) | map("\(.[0]) \(length)") | join(", ")' "$WORK/out/push-result.json"
+
+      - name: Upload push-result.json
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: push-result
+          path: ${{ runner.temp }}/push/out/push-result.json
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Verdict
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/push"
+          rc=0
+          node scripts/measure/push-summary.mjs --file "$WORK/out/push-result.json" --require anonymous-read > "$WORK/verdict.txt" || rc=$?
+          cat "$WORK/verdict.txt"
+          {
+            echo '```text'
+            cat "$WORK/verdict.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"

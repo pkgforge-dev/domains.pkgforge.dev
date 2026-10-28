@@ -1,0 +1,45 @@
+# probes/worker/wrangler.toml — the temporary probe Worker of DOM-061 (TODO/ops.md).
+#
+# It runs on workers.dev for its life only, with preview_urls = false, holds no
+# data of value and binds only the temporary bucket domains-probe (SECURITY.md).
+# DOM-056 deletes the Worker and the bucket when DOM-002, DOM-005, DOM-007 and
+# DOM-008 have closed. No route and no custom domain.
+#
+# No account_id: the operator's wrangler login holds one account, and
+# `npx wrangler@4.150.0 whoami` names it before every deploy.
+#
+# Deploy (the operator's login, never CI):
+#   cd probes/worker && npx wrangler@4.150.0 deploy
+#
+# Each cron below has a row in the CRONS table of src/gaps.ts, and the scheduled
+# handler refuses a cron that has none; src/index.test.ts holds the two equal.
+# DOM-002 sets `crons = []` after its 48 hours; the Worker stays for DOM-005,
+# DOM-007 and DOM-008.
+#
+# The date is the harness's (packages/testkit COMPATIBILITY_DATE): the workerd
+# that wrangler 4.150.0 pins runs no later date, so the deploy and the tests run
+# one runtime (DOM-061, correction of 2026-10-28). src/index.test.ts holds the two
+# equal.
+#
+# The flags are the serving Worker's (TODO/serve.md DOM-030) and the test
+# harness's (packages/testkit COMPATIBILITY_FLAGS): the probe uses only Web APIs,
+# and DOM-008 reads its CPU as a stand-in for that Worker. src/index.test.ts holds
+# them equal to the harness's.
+name = "domains-probe"
+main = "src/index.ts"
+compatibility_date = "2026-10-13"
+compatibility_flags = ["no_nodejs_compat", "no_nodejs_compat_v2"]
+workers_dev = true
+preview_urls = false
+
+[triggers]
+crons = ["* * * * *", "*/5 * * * *"]
+
+[[r2_buckets]]
+binding = "PROBE"
+bucket_name = "domains-probe"
+
+# Workers Logs keeps every invocation with its CPU time, which DOM-008 reads.
+[observability]
+enabled = true
+head_sampling_rate = 1

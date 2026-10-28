@@ -11,17 +11,30 @@
   "packageManager": "npm@12.2.1",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "adapters/*",
+    "probes/*"
   ],
   "scripts": {
     "gate": "node scripts/gate.mjs",
     "test": "node scripts/test.mjs",
     "lint": "biome check .",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "todo:check": "node scripts/todo/check.mjs",
     "todo:count": "node scripts/todo/count.mjs",
     "todo:next": "node scripts/todo/next.mjs"
   },
+  "allowScripts": {
+    "esbuild": false,
+    "workerd": false
+  },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15"
+    "@biomejs/biome": "2.5.15",
+    "@cloudflare/workers-types": "5.20261013.1",
+    "@types/node": "26.6.5",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261006.2-beta",
+    "typescript": "7.0.2",
+    "wrangler": "4.150.0"
   }
 }

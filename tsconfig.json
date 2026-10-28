@@ -1,0 +1,19 @@
+// The Node program of `npm run typecheck`: every TypeScript file of the
+// workspaces and the scripts, checked against Node's types. Worker sources are
+// in it too, because their tests import them in Node; they name the few
+// runtime-only members they use in their own interfaces (as
+// packages/testkit/test/smoke-worker.ts does). tsconfig.worker.json checks the
+// same Worker sources a second time against the Workers runtime's types.
+// allowJs lets a test import a script's .mjs module and read its types;
+// checkJs stays off, so the scripts themselves are not type-checked.
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["apps", "packages", "adapters", "probes", "scripts"],
+  "exclude": ["docs/research", "node_modules", "**/node_modules"]
+}

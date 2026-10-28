@@ -1,0 +1,127 @@
+# DOM-010: stream THC's whole monthly database once from a GitHub runner, and
+# measure its columns, whether any line carries a CNAME target, and how fast it
+# streams (scripts/measure/thc-monthly.mjs holds the passes and the verdict).
+# The default is the September 2026 CSV, 37,046,639,482 B compressed.
+#
+# Steps: the research quick check of the CSV's first MiB
+# (docs/research/2026-10-27-record/scripts/thc-monthly-head.sh); the script's
+# own tests on this runner, so a defect shows in seconds rather than hours in;
+# then the measurement: the first MiB of another month's CSV (August), the
+# whole CSV once with no decompression (the network's own speed), and the
+# whole CSV through gzip -dc and one awk pass (the shape and the verdict).
+# Nothing is written to disk but result.json.
+#
+# Read-only against Hugging Face. It installs nothing (the script uses Node's
+# own modules, curl, gzip and the runner's awk), holds no secret, and writes
+# nothing but its artifact `result`, which holds result.json. The job is green
+# only when the verdict passes; the artifact is uploaded either way, so a
+# failed or cut run still shows what it measured.
+#
+# Started by hand, and a run takes up to 6 hours:
+#   gh workflow run measure-thc-monthly.yml --repo pkgforge-dev/domains.pkgforge.dev
+# One run at a time, so two reads of 37 GB never share the runner's network.
+name: measure-thc-monthly
+
+on:
+  workflow_dispatch:
+    inputs:
+      csv_url:
+        description: The monthly CSV to stream whole (a Hugging Face resolve URL)
+        type: string
+        default: https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true
+      head_url:
+        description: Another month's CSV, whose first MiB is read for its shape
+        type: string
+        default: https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/9/rdns-aug.csv.gz?download=true
+      network_pass:
+        description: Also read the whole CSV once with no decompression, for the network speed alone
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: measure-thc-monthly
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      # The script that made the MEASURED rows of DOM-010's premise, run first
+      # as the entry says. It reads the September CSV's first MiB into a new,
+      # empty directory and only counts.
+      - name: Quick check of the first MiB
+        timeout-minutes: 5
+        run: |
+          mkdir -p "$RUNNER_TEMP/head1m"
+          sh docs/research/2026-10-27-record/scripts/thc-monthly-head.sh "$RUNNER_TEMP/head1m"
+      # mawk is the awk when the image has it: it is Priority required in
+      # Ubuntu. Its speed at this pass against gawk's is not measured (only
+      # gawk was, in thc-monthly.mjs); result.json records the version that
+      # ran. The
+      # tests and the measurement both run with the one chosen here.
+      - name: Choose the awk
+        run: |
+          awk_bin=awk
+          if command -v mawk >/dev/null 2>&1; then awk_bin=mawk; fi
+          printf 'AWK_BIN=%s\n' "$awk_bin" >> "$GITHUB_ENV"
+          printf 'awk: %s\n' "$(command -v "$awk_bin")"
+      # On Linux the tests also read each child's CPU from /proc, the path the
+      # measurement takes and a Windows run of the suite cannot.
+      - name: Test the script on this runner
+        timeout-minutes: 5
+        run: THC_MONTHLY_AWK="$AWK_BIN" node --test scripts/measure/thc-monthly.test.mjs
+      # The script's own deadline (330 minutes) stops the read in time for awk
+      # to count what arrived and for result.json, the upload and the verdict
+      # to fit inside the job's 360.
+      - name: Measure
+        timeout-minutes: 345
+        env:
+          CSV_URL: ${{ inputs.csv_url }}
+          HEAD_URL: ${{ inputs.head_url }}
+          NETWORK_PASS: ${{ inputs.network_pass }}
+        # Both URLs are free-text inputs: a host other than Hugging Face is
+        # refused here, before a byte is read (its redirect to its own CDN is
+        # followed by curl).
+        run: |
+          for u in "$CSV_URL" "$HEAD_URL"; do
+            case "$u" in
+              https://huggingface.co/*) ;;
+              *)
+                echo "::error::csv_url and head_url must each start with https://huggingface.co/; nothing is read"
+                exit 2
+                ;;
+            esac
+          done
+          node scripts/measure/thc-monthly.mjs --url "$CSV_URL" --head-url "$HEAD_URL" --network-pass "$NETWORK_PASS" --awk "$AWK_BIN" --deadline-min 330 --out .tmp/measure/DOM-010/result.json
+      # .tmp/ starts with a dot, and upload-artifact leaves out hidden paths
+      # unless told; the path names one file, so nothing else comes with it.
+      - name: Upload result.json
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result
+          path: .tmp/measure/DOM-010/result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
+      - name: Verdict
+        if: always()
+        run: node scripts/measure/thc-monthly.mjs --verdict .tmp/measure/DOM-010/result.json

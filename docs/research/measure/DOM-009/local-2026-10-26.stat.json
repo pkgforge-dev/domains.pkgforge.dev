@@ -1,0 +1,499 @@
+{
+ "format": "domains.measure.thc-day.v1",
+ "day": "2026-10-26",
+ "started": "2026-10-28T11:19:23.329Z",
+ "runner": {
+  "os": null,
+  "arch": null,
+  "image": null,
+  "image_version": null,
+  "platform": "win32",
+  "cpus": 20,
+  "cpu_model": "12th Gen Intel(R) Core(TM) i7-12700H",
+  "mem_bytes": 68321587200,
+  "node": "v26.7.0",
+  "sort": "sort (GNU coreutils) 8.32"
+ },
+ "settings": {
+  "sample_bits": 4,
+  "per_block": 4096,
+  "level": 9,
+  "sort_buffer": "50%",
+  "prefer": "cs2"
+ },
+ "psl": {
+  "sha256": "0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca",
+  "rules": {
+   "icann": 6949,
+   "private": 3448
+  }
+ },
+ "stages": {
+  "download": {
+   "seconds": 0,
+   "skipped": "local input"
+  },
+  "normalise": {
+   "seconds": 43.955,
+   "peak_rss_kib": 162488,
+   "cpu_user_s": 30.5,
+   "cpu_system_s": 4.609
+  },
+  "sort": {
+   "seconds": 25.093,
+   "peak_rss_kib": null,
+   "rss_source": "none: no /usr/bin/time"
+  },
+  "split": {
+   "seconds": 57.82,
+   "peak_rss_kib": 667896,
+   "cpu_user_s": 48.718,
+   "cpu_system_s": 7.515
+  },
+  "encode": {
+   "seconds": 51.776,
+   "peak_rss_kib": 180780,
+   "cpu_user_s": 41.515,
+   "cpu_system_s": 7.593
+  },
+  "verify": {
+   "seconds": 36.734,
+   "peak_rss_kib": 216628,
+   "cpu_user_s": 29.531,
+   "cpu_system_s": 6.25
+  }
+ },
+ "disk": {
+  "work_free_bytes_start": 179946115072,
+  "work_free_bytes_min": 177174978560,
+  "records_bytes": 1385565655,
+  "sorted_bytes": 1385528644
+ },
+ "download": {
+  "input": "2026-10-26.txt.gz"
+ },
+ "gz_bytes": 319917410,
+ "normalise": {
+  "text_bytes": 1327623793,
+  "final_newline": true,
+  "raw": {
+   "lines": 38474309,
+   "bytes": 1327623793,
+   "wildcard_lines": 9503378,
+   "upper_case_lines": 217443,
+   "non_printable_lines": 0,
+   "carriage_return_lines": 0,
+   "adjacent_inversions": 10298076,
+   "max_line_length": 252
+  },
+  "records_written": 38474309,
+  "records_bytes": 1385565655,
+  "wildcard_records": 9503378,
+  "idn_converted": 0,
+  "refused": {
+   "empty": 0,
+   "charset": 0,
+   "idn": 0,
+   "label-empty": 0,
+   "label-long": 0,
+   "name-long": 0,
+   "no-dot": 0
+  },
+  "refused_examples": {}
+ },
+ "counts": {
+  "gz_bytes": 319917410,
+  "text_bytes": 1327623793,
+  "lines": 38474309,
+  "sorted_lines": 38473142,
+  "names": 32554702,
+  "avg_name_bytes": 34.59,
+  "flags": {
+   "plain": 23051884,
+   "wildcard": 3584378,
+   "both": 5918440
+  },
+  "names_that_are_a_suffix": 2,
+  "names_with_an_all_digit_tld": 1516,
+  "distinct_registrable_icann": 11162627,
+  "distinct_sites_full_psl": 14142680,
+  "tlds": 1258,
+  "tlds_all_digits": 256
+ },
+ "groups": {
+  "registrable": 11162627,
+  "names": 32554700,
+  "buckets": [
+   {
+    "label": "=1",
+    "registrable": 7647793,
+    "names": 7647793,
+    "pct_registrable": 68.5,
+    "pct_names": 23.5
+   },
+   {
+    "label": "2-9",
+    "registrable": 3415903,
+    "names": 8337549,
+    "pct_registrable": 30.6,
+    "pct_names": 25.6
+   },
+   {
+    "label": "10-99",
+    "registrable": 95763,
+    "names": 1743033,
+    "pct_registrable": 0.9,
+    "pct_names": 5.4
+   },
+   {
+    "label": "100-999",
+    "registrable": 2823,
+    "names": 664351,
+    "pct_registrable": 0,
+    "pct_names": 2
+   },
+   {
+    "label": "1k-9.9k",
+    "registrable": 260,
+    "names": 726797,
+    "pct_registrable": 0,
+    "pct_names": 2.2
+   },
+   {
+    "label": "10k-99k",
+    "registrable": 62,
+    "names": 2181043,
+    "pct_registrable": 0,
+    "pct_names": 6.7
+   },
+   {
+    "label": ">=100k",
+    "registrable": 23,
+    "names": 11254134,
+    "pct_registrable": 0,
+    "pct_names": 34.6
+   }
+  ],
+  "top": [
+   {
+    "reg": "aws.dev",
+    "names": 1912769
+   },
+   {
+    "reg": "amazonaws.com",
+    "names": 1857508
+   },
+   {
+    "reg": "dyingbirds.com",
+    "names": 1096041
+   },
+   {
+    "reg": "workers.dev",
+    "names": 883482
+   },
+   {
+    "reg": "pages.dev",
+    "names": 683573
+   },
+   {
+    "reg": "chatgpt.site",
+    "names": 664978
+   },
+   {
+    "reg": "sfdc.net",
+    "names": 595753
+   },
+   {
+    "reg": "crm.dev",
+    "names": 559606
+   },
+   {
+    "reg": "workdaysuv.com",
+    "names": 555932
+   },
+   {
+    "reg": "azure.com",
+    "names": 414943
+   },
+   {
+    "reg": "azure-api.net",
+    "names": 223262
+   },
+   {
+    "reg": "workdaysuvcareers.com",
+    "names": 193990
+   },
+   {
+    "reg": "netcraze.io",
+    "names": 192694
+   },
+   {
+    "reg": "snowflake.app",
+    "names": 182780
+   },
+   {
+    "reg": "snowflake.com",
+    "names": 182719
+   },
+   {
+    "reg": "quickconnect.to",
+    "names": 164242
+   },
+   {
+    "reg": "a2z.eu",
+    "names": 150668
+   },
+   {
+    "reg": "sslip.io",
+    "names": 140629
+   },
+   {
+    "reg": "myvolumio.org",
+    "names": 129243
+   },
+   {
+    "reg": "azurecontainerapps.io",
+    "names": 128308
+   },
+   {
+    "reg": "on.aws",
+    "names": 126401
+   },
+   {
+    "reg": "cloudflarestorage.com",
+    "names": 108859
+   },
+   {
+    "reg": "mongodb.net",
+    "names": 105754
+   },
+   {
+    "reg": "cisco.com",
+    "names": 90885
+   },
+   {
+    "reg": "windows.net",
+    "names": 82534
+   }
+  ],
+  "top_pct_names": 35.1
+ },
+ "suffixes": {
+  "top_suffixes": [
+   [
+    "com",
+    13002636
+   ],
+   [
+    "dev",
+    4178806
+   ],
+   [
+    "net",
+    2032712
+   ],
+   [
+    "site",
+    822182
+   ],
+   [
+    "org",
+    741113
+   ],
+   [
+    "io",
+    732709
+   ],
+   [
+    "de",
+    682102
+   ],
+   [
+    "xyz",
+    455850
+   ],
+   [
+    "ph",
+    430025
+   ],
+   [
+    "top",
+    409392
+   ],
+   [
+    "ru",
+    402101
+   ],
+   [
+    "app",
+    330379
+   ],
+   [
+    "com.br",
+    324230
+   ],
+   [
+    "eu",
+    291301
+   ],
+   [
+    "co.uk",
+    277778
+   ],
+   [
+    "nl",
+    277568
+   ],
+   [
+    "fr",
+    238622
+   ],
+   [
+    "cn",
+    226170
+   ],
+   [
+    "com.ph",
+    208245
+   ],
+   [
+    "com.cn",
+    199871
+   ],
+   [
+    "cc",
+    183467
+   ],
+   [
+    "me",
+    180794
+   ],
+   [
+    "to",
+    169267
+   ],
+   [
+    "cloud",
+    153890
+   ],
+   [
+    "it",
+    151222
+   ],
+   [
+    "shop",
+    145396
+   ],
+   [
+    "ca",
+    144459
+   ],
+   [
+    "in",
+    143518
+   ],
+   [
+    "online",
+    137100
+   ],
+   [
+    "ch",
+    134085
+   ],
+   [
+    "direct",
+    132767
+   ],
+   [
+    "pl",
+    132715
+   ],
+   [
+    "aws",
+    130962
+   ],
+   [
+    "info",
+    125393
+   ],
+   [
+    "co",
+    125083
+   ],
+   [
+    "com.au",
+    123236
+   ],
+   [
+    "co.za",
+    102313
+   ],
+   [
+    "ai",
+    95888
+   ],
+   [
+    "link",
+    94735
+   ],
+   [
+    "es",
+    79560
+   ]
+  ],
+  "suffix_counts_selected": {
+   "com": 13002636,
+   "net": 2032712,
+   "org": 741113,
+   "com.np": 4936,
+   "np": 0,
+   "co.uk": 277778,
+   "ru": 402101,
+   "de": 682102,
+   "cn": 226170,
+   "xyz": 455850,
+   "top": 409392,
+   "shop": 145396,
+   "online": 137100,
+   "app": 330379,
+   "dev": 4178806,
+   "se": 76489,
+   "ch": 134085,
+   "fr": 238622,
+   "nu": 7277,
+   "sk": 19491,
+   "ee": 9279,
+   "li": 3380
+  }
+ },
+ "pack": {
+  "per_block": 4096,
+  "codec": "deflate-raw",
+  "level": 9,
+  "blocks": 7948,
+  "pack_bytes": 196603160,
+  "front_bytes": 389843533,
+  "index_bytes": 477651,
+  "bytes_per_name": 6.039
+ },
+ "verify": {
+  "ok": true,
+  "records": 32554702,
+  "blocks": 7948
+ },
+ "files": {
+  "hash": "h53 of the reversed key (f64cmp.mjs)",
+  "sample_bits": 4,
+  "names": {
+   "file": "2026-10-26.names.f64",
+   "count": 2034080
+  },
+  "regs": {
+   "file": "2026-10-26.regs.f64",
+   "count": 699036
+  }
+ },
+ "peak_rss_kib": 667896,
+ "finished": "2026-10-28T11:22:59.398Z",
+ "wall_seconds": 216.063
+}

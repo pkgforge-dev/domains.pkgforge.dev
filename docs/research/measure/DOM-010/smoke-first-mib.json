@@ -1,0 +1,216 @@
+{
+  "schema": "thc-monthly/1",
+  "entry": "DOM-010",
+  "started": "2026-10-28T11:00:09.106Z",
+  "finished": "2026-10-28T11:00:17.808Z",
+  "units": "MB is 10^6 B; first_2gb is the first 2 * 10^9 B; seconds are wall time from the first request unless named cpu",
+  "page_records": 6360000000,
+  "conditions": {
+    "runner_os": null,
+    "runner_arch": null,
+    "image_os": null,
+    "image_version": null,
+    "platform": "win32 x64",
+    "cpus": 20,
+    "cpu_model": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "mem_bytes": 68321587200,
+    "node": "v26.7.0",
+    "curl": "curl 8.21.0 (x86_64-w64-mingw32) libcurl/8.21.0 Schannel zlib/1.3.2 brotli/1.2.0 zstd/1.5.7 libidn2/2.3.8 libpsl/0.21.5 libssh2/1.11.1 WinLDAP",
+    "gzip": "gzip 1.14",
+    "awk": "GNU Awk 5.4.0, API 4.1, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)"
+  },
+  "args": {
+    "url": "https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true",
+    "range": "0-1048575",
+    "network_pass": false,
+    "head_url": "https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/9/rdns-aug.csv.gz?download=true",
+    "head_bytes": 1048576,
+    "awk": "awk",
+    "deadline_min": 330,
+    "max_resumes": 5
+  },
+  "passes": {
+    "head": {
+      "kind": "pipeline",
+      "label": "head",
+      "url": "https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/9/rdns-aug.csv.gz?download=true",
+      "range": "0-1048575",
+      "ended": "complete",
+      "reason": null,
+      "complete": true,
+      "expected_bytes": 1048576,
+      "http": {
+        "total": 36029717282,
+        "etag": "\"52dde70fab3d5de9bedb10a3f887c55caf847a79f84274791d4cd8eef7c4a947\"",
+        "last_modified": "Sun, 04 Oct 2026 10:39:09 GMT",
+        "final_host": "us.aws.cdn.hf.co",
+        "resumes": 0,
+        "attempts": [
+          {
+            "range": "0-1048575",
+            "status": 206,
+            "exit_code": 0,
+            "signal": null,
+            "bytes": 1048576,
+            "seconds": 4.263,
+            "error": null,
+            "stderr": ""
+          }
+        ]
+      },
+      "sha256": "61457cd172dfd433830aff65bdb99bfa87ba120796d03d23a1f35c6a20f4fef8",
+      "bytes": 1048576,
+      "seconds": 4.263,
+      "mb_per_s": 0.246,
+      "seconds_to_first_byte": 2.572,
+      "first_2gb": null,
+      "per_minute_mb_per_s": [
+        0.246
+      ],
+      "uncompressed": {
+        "bytes": 6846786,
+        "mb_per_s": 1.41,
+        "dropped_partial_line_bytes": 24
+      },
+      "records_per_s": 34947,
+      "gzip": {
+        "exit_code": 1,
+        "signal": null,
+        "status": "truncated",
+        "stderr": "gzip: stdin: unexpected end of file",
+        "spawn_error": null
+      },
+      "awk": {
+        "exit_code": 0,
+        "signal": null,
+        "stderr": "",
+        "spawn_error": null,
+        "write_error": null
+      },
+      "counts": {
+        "records": 169717,
+        "fields": {
+          "2": 169717
+        },
+        "ipv4": 158865,
+        "ipv6": 10852,
+        "not_address": 0,
+        "family_runs": 2499,
+        "first_address": "111.0.17.11",
+        "last_address": "47.0.62.190",
+        "first_other_field_count": null,
+        "suspect_count": 0,
+        "suspects": [],
+        "name_odd_count": 0,
+        "name_odd_examples": []
+      },
+      "counts_error": null,
+      "cpu": {
+        "sample_interval_s": 2,
+        "node": {
+          "user_s": 0.016,
+          "sys_s": 0.016,
+          "utilization": 0.007
+        },
+        "children": null,
+        "note": "children not measured: no /proc on this machine"
+      }
+    },
+    "network": null,
+    "stream": {
+      "kind": "pipeline",
+      "label": "stream",
+      "url": "https://huggingface.co/buckets/IP-THC-ORG/Datasets/resolve/2026/10/rdns-sept.csv.gz?download=true",
+      "range": "0-1048575",
+      "ended": "complete",
+      "reason": null,
+      "complete": true,
+      "expected_bytes": 1048576,
+      "http": {
+        "total": 37046639482,
+        "etag": "\"885201a2e0f5be3c1b2e94209ccaf5439e5f5ef1b6bb9912fceb2d1329059344\"",
+        "last_modified": "Fri, 02 Oct 2026 16:25:18 GMT",
+        "final_host": "us.aws.cdn.hf.co",
+        "resumes": 0,
+        "attempts": [
+          {
+            "range": "0-1048575",
+            "status": 206,
+            "exit_code": 0,
+            "signal": null,
+            "bytes": 1048576,
+            "seconds": 3.255,
+            "error": null,
+            "stderr": ""
+          }
+        ]
+      },
+      "sha256": "356359d77d70b453e48dada77bb3ab44b38867a666d121db92a548099b4db7cb",
+      "bytes": 1048576,
+      "seconds": 3.255,
+      "mb_per_s": 0.322,
+      "seconds_to_first_byte": 1.68,
+      "first_2gb": null,
+      "per_minute_mb_per_s": [
+        0.322
+      ],
+      "uncompressed": {
+        "bytes": 6827082,
+        "mb_per_s": 1.781,
+        "dropped_partial_line_bytes": 21
+      },
+      "records_per_s": 44115,
+      "gzip": {
+        "exit_code": 1,
+        "signal": null,
+        "status": "truncated",
+        "stderr": "gzip: stdin: unexpected end of file",
+        "spawn_error": null
+      },
+      "awk": {
+        "exit_code": 0,
+        "signal": null,
+        "stderr": "",
+        "spawn_error": null,
+        "write_error": null
+      },
+      "counts": {
+        "records": 169152,
+        "fields": {
+          "2": 169152
+        },
+        "ipv4": 157313,
+        "ipv6": 11839,
+        "not_address": 0,
+        "family_runs": 2341,
+        "first_address": "47.0.0.28",
+        "last_address": "84.0.114.163",
+        "first_other_field_count": null,
+        "suspect_count": 0,
+        "suspects": [],
+        "name_odd_count": 0,
+        "name_odd_examples": []
+      },
+      "counts_error": null,
+      "cpu": {
+        "sample_interval_s": 2,
+        "node": {
+          "user_s": 0.016,
+          "sys_s": 0.031,
+          "utilization": 0.012
+        },
+        "children": null,
+        "note": "children not measured: no /proc on this machine"
+      }
+    }
+  },
+  "verdict": {
+    "cnames": "unknown",
+    "stream_ok": false,
+    "pass": false,
+    "reasons": [
+      "a --range read (0-1048575) is a smoke test, not a pass",
+      "gzip: truncated at the cut of the range read (expected for a partial read)"
+    ]
+  }
+}

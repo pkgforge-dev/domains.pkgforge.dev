@@ -1,0 +1,84 @@
+# The backstop of measure-clock-chain.yml (DOM-001, TODO/ops.md): restart the
+# chain when no run of it is waiting or running.
+#
+# The shape of mirror-archlinux's scripts/dispatch-overdue: a run that has not
+# ended, of any status (queued, pending, waiting or in progress), counts as
+# alive, so a successor held by the concurrency group is never doubled. Every
+# restart it makes is one chain break, and clock-gaps counts the gap it leaves.
+#
+# It never makes the first start: a chain with no run at all is started by
+# hand, so the start instant, and CHAIN_END after it, stay the operator's. It
+# starts nothing once CHAIN_END has passed, nor when measure-clock-chain.yml is
+# not active.
+#
+# To stop it once the chain has ended:
+#   gh workflow disable measure-clock-chain-keep.yml
+name: Measure clock chain keepalive
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: measure-clock-chain-keep
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Restart the chain when no run of it is waiting or running
+        id: keepalive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAIN_END: ${{ vars.CHAIN_END }}
+        run: |
+          wf=measure-clock-chain.yml
+          now=$(date +%s)
+          if [ -n "$CHAIN_END" ]; then
+            if ! [[ "$CHAIN_END" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+              echo "::error::CHAIN_END is not an instant like 2026-10-30T11:00:00Z; nothing is restarted"
+              exit 1
+            fi
+            if ! end=$(date -u -d "$CHAIN_END" +%s); then
+              echo "::error::CHAIN_END $CHAIN_END is not a date; nothing is restarted"
+              exit 1
+            fi
+            if [ "$now" -ge "$end" ]; then
+              echo "keepalive: CHAIN_END $CHAIN_END has passed; nothing to restart"
+              exit 0
+            fi
+          fi
+
+          state=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf" --jq .state)
+          if [ "$state" != active ]; then
+            echo "::notice::keepalive: $wf is $state; it is not started"
+            exit 0
+          fi
+
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf" --limit 50 --json databaseId,status > "$RUNNER_TEMP/chain-runs.json"
+          total=$(jq length "$RUNNER_TEMP/chain-runs.json")
+          busy=$(jq '[.[] | select(.status != "completed")] | length' "$RUNNER_TEMP/chain-runs.json")
+          if [ "$total" -eq 0 ]; then
+            echo "::notice::keepalive: $wf has never run; its first start is made by hand"
+            exit 0
+          fi
+          if [ "$busy" -gt 0 ]; then
+            echo "keepalive: $wf has $busy run(s) that have not ended; nothing to start"
+            exit 0
+          fi
+
+          echo "::warning::keepalive: $wf has no run waiting or running; restarting it (one chain break)"
+          gh workflow run "$wf" --ref main --repo "$GITHUB_REPOSITORY"
+          echo "restarted=$wf at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"

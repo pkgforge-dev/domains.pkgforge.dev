@@ -29,15 +29,18 @@ const node = (args) => ({ name: `node ${args.join(' ')}`, cmd: process.execPath,
 const npm = (args) => ({ name: `npm ${args.join(' ')}`, cmd: 'npm', args, shell: win });
 
 // Order: the record first (cheapest, and the one a session most often breaks),
-// then the suites, then the formatter and linter, then the tree-wide text and
-// secret sweeps. TODO/RULES.md §1 lists the same steps, and gate.test.mjs holds
-// the two lists equal.
+// then the suites, then the formatter and linter, then the type check, then the
+// tree-wide text and secret sweeps. TODO/RULES.md §1 lists the same steps, and
+// gate.test.mjs holds the two lists equal.
 export const STEPS = [
   node(['scripts/todo/check.mjs']),
   node(['scripts/todo/count.mjs', '--check']),
   npm(['test']),
   // One formatter and linter for JavaScript and TypeScript, biome.json its rules.
   npm(['run', 'lint']),
+  // tsc twice: tsconfig.json against Node's types, tsconfig.worker.json against
+  // the Workers runtime's. Node strips the types and checks none of them.
+  npm(['run', 'typecheck']),
   node(['scripts/text-check.mjs']),
   node(['scripts/scan-secrets.mjs', '--all']),
   // A hook tracked without the executable bit is skipped by git in silence.

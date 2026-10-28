@@ -1,0 +1,51 @@
+# The mechanical gate (scripts/gate.mjs, TODO/RULES.md section 1) on each push
+# to main and each pull request: the record guard, every test under node:test
+# (the workerd harness included), Biome, the type check, and the text and
+# secret sweeps. One job, read-only, holding no secret and no Cloudflare
+# credential (AGENTS.md absolutes 4 and 14).
+#
+# Push runs only on main, so a pull request from a branch here runs once, not
+# twice.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# One group per pull request: a newer push to it cancels the run in progress.
+# Any other run has a group of its own (its run id). A group holds one pending
+# run, and a newer run cancels it, so a shared group for main would leave a
+# commit between two quick pushes with no verdict.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default. It is off: each run installs from the registry
+      # against the lockfile's integrity hashes and writes no cache.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install the locked dependencies
+        run: npm ci
+      - name: The mechanical gate
+        run: node scripts/gate.mjs

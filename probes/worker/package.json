@@ -1,0 +1,8 @@
+{
+  "name": "@domains/probe-worker",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The temporary probe Worker domains-probe (DOM-061): two cron triggers that write ticks and a hot object to the R2 bucket domains-probe, and the /gaps route that DOM-002 reads. Deleted by DOM-056 when DOM-002, DOM-005, DOM-007 and DOM-008 have closed."
+}

@@ -1,0 +1,175 @@
+{
+  "schema": "domains.measure.push.v1",
+  "entry": "DOM-006",
+  "records": [
+    {
+      "kind": "run",
+      "id": "18843055555",
+      "attempt": "1",
+      "sha": "b3c1f0e2a4d6c8e0f2a4b6c8d0e2f4a6b8c0d2e4",
+      "ref": "refs/heads/main",
+      "workflow_ref": "pkgforge-dev/domains.pkgforge.dev/.github/workflows/measure-push.yml@refs/heads/main",
+      "repository": "pkgforge-dev/domains.pkgforge.dev",
+      "started_at": "2026-10-28T10:53:25Z",
+      "image": "ubuntu24 20261020.1.0",
+      "oras": "1.3.4",
+      "curl": "8.5.0",
+      "inputs": {
+        "size_mb": 1536,
+        "layers": 0
+      }
+    },
+    {
+      "kind": "existed",
+      "token_status": 200,
+      "status": 404,
+      "present": false,
+      "tags": null
+    },
+    {
+      "kind": "push",
+      "tag": "size-1536m",
+      "mib": 1536,
+      "bytes": 1610612736,
+      "payload_sha256": "sha256:3890f560a4615efae37dc3c6caddb4d3035c0c1df7a242cb161c06f55557f741",
+      "seconds": 58.9,
+      "rc": 0,
+      "digest": "sha256:f57beec84a43a566b454206b192024ee50d36b100ae2fc7aa6f9a3c7e370d1aa",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "package",
+      "status": 403,
+      "visibility": null,
+      "repository": null,
+      "created_at": null,
+      "updated_at": null,
+      "message": "Resource not accessible by integration"
+    },
+    {
+      "kind": "push",
+      "tag": "size-4096m",
+      "mib": 4096,
+      "bytes": 4294967296,
+      "payload_sha256": "sha256:ba2c3be11a09aeee530c1c03415590acbd536f8d7fa8652eeb77783f47146101",
+      "seconds": 660.004,
+      "rc": 124,
+      "digest": null,
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-earlier",
+      "status": "absent",
+      "b_digest": null,
+      "a_digest": null,
+      "run": null,
+      "at": null,
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "a",
+      "payload_sha256": "sha256:ef34818671a205db6251d6116d28b1f73b19cbbe529dce1bf74201c1e48ae001",
+      "seconds": 7.303,
+      "rc": 0,
+      "digest": "sha256:629a171d02d429c29a3af0af429e70efad65794a58d5422a494ad9b62b135f08",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "retag-push",
+      "which": "b",
+      "payload_sha256": "sha256:f3b178cfdb48d38e7963afb82617474604cffae77deae7d90a10241012719d78",
+      "seconds": 4.959,
+      "rc": 0,
+      "digest": "sha256:3631d75e41326cfeb3c0e6e3ce1bef217842dd7bce95b88b8abc0320637d4bb3",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 100,
+      "outcome": "refused",
+      "seconds": 30.512,
+      "rc": 1,
+      "digest": null,
+      "rate_limit_pauses": 0,
+      "error": "Error: PUT \"https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/probe/manifests/sha256:9d1f0c3c1b8e4a1f5e7a2b6c4d8e0f1a3b5c7d9e1f2a4b6c8d0e2f4a6b8c0d2e\": response status code 400: manifest invalid: manifest invalid"
+    },
+    {
+      "kind": "layers",
+      "n": 50,
+      "outcome": "accepted",
+      "seconds": 16.04,
+      "rc": 0,
+      "digest": "sha256:9ba21009b599f3d14a44b6025bc325a16616068c1396545762a612b8d570b306",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "layers",
+      "n": 75,
+      "outcome": "refused",
+      "seconds": 7.71,
+      "rc": 1,
+      "digest": null,
+      "rate_limit_pauses": 0,
+      "error": "Error: PUT \"https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/probe/manifests/sha256:9d1f0c3c1b8e4a1f5e7a2b6c4d8e0f1a3b5c7d9e1f2a4b6c8d0e2f4a6b8c0d2e\": response status code 400: manifest invalid: manifest invalid"
+    },
+    {
+      "kind": "layers",
+      "n": 62,
+      "outcome": "accepted",
+      "seconds": 5.233,
+      "rc": 0,
+      "digest": "sha256:277949718580022a8b5620f001e15bbc0f9736a9bdf111203dd18d60727e5561",
+      "rate_limit_pauses": 0,
+      "error": null
+    },
+    {
+      "kind": "anon",
+      "what": "size-manifest",
+      "ref": "size-1536m",
+      "status": 404,
+      "via": "none",
+      "qq_status": 404,
+      "token_status": 403,
+      "digest": null,
+      "layer_digest": null,
+      "layers": null,
+      "bytes": null
+    },
+    {
+      "kind": "anon",
+      "what": "retag-tag",
+      "ref": "retag",
+      "status": 404,
+      "via": "none",
+      "qq_status": 404,
+      "token_status": 403,
+      "digest": null,
+      "layer_digest": null,
+      "layers": null,
+      "bytes": null
+    },
+    {
+      "kind": "anon",
+      "what": "retag-a-manifest",
+      "ref": "sha256:629a171d02d429c29a3af0af429e70efad65794a58d5422a494ad9b62b135f08",
+      "status": 404,
+      "via": "none",
+      "qq_status": 404,
+      "token_status": 403,
+      "digest": null,
+      "layer_digest": null,
+      "layers": null,
+      "bytes": null
+    },
+    {
+      "kind": "end",
+      "finished_at": "2026-10-28T10:54:21Z"
+    }
+  ]
+}

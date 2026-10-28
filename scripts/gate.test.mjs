@@ -46,7 +46,8 @@ function stubTree(overrides = {}) {
   }
   const ok = "import { appendFileSync } from 'node:fs';\nappendFileSync('.tmp-ran.txt', process.argv[1] + '\\n');\n";
   for (const rel of ['scripts/todo/check.mjs', 'scripts/todo/count.mjs', 'scripts/text-check.mjs', 'scripts/scan-secrets.mjs', 'scripts/check-hooks.mjs']) put(rel, overrides[rel] ?? ok);
-  put('package.json', JSON.stringify({ name: 'stub', private: true, scripts: { test: 'node -e "process.exit(0)"', lint: 'node -e "process.exit(0)"', ...overrides.scripts } }));
+  const pass = 'node -e "process.exit(0)"';
+  put('package.json', JSON.stringify({ name: 'stub', private: true, scripts: { test: pass, lint: pass, typecheck: pass, ...overrides.scripts } }));
   put('.gitignore', '.tmp/\n.tmp-ran.txt\nnode_modules/\n');
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
   return dir;
@@ -84,10 +85,40 @@ test('a failing npm step fails the run too', () => {
   assert.deepEqual(passesOf(dir), []);
 });
 
+test('a failing type check fails the run and records no pass', () => {
+  const dir = stubTree({ scripts: { typecheck: 'node -e "process.exit(1)"' } });
+  const r = runGate(dir);
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /FAIL npm run typecheck \(exit 1\)/);
+  assert.deepEqual(passesOf(dir), []);
+});
+
 test('a run that changes a file records no pass', () => {
   const dir = stubTree({ 'scripts/scan-secrets.mjs': "import { writeFileSync } from 'node:fs';\nwriteFileSync('changed-during-the-run.txt', 'x');\n" });
   const r = runGate(dir);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.match(r.stdout, /no pass recorded: the files changed during the run/);
+  assert.deepEqual(passesOf(dir), []);
+});
+
+// A step ended by a signal has no exit status (null), and must fail the run
+// (AGENTS.md absolute 5): nothing may read null as 0.
+test('a step ended by a signal fails the run and records no pass', { skip: process.platform === 'win32' ? 'POSIX signals' : false }, () => {
+  const dir = stubTree({ 'scripts/text-check.mjs': "process.kill(process.pid, 'SIGKILL');\n" });
+  const r = runGate(dir);
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /FAIL node scripts\/text-check\.mjs \(exit null\)/);
+  assert.deepEqual(passesOf(dir), []);
+});
+
+// npm is spawned without a shell off Windows, so a PATH without it is a step
+// that could not start: exit 2, not a pass and not an ordinary failure.
+test('a step that cannot start exits 2 and records no pass', { skip: process.platform === 'win32' ? 'npm runs through cmd.exe on Windows' : false }, () => {
+  const dir = stubTree();
+  const empty = mkdtempSync(join(tmpdir(), 'domains-gate-path-'));
+  dirs.push(empty);
+  const r = spawnSync(process.execPath, ['scripts/gate.mjs'], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: empty } });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /COULD NOT START npm test: /);
   assert.deepEqual(passesOf(dir), []);
 });

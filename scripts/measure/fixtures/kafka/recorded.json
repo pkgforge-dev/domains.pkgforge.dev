@@ -1,0 +1,102 @@
+{
+ "recorded_at": "2026-10-28T10:40:45.946Z",
+ "host": "kafka.zonestream.openintel.nl",
+ "port": 9092,
+ "command": "node scripts/measure/kafka-record.mjs --data scripts/measure/fixtures/kafka",
+ "files": {
+  "api-versions-v0.bin": {
+   "request": {
+    "api": "ApiVersions",
+    "version": 0
+   },
+   "bytes": 380,
+   "sha256": "88938874567626bbab6b235701dbc39d66acbb5a2ad30488e8ca6e9f630451b5"
+  },
+  "metadata-v0.bin": {
+   "request": {
+    "api": "Metadata",
+    "version": 0,
+    "topics": [
+     "certstream_domains",
+     "newly_registered_domain"
+    ]
+   },
+   "bytes": 164,
+   "sha256": "e6cc96e9ad960c94d1b6673a84252e25d954c5bd6babc3a1a36a4e0b11b09650"
+  },
+  "list-offsets-v1.bin": {
+   "request": {
+    "api": "ListOffsets",
+    "version": 1,
+    "topics": [
+     {
+      "topic": "certstream_domains",
+      "partitions": [
+       {
+        "partition": 0,
+        "timestamp": -1
+       }
+      ]
+     },
+     {
+      "topic": "newly_registered_domain",
+      "partitions": [
+       {
+        "partition": 0,
+        "timestamp": -1
+       }
+      ]
+     }
+    ]
+   },
+   "bytes": 109,
+   "sha256": "c8e51c85d0e0568ad087b38c959d54167a7f1ecd9fcfbbcda7bb70126ec3d1fe"
+  },
+  "fetch-v4-certstream_domains.bin": {
+   "request": {
+    "api": "Fetch",
+    "version": 4,
+    "topics": [
+     {
+      "topic": "certstream_domains",
+      "partitions": [
+       {
+        "partition": 0,
+        "offset": 42689203481,
+        "maxBytes": 24576
+       }
+      ]
+     }
+    ],
+    "maxWaitMs": 100,
+    "minBytes": 1,
+    "maxBytes": 24576
+   },
+   "bytes": 26881,
+   "sha256": "ddf0a91ee50a1fd8ac75ea48100d24ae6cbb04b14773e45642e7c81853cf8fdc"
+  },
+  "fetch-v4-newly_registered_domain.bin": {
+   "request": {
+    "api": "Fetch",
+    "version": 4,
+    "topics": [
+     {
+      "topic": "newly_registered_domain",
+      "partitions": [
+       {
+        "partition": 0,
+        "offset": 172679348,
+        "maxBytes": 16384
+       }
+      ]
+     }
+    ],
+    "maxWaitMs": 100,
+    "minBytes": 1,
+    "maxBytes": 16384
+   },
+   "bytes": 16459,
+   "sha256": "24bdcc2f595b2c360941b29eb3661f0454fe62de48bdbeeff81cd829ae099382"
+  }
+ }
+}

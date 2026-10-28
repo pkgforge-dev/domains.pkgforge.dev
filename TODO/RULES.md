@@ -18,7 +18,7 @@ sessions.
 | | |
 | --- | --- |
 | run the gate | `npm run gate` (`scripts/gate.mjs`) |
-| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
+| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `npm run typecheck` (tsc on `tsconfig.json` against Node's types, then on `tsconfig.worker.json` against the Workers runtime's), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
 | the record | [`PROGRESS.md`](PROGRESS.md) and [`INDEX.md`](INDEX.md) |
 | an entry's status moved | `node scripts/todo/count.mjs --set <ID> <status>` (`--proven` for a closed Prove) |
 | the counts | `node scripts/todo/count.mjs`; ⛔ never retyped |

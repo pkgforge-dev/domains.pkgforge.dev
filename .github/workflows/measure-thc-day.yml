@@ -1,0 +1,188 @@
+# DOM-009 (TODO/ingest.md): THC's daily dump through the whole job on a runner,
+# timed by stage, for one day or for every day of the Hugging Face listing, and
+# the union of the days.
+#
+# plan     reads the Hugging Face listing and the Public Suffix List once, so every
+#          leg measures with the same list, and turns the listing into the matrix
+#          (scripts/measure/thc-list.mjs: the day alone, or every listed day up to it).
+# measure  one day: download, normalise, sort, split, encode, verify
+#          (scripts/measure/thc-day.mjs). A single day prefers cs2.ip.thc.org, a
+#          matrix leg prefers the Hugging Face bucket; each falls back to the other.
+# merge    the union of the names and of the registrable domains, the novelty
+#          curve and the pack bytes a name (scripts/measure/thc-union.mjs), then
+#          the verdict: PASS when every day took under 30 minutes of wall time.
+#
+# The matrix runs at most 6 legs at once: the organisation shares 20 concurrent
+# jobs with mirror-archlinux and the other repositories.
+#
+#   gh workflow run measure-thc-day.yml --repo pkgforge-dev/domains.pkgforge.dev -f day=2026-10-26
+#   gh workflow run measure-thc-day.yml --repo pkgforge-dev/domains.pkgforge.dev -f day=2026-10-26 -f matrix=true
+# Then `gh run download RUN --repo pkgforge-dev/domains.pkgforge.dev --name thc-result` yields result.json.
+name: Measure THC day
+
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: The day to measure (YYYY-MM-DD); with matrix, the last day of the span.
+        required: true
+        default: '2026-10-26'
+        type: string
+      matrix:
+        description: Measure every listed day up to and including day, then merge them.
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: measure-thc-day
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Read the listing and the Public Suffix List
+        env:
+          LISTING_URL: https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/tree?recursive=true
+          PSL_URL: https://publicsuffix.org/list/public_suffix_list.dat
+        run: |
+          mkdir -p "$RUNNER_TEMP/ref"
+          curl -fsS --retry 3 --max-time 120 -o "$RUNNER_TEMP/ref/listing.json" "$LISTING_URL"
+          curl -fsS --retry 3 --max-time 120 -o "$RUNNER_TEMP/ref/psl.dat" "$PSL_URL"
+          node scripts/measure/psl.mjs --check "$RUNNER_TEMP/ref/psl.dat" > "$RUNNER_TEMP/ref/psl.check"
+          cat "$RUNNER_TEMP/ref/psl.check"
+          cat "$RUNNER_TEMP/ref/psl.check" >> "$GITHUB_STEP_SUMMARY"
+      - name: Plan the days
+        id: plan
+        env:
+          DAY: ${{ inputs.day }}
+          MATRIX: ${{ inputs.matrix }}
+        run: node scripts/measure/thc-list.mjs --listing "$RUNNER_TEMP/ref/listing.json" --day "$DAY" --matrix "$MATRIX" --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: thc-ref
+          path: ${{ runner.temp }}/ref/
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+
+  measure:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: thc-ref
+          path: ${{ runner.temp }}/ref
+      # A September day is about 4 GB of records, sorted beside itself. The
+      # runner's temporary disk is used when it has more room than RUNNER_TEMP.
+      - name: Choose the work directory
+        run: |
+          work="$RUNNER_TEMP/work"
+          if mountpoint -q /mnt; then
+            mnt_free=$(df --output=avail -B1 /mnt | tail -n 1)
+            tmp_free=$(df --output=avail -B1 "$RUNNER_TEMP" | tail -n 1)
+            if [ "$mnt_free" -gt "$tmp_free" ]; then
+              sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/thc-work
+              work=/mnt/thc-work
+            fi
+          fi
+          mkdir -p "$work"
+          df -h "$work"
+          echo "WORK=$work" >> "$GITHUB_ENV"
+      - name: Measure the day
+        env:
+          DAY: ${{ matrix.day }}
+          HF_PATH: ${{ matrix.path }}
+          HF_SIZE: ${{ matrix.size }}
+          PREFER: ${{ inputs.matrix && 'hf' || 'cs2' }}
+        run: node scripts/measure/thc-day.mjs --day "$DAY" --path "$HF_PATH" --size "$HF_SIZE" --prefer "$PREFER" --psl "$RUNNER_TEMP/ref/psl.dat" --work "$WORK" --out "$RUNNER_TEMP/out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: thc-day-${{ matrix.day }}
+          path: ${{ runner.temp }}/out/
+          overwrite: true
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: warn
+
+  merge:
+    needs: [plan, measure]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default; nothing is installed here, so it stays off.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: thc-*
+          path: ${{ runner.temp }}/in
+      - name: Merge the days
+        run: node scripts/measure/thc-union.mjs --in "$RUNNER_TEMP/in" --out "$RUNNER_TEMP/result/result.json" --listing "$RUNNER_TEMP/in/thc-ref/listing.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: thc-result
+          path: ${{ runner.temp }}/result/
+          overwrite: true
+          retention-days: 30
+          if-no-files-found: error
+      - name: Read the verdict
+        run: |
+          set +e
+          node scripts/measure/thc-day.mjs --verdict "$RUNNER_TEMP/result/result.json" > "$RUNNER_TEMP/verdict.txt"
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/verdict.txt"
+          {
+            echo '```text'
+            cat "$RUNNER_TEMP/verdict.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -1,0 +1,120 @@
+# Clock B of DOM-001 (TODO/ops.md): a chain of runs, each started by the one
+# before it.
+#
+# A run starts its successor first, then sleeps to the next 5 minute boundary
+# and ends. The concurrency group holds the successor until this run ends, so
+# the gap between two runs is the sleep plus the time GitHub takes to start a
+# run that is already waiting. That time is the clock being measured.
+# scripts/measure/clock-gaps.mjs reads the runs (event workflow_dispatch) and
+# their jobs from the API.
+#
+# An event made with GITHUB_TOKEN starts no run, except workflow_dispatch and
+# repository_dispatch, so the successor is dispatched with the run's own token.
+# queue: max keeps every waiting run in turn, so a waiting successor is never
+# replaced by another dispatch; GitHub refuses it with cancel-in-progress: true.
+#
+# Start, once: gh workflow run measure-clock-chain.yml --ref main
+# Stop: the repository variable CHAIN_END, an instant in UTC such as
+# 2026-10-30T11:00:00Z. A run that starts at or after it starts no successor,
+# and the chain ends by itself. A CHAIN_END that is not such an instant fails
+# the run and starts nothing. measure-clock-chain-keep.yml restarts a chain
+# that broke before that instant, and never after it.
+#
+# One chain at a time: a re-run (attempt 2 or more) starts no successor, since
+# attempt 1 started one, and a run that finds another run of main waiting
+# starts none either, so a second dispatch while a chain is alive merges into
+# it instead of doubling it (two chains would hold each other's runs and turn
+# every start lag into a wait behind the other chain).
+name: Measure clock chain
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: measure-clock-chain
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  measure-chain:
+    runs-on: ubuntu-24.04
+    # At most 3 dispatch tries 15 s apart, then a sleep under 5 minutes.
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Start the successor, then wait for the next 5 minute boundary
+        id: successor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHAIN_END: ${{ vars.CHAIN_END }}
+        run: |
+          now=$(date +%s)
+          echo "run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT started=$(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"
+
+          go=1
+          if [ -n "$CHAIN_END" ]; then
+            if ! [[ "$CHAIN_END" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+              echo "::error::CHAIN_END is not an instant like 2026-10-30T11:00:00Z; no successor is started"
+              exit 1
+            fi
+            if ! end=$(date -u -d "$CHAIN_END" +%s); then
+              echo "::error::CHAIN_END $CHAIN_END is not a date; no successor is started"
+              exit 1
+            fi
+            if [ "$now" -ge "$end" ]; then
+              echo "::notice::CHAIN_END $CHAIN_END has passed; the chain ends with this run"
+              go=0
+            fi
+          fi
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::notice::a run on $GITHUB_REF starts no successor; only main carries the chain"
+            go=0
+          fi
+          if [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            echo "::notice::attempt $GITHUB_RUN_ATTEMPT is a re-run; attempt 1 started the successor"
+            go=0
+          fi
+          # Another run of main that waits (any status but in_progress and
+          # completed) already carries a chain: starting one more would double
+          # it. The predecessor is never waiting, so a lagging listing of it
+          # cannot end the chain.
+          if [ "$go" -eq 1 ]; then
+            others="[.[] | select(.databaseId != $GITHUB_RUN_ID and .status != \"completed\" and .status != \"in_progress\")] | length"
+            waiting=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow measure-clock-chain.yml --branch main --limit 50 --json databaseId,status --jq "$others") || waiting=""
+            if ! [[ "$waiting" =~ ^[0-9]+$ ]]; then
+              echo "::warning::could not list the workflow's runs; starting the successor anyway"
+            elif [ "$waiting" -gt 0 ]; then
+              echo "::notice::$waiting other run(s) of main are waiting; the chain goes on through them, so no successor is started"
+              go=0
+            fi
+          fi
+          if [ "$go" -eq 0 ]; then
+            echo "successor=none" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          tries=1
+          until gh workflow run measure-clock-chain.yml --ref main --repo "$GITHUB_REPOSITORY"; do
+            if [ "$tries" -ge 3 ]; then
+              echo "::error::could not start the successor in 3 tries; the chain is broken until measure-clock-chain-keep.yml restarts it"
+              exit 1
+            fi
+            echo "::warning::starting the successor failed (try $tries of 3); trying again in 15 s"
+            tries=$((tries + 1))
+            sleep 15
+          done
+          echo "successor=started tries=$tries" >> "$GITHUB_STEP_SUMMARY"
+
+          next=$(( (now / 300 + 1) * 300 ))
+          left=$(( next - $(date +%s) ))
+          if [ "$left" -gt 0 ]; then
+            sleep "$left"
+          fi

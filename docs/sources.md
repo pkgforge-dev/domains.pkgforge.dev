@@ -41,6 +41,24 @@ Labels: F is the family, K the kind, B the basis, P the precision.
 | `oi-measure` | 19 | Topic `newly_issued_certificates_measurements`: DNS answers and addresses for each new certificate name. 166,477,316 messages in 24 h, about 780 B each, in a binary format nobody has decoded. | Continuous. | The format is unknown. | F `dns`, K `dns`, B `dns-resolved`, P second | DOM-058 |
 | `crtsh` | 20 | crt.sh names, for gap-fill and validation only. The JSON route took 1 to 108 s. The public Postgres refused most connections (READ `docs/research/web-pkgforge-2026-10-27/ct.md` §3). | Daily sample, in Actions. | Slow and unreliable. It never serves a request. | F `ct`, K `ct_name`, B `ct-first`, P second | DOM-052 |
 
+## The Zonestream broker
+
+The OpenINTEL sources with bits 1 to 4 and 19 read one Kafka broker, `kafka.zonestream.openintel.nl:9092`. Each MEASURED reading below ran on the operator's Windows 11 workstation on 2026-10-28.
+The fixtures below are broker answers that `node scripts/measure/kafka-record.mjs --data scripts/measure/fixtures/kafka` recorded at 2026-10-28T10:40:45Z, and `scripts/measure/kafka-protocol.mjs` decodes them.
+DOM-004 reads the broker from a GitHub runner. Its result file records the topics, their 24-hour counts and the batches it reads, counted by codec.
+
+- **Topics.** The broker lists 8 topics: the 6 of design A M6, `newly_registered_fqdn_measurements` and `newly_registered_domains_measurements` (MEASURED 2026-10-28T14:36:37Z, `node scripts/measure/kafka-offsets.mjs`). Each of these two topics has 4 partitions. Every other topic has 1 partition.
+  No row of the table above reads the two topics. `node scripts/measure/kafka-offsets.mjs` writes the partitions and the 24-hour counts of every topic to `offsets.json` in its `--data` directory.
+- **NRD batches.** In each of the three windows below, every batch has codec none and holds one record.
+  `newly_registered_domain`: the fixture `scripts/measure/fixtures/kafka/fetch-v4-newly_registered_domain.bin` holds 75 batches of 210 to 230 B. They start at offset 172,679,348, which is 2,000 offsets before the newest offset in the fixture `scripts/measure/fixtures/kafka/list-offsets-v1.bin` (READ both fixtures).
+  `newly_registered_fqdn`: the 51 newest batches were 207 to 231 B each (MEASURED 2026-10-28T14:36:17Z, `node scripts/measure/kafkafetch.mjs newly_registered_fqdn latest-50`).
+  `confirmed_newly_registered_domain`: the 51 newest batches were 188 to 206 B each (MEASURED 2026-10-28T14:36:20Z, `node scripts/measure/kafkafetch.mjs confirmed_newly_registered_domain latest-50`).
+- **NRD messages.** A message of each NRD topic is JSON that carries `ct_name` and `cert_index`. Each of the 75 messages of the `newly_registered_domain` fixture has the fields `domain`, `cert_index`, `ct_name`, `timestamp` and `submission_timestamp` (READ the fixture above).
+  Design A's samples show `ct_name` and `cert_index` in `newly_registered_fqdn`, whose name field is `fqdn`, and in `confirmed_newly_registered_domain`, which carries `confidence` and no `submission_timestamp` (READ `docs/research/2026-10-27-design-a/kafka/offsets.json`).
+- **`certstream_domains` batches are snappy compressed.** The fixture `scripts/measure/fixtures/kafka/fetch-v4-certstream_domains.bin` holds one batch of 214 records in 26,811 B (READ the fixture).
+  Its payload uses the xerial framing of the Java producer, with the header bytes `82 53 4e 41 50 50 59 00`. The batch carries a producer id, which an idempotent producer sets.
+  Each of the 55 batches that held the newest 5,000 offsets was snappy (MEASURED 2026-10-28T14:39:06Z, `node scripts/measure/kafkafetch.mjs certstream_domains latest-5000 1000000`).
+
 ## Inputs without a bit
 
 These feed a dataset that has no source mask, or are reference data, or only check other sources.

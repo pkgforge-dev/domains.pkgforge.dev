@@ -136,11 +136,11 @@ Raw data is kept always (ruling 5). Every source's bytes, as fetched, stay in GH
 **The raw lane.** Where a source is a file up to 1 GB (THC's daily dump, ISC, WhoisDS, the NRD lists), the segment's manifest keeps the file as fetched in its `raw` layer.
 Two sources are streams, and their raw bytes go to the raw lane of the `obs` package, the tags `raw-<source>.<window start>.<window end>`, written before the segment that names them:
 
-- **Kafka.** The record batches of each fetch, exactly as the broker returned them and still snappy compressed, with a members index of topic, partition, base offset, last offset, byte offset and length. They are not stored as JSON: the decoded JSON of `certstream_domains` is 24 GB a day (MEASURED 2026-10-27, design A §3.1), and the compressed batches are a fraction of it.
+- **Kafka.** The record batches of each fetch, exactly as the broker returned them, with a members index of topic, partition, base offset, last offset, byte offset and length. The batches of `certstream_domains` are snappy compressed. In every window read of the three NRD topics, a batch has codec none and one record. `docs/sources.md`, "The Zonestream broker", names each window and its command. The batches are not stored as JSON: the decoded JSON of `certstream_domains` is 24 GB a day (MEASURED 2026-10-27, design A §3.1), and its compressed batches are a fraction of it.
 - **Names tiles.** The gzip body of each tile as the log's host sent it (`Accept-Encoding: gzip`), with a members index of log, tile number, byte offset, length and sha256.
 
 A raw lane object uses the manifest kind `raw` (§4.2). It is never read by the Worker. It is the copy that lets a later change of an extractor re-read a stream that its publisher has expired, such as the Kafka topic's 26 hours.
-The size is estimated in §4.8 [E], and DOM-004 measures the compressed bytes a day.
+The size is estimated in §4.8 [E], and DOM-004 measures the bytes a day as the broker sends them.
 
 ### 3.5 The source registry
 
@@ -306,7 +306,7 @@ A static check refuses them (entry DOM-014).
 | THC monthly CSV, September | 37,046,639,482 B (MEASURED 2026-10-27T08:21:52Z, HEAD of the Hugging Face URL) |
 | THC monthly CSV, August | 36,029,717,282 B (MEASURED 2026-10-27T08:25:12Z, bucket listing) |
 | Raw lane, Kafka `certstream_domains` | 6 to 12 GB a day [E]: 72.7 million messages of about 326 B is 24 GB of JSON, and a snappy ratio of 2 to 4 on JSON is assumed. DOM-004 records the real compressed bytes a day. |
-| Raw lane, the three NRD topics | under 0.1 GB a day [E] (about 1 million messages a day) |
+| Raw lane, the three NRD topics | about 0.2 GB a day [E]: about 1 million messages a day (design A M6), one record a batch, at 188 to 231 B a batch (`docs/sources.md`, "The Zonestream broker"). DOM-004 records the real bytes a day. |
 | Raw lane, names tiles | about 1.4 GB a day (MEASURED, design A M10: 26.4 B an entry for 51.7 million entries a day) |
 | GHCR growth a year | derived tiers with every tier kept: 1 to 2 TB [E]. The raw lane adds 3 to 5 TB [E] (8 to 14 GB a day). DOM-023 measures the derived growth and DOM-004 the raw lane. Raw data is kept always (ruling 5), so the total is 4 to 7 TB a year [E]. |
 | mirror-archlinux, for scale | 368.5 GiB on one organisation (READ `mirror@669ac72:docs/measurements.md`) |

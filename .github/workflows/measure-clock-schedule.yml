@@ -1,0 +1,43 @@
+# Clock A of DOM-001 (TODO/ops.md): GitHub's own cron, at the smallest interval
+# it allows.
+#
+# The runs GitHub starts from this cron are the sample, whatever their gaps:
+# that is the measurement. A tick does nothing but record itself, so its job's
+# start time is when the clock fired. scripts/measure/clock-gaps.mjs reads the
+# runs (event schedule) and their jobs from the API.
+#
+# GitHub runs a schedule only from the default branch, can delay a scheduled
+# run, and can drop a queued one. workflow_dispatch is beside the cron so the
+# workflow can be started by hand; clock-gaps reads only event=schedule.
+#
+# To stop it once 48 hours of ticks exist:
+#   gh workflow disable measure-clock-schedule.yml
+name: Measure clock schedule
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: measure-clock-schedule
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Record the tick
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: echo "event=$EVENT run=$RUN_ID at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_STEP_SUMMARY"

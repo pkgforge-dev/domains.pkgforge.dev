@@ -1,0 +1,11 @@
+{
+  "name": "@domains/core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "Code that runs in Node and in workerd alike: the problem+json answer, the provenance headers and the one redaction helper.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

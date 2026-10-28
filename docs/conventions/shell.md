@@ -226,6 +226,21 @@ Two things fix it and neither is a manual step anybody has to remember:
 git ls-files --eol
 ```
 
+⚠ **Git Bash's `grep` cannot count carriage returns.** On the operator's Windows
+machine, GNU grep 3.0 in Git Bash reports every line of an LF-only file as a
+match for `$'\r'`, with `-U` or without it, and `grep -cP '\r'` reports none on
+a CRLF file. MEASURED in this repository, 2026-10-28, by a script file run with
+Git's `bash.exe` 5.3.15: after `printf 'a\nb\nc\n' > lf` (`od -c` shows
+`a \n b \n c \n`), `grep -c $'\r' lf`, `grep -cU $'\r' lf` and
+`grep -c -e $'\r$' lf` each print 3. The same commands typed through a tool that
+passes the command line on for you can print 0, so the answer depends on the
+path the argument takes, which is the trap. Count CR bytes with a tool that
+reads bytes, never with `grep -c`:
+
+```bash
+tr -cd '\r' < FILE | wc -c
+```
+
 ⚠ **`.ps1` is the one file type that keeps CRLF.** Windows PowerShell 5.1
 mis-parses a here-string whose terminator arrives with a bare LF. The simpler
 defence, and the one this repository uses, is to write no here-strings in a
