@@ -140,7 +140,7 @@ Two sources are streams, and their raw bytes go to the raw lane of the `obs` pac
 - **Names tiles.** The gzip body of each tile as the log's host sent it (`Accept-Encoding: gzip`), with a members index of log, tile number, byte offset, length and sha256.
 
 A raw lane object uses the manifest kind `raw` (§4.2). It is never read by the Worker. It is the copy that lets a later change of an extractor re-read a stream that its publisher has expired, such as the Kafka topic's 26 hours.
-The size is estimated in §4.8 [E], and DOM-004 measures the bytes a day as the broker sends them.
+The size is in §4.8, from DOM-004's reading of the bytes a day as the broker sends them.
 
 ### 3.5 The source registry
 
@@ -305,10 +305,10 @@ A static check refuses them (entry DOM-014).
 | THC daily names pack | about 200 MB, from 32,554,702 distinct names at 6.04 B (design B M10) |
 | THC monthly CSV, September | 37,046,639,482 B (MEASURED 2026-10-27T08:21:52Z, HEAD of the Hugging Face URL) |
 | THC monthly CSV, August | 36,029,717,282 B (MEASURED 2026-10-27T08:25:12Z, bucket listing) |
-| Raw lane, Kafka `certstream_domains` | 6 to 12 GB a day [E]: 72.7 million messages of about 326 B is 24 GB of JSON, and a snappy ratio of 2 to 4 on JSON is assumed. DOM-004 records the real compressed bytes a day. |
-| Raw lane, the three NRD topics | about 0.2 GB a day [E]: about 1 million messages a day (design A M6), one record a batch, at 188 to 231 B a batch (`docs/sources.md`, "The Zonestream broker"). DOM-004 records the real bytes a day. |
+| Raw lane, Kafka `certstream_domains` | 10.6 GB a day on the wire, 28.3 GB once decoded, a snappy ratio of 2.68 (MEASURED 2026-10-28T15:16Z, DOM-004, run 40714194235: 64,001,338 B for 536,533 messages, scaled to the 88,461,905 messages of the 24 hours before the run; `docs/research/measure/DOM-004/result.json`). The figure moves with the topic's 24-hour count. |
+| Raw lane, the three NRD topics | 0.19 GB a day on the wire: 82.5 MB, 71.5 MB and 37.8 MB for `newly_registered_domain`, `newly_registered_fqdn` and `confirmed_newly_registered_domain`, one record a batch (MEASURED 2026-10-28T15:16Z, DOM-004, run 40714194235). |
 | Raw lane, names tiles | about 1.4 GB a day (MEASURED, design A M10: 26.4 B an entry for 51.7 million entries a day) |
-| GHCR growth a year | derived tiers with every tier kept: 1 to 2 TB [E]. The raw lane adds 3 to 5 TB [E] (8 to 14 GB a day). DOM-023 measures the derived growth and DOM-004 the raw lane. Raw data is kept always (ruling 5), so the total is 4 to 7 TB a year [E]. |
+| GHCR growth a year | derived tiers with every tier kept: 1 to 2 TB [E]. The raw lane adds about 4.4 TB [E]: its two measured parts, 10.7 GB a day of Kafka batches (DOM-004) and 1.4 GB a day of names tiles (design A M10), are 12.1 GB a day, and the file sources add less than 1 GB a day. DOM-023 measures the derived growth. Raw data is kept always (ruling 5), so the total is about 5.4 to 6.4 TB a year [E]. |
 | mirror-archlinux, for scale | 368.5 GiB on one organisation (READ `mirror@669ac72:docs/measurements.md`) |
 
 ### 4.9 R2
@@ -692,7 +692,7 @@ A merge never removes a record from a promoted tier. A rollback is a new root th
 | GHCR storage and egress | $0. 1.2 to 2 GB net new of derived data and 8 to 14 GB of raw lane [E] | "currently free", with at least a month's notice before a change (READ GitHub's packages billing page via design A §2.2). Raw data is kept always (ruling 5). |
 | Workers | $0 over the $5 monthly plan at 100,000 requests a day [E] | 10 million requests and 30 million CPU-ms are included |
 | R2 | at most 5 GB at $0.015 per GB-month, about $0.075 a month | the cap |
-| Inbound network on runners | THC 0.32 GB, Kafka 6 to 12 GB compressed [E] (24 GB once decoded), tiles 1.4 GB | not billed |
+| Inbound network on runners | THC 0.32 GB, Kafka 10.7 GB on the wire (MEASURED, DOM-004; 28.4 GB once decoded), tiles 1.4 GB | not billed |
 
 ## 11. The consumer contract
 

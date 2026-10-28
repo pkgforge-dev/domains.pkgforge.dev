@@ -8,7 +8,7 @@ is the only one.
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5), then works the order unattended.
-- **Deployed:** nothing yet. No Worker, no R2 bucket of this project, no custom domain and no GHCR package exists (MEASURED 2026-10-28T10:16Z, `npx wrangler r2 bucket list` names no `domains-` bucket).
+- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z; first tick 15:23:24Z). No serving Worker, no custom domain and no cache bucket yet. The GHCR probe package appears with the first run of `measure-push.yml` (DOM-006).
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
 ## Baseline
@@ -22,36 +22,36 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 53 open, 8 partial, 1 blocked, 0 done.**
+**62 items. 52 open, 6 partial, 1 blocked, 3 done.**
 
 ## What this session did
 
 - Asked the operator the four questions the record left open and recorded the answers as rulings 14 to 17 (`TODO/RULES.md` section 5): the agent runs this project's Cloudflare and repository changes itself; the zone's rate-limit rules stay the operator's blocked decision (DOM-062, new); the `/v1/new` checkpoint is not a stop; the clock thresholds stay 15 and 60 minutes.
 - Set the repository's default workflow permission to `read` (former Operator action 3), under ruling 14.
 - Built the first wave, eight entries, now partial: the npm workspace with `packages/core` and the workerd harness `packages/testkit`, the type check as a gate step and `ci.yml` (DOM-013); the probe Worker `probes/worker` (DOM-061); and the measurement workflows and scripts of DOM-001, DOM-004, DOM-006, DOM-009, DOM-010 and DOM-012. Three review lenses ran on the wave (door sweep, guard mutation, claim audit); their findings are fixed in the same change, and each entry's Built and Correction bullets record what was measured and corrected.
+- Closed DOM-013 (CI run 40713652294 green on 5e7a646), DOM-004 (`measure-kafka.yml` run 40714194235: PASS, 10.7 GB a day on the wire for the four topics) and DOM-061 (the probe deployed by the agent under ruling 14, both crons writing). DOM-002's 48 hours started with the probe's first tick.
+- Fixed `measure-feeds.yml`, which reached `main` with a YAML error (DOM-012 Correction), and dispatched every wave-1 measurement: the clock chain (`CHAIN_END` 2026-10-30T15:15:58Z), the feeds chain (until 2026-11-04T15:15:55Z), Kafka, the GHCR push, THC's one day (PASS, 146 s) and then its 54-day matrix, and THC's monthly stream.
 - Set the probe's compatibility date to 2026-10-13, the newest date the workerd that wrangler 4.150.0 pins runs, so the probe deploys with the date its tests run with (DOM-061 and DOM-030 Corrections).
 
 ## What is in progress
 
-Eight entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Six entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
-| DOM-013 | the `ci.yml` run of the pushed commit |
-| DOM-061 | the bucket, its lifecycle rule and the deploy of the probe, then a read of `/gaps?hours=1` |
-| DOM-001 | 48 hours of the schedule and the chain (`CHAIN_END` set to the first dispatch plus 48 hours) |
-| DOM-004 | one run of `measure-kafka.yml` |
-| DOM-006 | two runs of `measure-push.yml` and the anonymous read of the probe package |
-| DOM-009 | one run of `measure-thc-day.yml` for one day, then the 54-day matrix |
+| DOM-001 | 48 hours of the schedule and the chain (`CHAIN_END` 2026-10-30T15:15:58Z) |
+| DOM-002 | 48 hours of the probe's crons from its first tick, 2026-10-28T15:23:24Z |
+| DOM-006 | two runs of `measure-push.yml` (the first, 40714201294, is running) and the anonymous read of the probe package |
+| DOM-009 | the 54-day matrix, run 40714899126 (the one-day run passed) |
 | DOM-010 | one run of `measure-thc-monthly.yml`, up to 6 hours of streaming |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
 
-The deploy and the dispatches follow the push of the commit that holds them. DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
+DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
 
 ## Start here next session
 
-1. Close the first wave as each Waiting line comes due: DOM-013, DOM-061, DOM-004, DOM-006 and DOM-009 the same day, DOM-010 within hours, DOM-001 after 48 hours and DOM-012 after 7 days. If a dispatch or the deploy has not run, run it first (each entry's Waiting line names it). The probe's two cron triggers start DOM-002's 48 hours, and DOM-002 reads them.
-2. The first wave's remaining Proves, read from the runs: DOM-004, DOM-006, DOM-009, DOM-010, DOM-013.
+1. Close the partial entries as each Waiting line comes due: DOM-006 and DOM-009 the same day, DOM-010 within hours, DOM-001 and DOM-002 after 48 hours, DOM-012 after 7 days. Each Waiting line names the run or the reading that closes it.
+2. The remaining runner Proves, read from the runs: DOM-006, DOM-009, DOM-010.
 3. The Worker measurements and the next foundation steps: DOM-005, DOM-007, DOM-008 (each waits for DOM-061, not for DOM-002's 48 hours), then DOM-011, DOM-014, DOM-015. Then DOM-003, once DOM-001 and DOM-002 have closed.
 4. Foundation and the format: DOM-016, DOM-017 (the pack format waits for no measurement: its header names its codec and block size).
 5. The verifier, the GHCR tool, the ledger, the root and the feed: DOM-018, DOM-019, DOM-021, DOM-020, DOM-022. Then compaction: DOM-023.

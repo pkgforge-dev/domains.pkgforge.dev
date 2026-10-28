@@ -24,7 +24,7 @@ configuration may carry the `account_id` a custom domain needs
 
 | Worker | hostname | created | owner | delete |
 | --- | --- | --- | --- | --- |
-| `domains-probe` (`probes/worker/`) | its workers.dev URL, which `wrangler deploy` prints; `preview_urls = false`, no route. Crons `* * * * *` and `*/5 * * * *`. R2 binding `PROBE` to the bucket `domains-probe`. | pending (DOM-061, the operator's deploy) | DOM-061; DOM-056 deletes it | `npx wrangler@4.150.0 delete --name domains-probe` |
+| `domains-probe` (`probes/worker/`) | its workers.dev URL, which `wrangler deploy` prints; `preview_urls = false`, no route. Crons `* * * * *` and `*/5 * * * *`. R2 binding `PROBE` to the bucket `domains-probe`. | 2026-10-28T15:13:54Z, deployed by the agent under ruling 14 with `npx wrangler@4.150.0 deploy` (DOM-061) | DOM-061; DOM-056 deletes it | `npx wrangler@4.150.0 delete --name domains-probe` |
 
 A Worker row names its hostname, its cron triggers and every binding it holds
 (R2, service, rate limit). The delete column is `npx wrangler delete --name <worker>`. It removes the Worker's custom domain, its record and its cron triggers.
@@ -51,7 +51,7 @@ with their Workers.
 
 | bucket | bound by | created | rules | delete |
 | --- | --- | --- | --- | --- |
-| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | pending (DOM-061, the operator) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe` |
+| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe` |
 
 ## GHCR packages
 
@@ -79,15 +79,15 @@ writes to GHCR.
 
 | workflow | file | trigger | permissions | created | delete |
 | --- | --- | --- | --- | --- | --- |
-| CI | `ci.yml` | push to `main`, pull request, dispatch | `gate`: `contents: read` | pending (DOM-013) | remove the file |
-| Measure clock schedule | `measure-clock-schedule.yml` | cron `*/5 * * * *`, dispatch | `tick`: `contents: read` | pending (DOM-001) | `gh workflow disable measure-clock-schedule.yml` once 48 hours of ticks exist, then remove the file |
-| Measure clock chain | `measure-clock-chain.yml` | dispatch only; each run dispatches the next until the repository variable `CHAIN_END` | `measure-chain`: `actions: write`, `contents: read` | pending (DOM-001) | the chain ends by itself once `CHAIN_END` has passed (an empty `CHAIN_END` never ends it); `gh workflow disable measure-clock-chain.yml`, then remove the file |
-| Measure clock chain keepalive | `measure-clock-chain-keep.yml` | cron `*/30 * * * *`, dispatch | `keepalive`: `actions: write`, `contents: read` | pending (DOM-001) | `gh workflow disable measure-clock-chain-keep.yml` once the chain has ended, then remove the file |
-| Measure feeds | `measure-feeds.yml` | dispatch only; a chain of long jobs, each dispatching the next until the dispatch input `until` (the start plus 7 days) | `measure-chain`: `actions: write`, `contents: read`; `poll`: `contents: read` | pending (DOM-012) | `gh workflow disable measure-feeds.yml`, then remove the file |
-| measure-kafka | `measure-kafka.yml` | dispatch only | `measure`: `contents: read` | pending (DOM-004) | remove the file |
-| Measure a GHCR push | `measure-push.yml` | dispatch only | `measure-push`: `contents: read`, `packages: write` | pending (DOM-006) | remove the file; the package it pushed stays |
-| Measure THC day | `measure-thc-day.yml` | dispatch only | `plan`, `measure` and `merge`: `contents: read` | pending (DOM-009) | remove the file |
-| measure-thc-monthly | `measure-thc-monthly.yml` | dispatch only | `measure`: `contents: read` | pending (DOM-010) | remove the file |
+| CI | `ci.yml` | push to `main`, pull request, dispatch | `gate`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-013) | remove the file |
+| Measure clock schedule | `measure-clock-schedule.yml` | cron `*/5 * * * *`, dispatch | `tick`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-001) | `gh workflow disable measure-clock-schedule.yml` once 48 hours of ticks exist, then remove the file |
+| Measure clock chain | `measure-clock-chain.yml` | dispatch only; each run dispatches the next until the repository variable `CHAIN_END` | `measure-chain`: `actions: write`, `contents: read` | 2026-10-28, commit 5e7a646 (DOM-001) | the chain ends by itself once `CHAIN_END` has passed (an empty `CHAIN_END` never ends it); `gh workflow disable measure-clock-chain.yml`, then remove the file |
+| Measure clock chain keepalive | `measure-clock-chain-keep.yml` | cron `*/30 * * * *`, dispatch | `keepalive`: `actions: write`, `contents: read` | 2026-10-28, commit 5e7a646 (DOM-001) | `gh workflow disable measure-clock-chain-keep.yml` once the chain has ended, then remove the file |
+| Measure feeds | `measure-feeds.yml` | dispatch only; a chain of long jobs, each dispatching the next until the dispatch input `until` (the start plus 7 days) | `measure-chain`: `actions: write`, `contents: read`; `poll`: `contents: read` | 2026-10-28, commit 5e7a646; GitHub accepted the file from commit 69eff0d (DOM-012) | `gh workflow disable measure-feeds.yml`, then remove the file |
+| measure-kafka | `measure-kafka.yml` | dispatch only | `measure`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-004) | remove the file |
+| Measure a GHCR push | `measure-push.yml` | dispatch only | `measure-push`: `contents: read`, `packages: write` | 2026-10-28, commit 5e7a646 (DOM-006) | remove the file; the package it pushed stays |
+| Measure THC day | `measure-thc-day.yml` | dispatch only | `plan`, `measure` and `merge`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-009) | remove the file |
+| measure-thc-monthly | `measure-thc-monthly.yml` | dispatch only | `measure`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-010) | remove the file |
 
 The delete column is removing the file in a commit, or `gh workflow disable <workflow>` to stop it without a commit.
 

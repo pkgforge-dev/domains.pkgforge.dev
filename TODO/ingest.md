@@ -6,8 +6,7 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 
 ## DOM-004 — Measure Kafka from a GitHub runner
 
-- **Status:** partial
-- **Waiting:** until 2026-10-28T16:00:00Z; dispatch measure-kafka.yml, download its result (`gh run download <id> --name result`), record the verdict, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** S
 - **Source:** design A section 3.1 and section 11 step 1, design B section 2.4 item 4, and the operator's ruling 8 of 2026-10-27 (measure the clock "ideally actions since its a real vm with near gigabit speed").
@@ -56,6 +55,20 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
   - It asks `wire_bytes_per_day` for the four consumed topics, not for every topic the broker lists. The Approach's pass rule now names each check.
 - **Correction 2026-10-28T14:29Z:** step (6) read design A M8's own window, 2026-10-26T12:00:00Z to 12:05:00Z. That window is past the retention of `certstream_domains`, so no run after 2026-10-27 can read it. Step (6) now reads 12:00:00Z to 12:05:00Z of the latest day that it can, with a fallback when that window has expired (`windowStart` in `scripts/measure/kafka-runner.mjs`, and its test in `scripts/measure/kafka-runner.test.mjs`). The result records the window it read and `fallback`. Its message count does not compare one to one with M8's 194,303: M8 stopped at the first message whose `seen` field passed the end, and the runner takes both ends from ListOffsets.
 - **Correction 2026-10-28T14:29Z:** the Prove downloaded with `gh run download "$RUN" --dir .tmp/measure/DOM-004` and then read `docs/research/measure/DOM-004/result.json`. With no `--name`, `gh run download` extracts each artifact into a directory named after it, so the file lands at `.tmp/measure/DOM-004/result/result.json` (READ `gh run download --help`, 2026-10-28T14:23Z), and nothing writes the path that the verdict reads. The Prove now downloads with `--name result --dir docs/research/measure/DOM-004`, and it names the exit code 2.
+- **Closed 2026-10-28T15:24Z (proven):** `measure-kafka.yml` run 40714194235 on commit 69eff0d18c8f9048561d03b68e07a029f7cbac77 passed (dispatched 2026-10-28T15:16:03Z, done 15:17:25Z, conclusion `success`). `gh run download 40714194235 --name result` gave `docs/research/measure/DOM-004/result.json`, and `node scripts/measure/kafka-runner.mjs --verdict docs/research/measure/DOM-004/result.json` exits 0 and prints:
+
+        PASS DOM-004 Kafka from a runner (Linux X64, started 2026-10-28T15:16:24.844Z)
+          reach: 9092 open in 599 ms; 9091 closed (ETIMEDOUT)
+          decode: 15210 batch(es), by codec {"snappy":8715,"none":6495}, failures 0
+          window 2026-10-28T12:00:00.000Z: 275075 messages in 17.457 s
+          certstream_domains: 10.552 GB a day on the wire, 28.303 GB decoded (sample 536533 messages, 88461905 in 24 h)
+          newly_registered_domain: 0.083 GB a day on the wire, 0.056 GB decoded (sample 2359 messages, 378722 in 24 h)
+          newly_registered_fqdn: 0.071 GB a day on the wire, 0.049 GB decoded (sample 2606 messages, 327290 in 24 h)
+          confirmed_newly_registered_domain: 0.038 GB a day on the wire, 0.024 GB decoded (sample 1530 messages, 192241 in 24 h)
+
+  - So a runner reaches the broker on 9092 and decodes every batch it reads, snappy and uncompressed, with no failure. The raw lane is 10.7 GB a day on the wire for the four topics. Each per-day figure scales the run's sample by the 24-hour count of its own run, so it moves with the topic.
+  - `docs/architecture.md` section 4.8 and section 10 now carry these figures in place of the [E] estimates, and the year's growth is derived from them.
+  - Gate part (b): the run is the deployed thing for a runner measurement, and its artifact is read above. Part (c): the wave's three lenses ran on this entry's files before the commit.
 
 ## DOM-005 — Measure Kafka from a Worker connect()
 

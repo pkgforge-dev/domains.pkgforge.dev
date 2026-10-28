@@ -137,7 +137,8 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
 
 ## DOM-002 — Measure the Cloudflare cron clock with a probe Worker that writes a hot tier to R2
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-30T15:30:00Z; run `node scripts/measure/worker-clock-gaps.mjs --url "$PROBE_URL/gaps" --hours 48 --out docs/research/measure/DOM-002/worker.json` over the 48 hours from the first tick at 2026-10-28T15:23:24Z, record the verdict, set `crons = []`, deploy, and close
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator, ruling 8 of 2026-10-27: the clock is measured, and the alternative to Actions is "a Cloudflare cron Worker writing a 72 h hot tier to R2". Design B section 0 item 4 and section 5.1. Architecture sections 4.9 and 5.2. The probe Worker is DOM-061.
@@ -164,8 +165,7 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
 
 ## DOM-061 — Deploy the probe Worker and its R2 bucket
 
-- **Status:** partial
-- **Waiting:** until 2026-10-28T16:00:00Z; create the bucket and its lifecycle rule, deploy the probe, read /gaps?hours=1 from its workers.dev URL, fill the ledger dates, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** split out of DOM-002 by the review of this record (2026-10-27): DOM-005, DOM-007 and DOM-008 need a Worker deployed on Cloudflare, and none of them needs 48 hours of ticks. Ruling 8 of `TODO/RULES.md` section 5. Architecture sections 4.9 and 12.
@@ -215,6 +215,14 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
   - **The lifecycle command.** The lifecycle command is the positional form that the help of wrangler 4.150.0 prints.
 - **Operator:** run `npx wrangler login` if needed, then `npx wrangler whoami`. It must show the account that holds the `pkgforge.dev` zone. That account id is the `account_id` line of `worker/wrangler.toml` in mirror-archlinux at commit 669ac725f8081445c164113f2ed092533de112e2. Enable R2 on the account. Then run `cd probes/worker && npx wrangler@4.150.0 r2 bucket create domains-probe && npx wrangler@4.150.0 deploy`, and the lifecycle command above.
 - **Resources:** Worker `domains-probe`. Undo: `npx wrangler@4.150.0 delete --name domains-probe`. R2 bucket `domains-probe`. Undo: expire or delete every object (the lifecycle rule above with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe`. Add both rows to `docs/resources.md` in the same change.
+- **Closed 2026-10-28T15:26Z (proven):** the probe runs on the account that holds the `pkgforge.dev` zone, and both crons write to its bucket.
+  - `npx wrangler@4.150.0 whoami` at 2026-10-28T15:12:57Z names the account `Ajamx101@gmail.com's Account`, with `account (read)` among the token's scopes. The agent ran every step under ruling 14.
+  - The bucket: `npx wrangler@4.150.0 r2 bucket create domains-probe` exits 0. `r2 bucket lifecycle add domains-probe expire-hot hot/ --expire-days 3 --force` exits 0, and `r2 bucket lifecycle list domains-probe` reads back `name: expire-hot`, `prefix: hot/`, `action: Expire objects after 3 days`, beside the account's default rule that aborts unfinished multipart uploads after 7 days. Done by 2026-10-28T15:13:35Z.
+  - The deploy: `cd probes/worker && npx wrangler@4.150.0 deploy` exits 0 at 2026-10-28T15:13:54Z. It uploads 21.38 KiB (6.67 KiB gzip), binds `env.PROBE (domains-probe)`, and prints the workers.dev URL and `schedule: * * * * *` and `schedule: */5 * * * *`. `PROBE_URL` is that URL. Its subdomain is the account's own and is not written into this public tree (`docs/security/secrets.md`); the deploy prints it again.
+  - The crons took about 9.5 minutes to start. `/gaps?hours=1` answered `runs: 0` until 15:20:24Z, a `wrangler tail` of 150 s from about 15:20:40Z saw no event, and the first tick of the minute cron started at 2026-10-28T15:23:24.560Z. Cloudflare documents that a new cron trigger can take up to 15 minutes to propagate. DOM-002's window starts at that first tick.
+  - `curl -sS "$PROBE_URL/"` at 15:24:38Z: status 200, routes `GET /, GET /gaps`. `curl -sS "$PROBE_URL/gaps?hours=1"` at 15:24:39Z: status 200, `.runs` 2, `.expected` 60, verdict `INCOMPLETE`, start lag 1.295 s. At 15:25:41Z: `runs` 3, the 5-minute cron 1 run, `hot_puts` 1, `put_errors` 0, `put_ms` 587. The answer carries `cache-control: public, max-age=60`.
+  - `node scripts/test.mjs probes/worker --name "gaps"` exits 0 with 30 tests at 15:24:38Z. `grep -c 'domains-probe' docs/resources.md` prints 4, and the Worker and bucket rows carry their created times and undo commands.
+  - Gate part (b) is the reads above against the deployed Worker; part (c) is the wave's three lenses, which ran on `probes/worker` before the commit.
 
 ## DOM-003 — Decide the clock from the measurements
 

@@ -1,0 +1,576 @@
+{
+ "schema": "domains.pkgforge.dev/measure/DOM-004/kafka-runner@1",
+ "entry": "DOM-004",
+ "started_at": "2026-10-28T15:16:24.844Z",
+ "finished_at": "2026-10-28T15:17:21.820Z",
+ "runner": {
+  "os": "Linux",
+  "arch": "X64",
+  "job_started_at": "2026-10-28T15:16:14Z",
+  "github_run_id": "40714194235",
+  "github_sha": "69eff0d18c8f9048561d03b68e07a029f7cbac77",
+  "node": "v26.7.0"
+ },
+ "host": "kafka.zonestream.openintel.nl",
+ "settings": {
+  "port": 9092,
+  "alt_port": 9091,
+  "minutes": 10,
+  "back_minutes": 15,
+  "wall_cap_minutes": 6,
+  "fetch_bytes": 8388608,
+  "window": null
+ },
+ "reach_9092": {
+  "port": 9092,
+  "tls": false,
+  "ok": true,
+  "ms": 599
+ },
+ "reach_9091": {
+  "port": 9091,
+  "tls": false,
+  "ok": false,
+  "error": "ETIMEDOUT"
+ },
+ "api_versions": {
+  "1": {
+   "min": 0,
+   "max": 16
+  },
+  "2": {
+   "min": 0,
+   "max": 8
+  },
+  "3": {
+   "min": 0,
+   "max": 12
+  },
+  "18": {
+   "min": 0,
+   "max": 3
+  }
+ },
+ "brokers": [
+  {
+   "id": 1,
+   "host": "kafka.zonestream.openintel.nl",
+   "port": 9092
+  }
+ ],
+ "metadata_errors": [],
+ "topics": {
+  "newly_registered_domain": {
+   "partitions": 1,
+   "retained": 6273362,
+   "last_1h": 14995,
+   "last_24h": 378722,
+   "last_7d": 3169845,
+   "earliest_ts": "2026-10-15T13:00:50.338Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 166475059,
+     "latest": 172748421,
+     "off_1h_ago": 172733426,
+     "off_24h_ago": 172369699,
+     "off_7d_ago": 169578576,
+     "last_1h": 14995,
+     "last_24h": 378722,
+     "last_7d": 3169845,
+     "earliest_ts": 1792069250338
+    }
+   ]
+  },
+  "certstream_domains": {
+   "partitions": 1,
+   "retained": 91829037,
+   "last_1h": 3913511,
+   "last_24h": 88461905,
+   "last_7d": 91829037,
+   "earliest_ts": "2026-10-27T14:10:34.579Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 42614998434,
+     "latest": 42706827471,
+     "off_1h_ago": 42702913960,
+     "off_24h_ago": 42618365566,
+     "off_7d_ago": 42614998434,
+     "last_1h": 3913511,
+     "last_24h": 88461905,
+     "last_7d": 91829037,
+     "earliest_ts": 1793110234579
+    }
+   ]
+  },
+  "confirmed_newly_registered_domain": {
+   "partitions": 1,
+   "retained": 2851489,
+   "last_1h": 9106,
+   "last_24h": 192241,
+   "last_7d": 1514227,
+   "earliest_ts": "2026-10-15T13:02:00.468Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 77668881,
+     "latest": 80520370,
+     "off_1h_ago": 80511264,
+     "off_24h_ago": 80328129,
+     "off_7d_ago": 79006143,
+     "last_1h": 9106,
+     "last_24h": 192241,
+     "last_7d": 1514227,
+     "earliest_ts": 1792069320468
+    }
+   ]
+  },
+  "newly_issued_certificates_measurements": {
+   "partitions": 1,
+   "retained": 189703568,
+   "last_1h": 7825577,
+   "last_24h": 185208085,
+   "last_7d": 189703568,
+   "earliest_ts": "2026-10-27T14:35:10.620Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 84943362606,
+     "latest": 85133066174,
+     "off_1h_ago": 85125240597,
+     "off_24h_ago": 84947858089,
+     "off_7d_ago": 84943362606,
+     "last_1h": 7825577,
+     "last_24h": 185208085,
+     "last_7d": 189703568,
+     "earliest_ts": 1793111710620
+    }
+   ]
+  },
+  "newly_registered_fqdn_measurements": {
+   "partitions": 4,
+   "retained": 196013387,
+   "last_1h": 8038204,
+   "last_24h": 191027269,
+   "last_7d": 196013387,
+   "earliest_ts": "2026-10-27T14:14:12.836Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 86686622190,
+     "latest": 86735779903,
+     "off_1h_ago": 86733781726,
+     "off_24h_ago": 86688088959,
+     "off_7d_ago": 86686622190,
+     "last_1h": 1998177,
+     "last_24h": 47690944,
+     "last_7d": 49157713,
+     "earliest_ts": 1793111436704
+    },
+    {
+     "partition": 2,
+     "earliest": 4083425551,
+     "latest": 4132118408,
+     "off_1h_ago": 4130112749,
+     "off_24h_ago": 4084339463,
+     "off_7d_ago": 4083425551,
+     "last_1h": 2005659,
+     "last_24h": 47778945,
+     "last_7d": 48692857,
+     "earliest_ts": 1793112487888
+    },
+    {
+     "partition": 3,
+     "earliest": 4083270569,
+     "latest": 4133079679,
+     "off_1h_ago": 4131072365,
+     "off_24h_ago": 4085281449,
+     "off_7d_ago": 4083270569,
+     "last_1h": 2007314,
+     "last_24h": 47798230,
+     "last_7d": 49809110,
+     "earliest_ts": 1793110452836
+    },
+    {
+     "partition": 1,
+     "earliest": 4083403123,
+     "latest": 4131756830,
+     "off_1h_ago": 4129729776,
+     "off_24h_ago": 4083997680,
+     "off_7d_ago": 4083403123,
+     "last_1h": 2027054,
+     "last_24h": 47759150,
+     "last_7d": 48353707,
+     "earliest_ts": 1793113088248
+    }
+   ]
+  },
+  "newly_registered_domains_measurements": {
+   "partitions": 4,
+   "retained": 361676642,
+   "last_1h": 14540890,
+   "last_24h": 352628153,
+   "last_7d": 361676642,
+   "earliest_ts": "2026-10-27T14:20:36.796Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 110501357102,
+     "latest": 110592152647,
+     "off_1h_ago": 110588541045,
+     "off_24h_ago": 110504084709,
+     "off_7d_ago": 110501357102,
+     "last_1h": 3611602,
+     "last_24h": 88067938,
+     "last_7d": 90795545,
+     "earliest_ts": 1793111425398
+    },
+    {
+     "partition": 2,
+     "earliest": 9032593916,
+     "latest": 9121169424,
+     "off_1h_ago": 9117523487,
+     "off_24h_ago": 9032998089,
+     "off_7d_ago": 9032593916,
+     "last_1h": 3645937,
+     "last_24h": 88171335,
+     "last_7d": 88575508,
+     "earliest_ts": 1793113774064
+    },
+    {
+     "partition": 3,
+     "earliest": 9029039293,
+     "latest": 9120532299,
+     "off_1h_ago": 9116897397,
+     "off_24h_ago": 9032362277,
+     "off_7d_ago": 9029039293,
+     "last_1h": 3634902,
+     "last_24h": 88170022,
+     "last_7d": 91493006,
+     "earliest_ts": 1793110836796
+    },
+    {
+     "partition": 1,
+     "earliest": 9029017615,
+     "latest": 9119830198,
+     "off_1h_ago": 9116181749,
+     "off_24h_ago": 9031611340,
+     "off_7d_ago": 9029017615,
+     "last_1h": 3648449,
+     "last_24h": 88218858,
+     "last_7d": 90812583,
+     "earliest_ts": 1793111577384
+    }
+   ]
+  },
+  "certstream": {
+   "partitions": 1,
+   "retained": 3028348,
+   "last_1h": 3028348,
+   "last_24h": 3028348,
+   "last_7d": 3028348,
+   "earliest_ts": "2026-10-28T14:27:41.374Z",
+   "last_24h_capped": true,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 42697174810,
+     "latest": 42700203158,
+     "off_1h_ago": 42697174810,
+     "off_24h_ago": 42697174810,
+     "off_7d_ago": 42697174810,
+     "last_1h": 3028348,
+     "last_24h": 3028348,
+     "last_7d": 3028348,
+     "earliest_ts": 1793197661374
+    }
+   ]
+  },
+  "newly_registered_fqdn": {
+   "partitions": 1,
+   "retained": 4216751,
+   "last_1h": 16671,
+   "last_24h": 327290,
+   "last_7d": 2262859,
+   "earliest_ts": "2026-10-15T13:00:54.290Z",
+   "last_24h_capped": false,
+   "by_partition": [
+    {
+     "partition": 0,
+     "earliest": 177511440,
+     "latest": 181728191,
+     "off_1h_ago": 181711520,
+     "off_24h_ago": 181400901,
+     "off_7d_ago": 179465332,
+     "last_1h": 16671,
+     "last_24h": 327290,
+     "last_7d": 2262859,
+     "earliest_ts": 1792069254290
+    }
+   ]
+  }
+ },
+ "consume": {
+  "certstream_domains": {
+   "window": {
+    "from": "2026-10-28T15:01:28.589Z",
+    "to": "2026-10-28T15:11:28.589Z",
+    "rule": "now - 15 min, for 10 min"
+   },
+   "topic": "certstream_domains",
+   "ranges": [
+    {
+     "partition": 0,
+     "start": 42706015268,
+     "stop": 42706551801,
+     "next": 42706551801,
+     "high_watermark": 42706849124,
+     "ended_by": "window"
+    }
+   ],
+   "first_offset": 42706015268,
+   "last_offset": 42706551800,
+   "first_ts": "2026-10-28T15:01:28.607Z",
+   "last_ts": "2026-10-28T15:11:28.392Z",
+   "messages": 536533,
+   "bytes": 64349814,
+   "wire_bytes": 64001338,
+   "raw_bytes": 171661332,
+   "decoded_bytes": 177084423,
+   "batches": 5800,
+   "control_batches": 0,
+   "failed_batches": 0,
+   "failed_wire_bytes": 0,
+   "fetches": 9,
+   "codecs": {
+    "snappy": 5800
+   },
+   "seconds": 31.882,
+   "messages_per_second": 16829,
+   "mb_per_second": 2.018,
+   "raw_mb_per_second": 5.384,
+   "ended_by": "window",
+   "messages_24h": 88461905,
+   "wire_bytes_per_day": 10552343066,
+   "raw_bytes_per_day": 28302990578
+  },
+  "newly_registered_domain": {
+   "window": {
+    "from": "2026-10-15T13:00:50.338Z",
+    "to": "2026-10-15T13:10:50.338Z",
+    "rule": "earliest retained message, for 10 min"
+   },
+   "topic": "newly_registered_domain",
+   "ranges": [
+    {
+     "partition": 0,
+     "start": 166475059,
+     "stop": 166477418,
+     "next": 166477418,
+     "high_watermark": 172748520,
+     "ended_by": "window"
+    }
+   ],
+   "first_offset": 166475059,
+   "last_offset": 166477417,
+   "first_ts": "2026-10-15T13:00:50.338Z",
+   "last_ts": "2026-10-15T13:10:50.165Z",
+   "messages": 2359,
+   "bytes": 547651,
+   "wire_bytes": 514070,
+   "raw_bytes": 348940,
+   "decoded_bytes": 514070,
+   "batches": 2359,
+   "control_batches": 0,
+   "failed_batches": 0,
+   "failed_wire_bytes": 0,
+   "fetches": 2,
+   "codecs": {
+    "none": 2359
+   },
+   "seconds": 0.658,
+   "messages_per_second": 3585,
+   "mb_per_second": 0.832,
+   "raw_mb_per_second": 0.53,
+   "ended_by": "window",
+   "messages_24h": 378722,
+   "wire_bytes_per_day": 82530572,
+   "raw_bytes_per_day": 56020032
+  },
+  "newly_registered_fqdn": {
+   "window": {
+    "from": "2026-10-15T13:00:54.290Z",
+    "to": "2026-10-15T13:10:54.290Z",
+    "rule": "earliest retained message, for 10 min"
+   },
+   "topic": "newly_registered_fqdn",
+   "ranges": [
+    {
+     "partition": 0,
+     "start": 177511440,
+     "stop": 177514046,
+     "next": 177514046,
+     "high_watermark": 181728302,
+     "ended_by": "window"
+    }
+   ],
+   "first_offset": 177511440,
+   "last_offset": 177514045,
+   "first_ts": "2026-10-15T13:00:54.290Z",
+   "last_ts": "2026-10-15T13:10:53.762Z",
+   "messages": 2606,
+   "bytes": 600029,
+   "wire_bytes": 568997,
+   "raw_bytes": 386577,
+   "decoded_bytes": 568997,
+   "batches": 2606,
+   "control_batches": 0,
+   "failed_batches": 0,
+   "failed_wire_bytes": 0,
+   "fetches": 2,
+   "codecs": {
+    "none": 2606
+   },
+   "seconds": 0.656,
+   "messages_per_second": 3975,
+   "mb_per_second": 0.915,
+   "raw_mb_per_second": 0.59,
+   "ended_by": "window",
+   "messages_24h": 327290,
+   "wire_bytes_per_day": 71460870,
+   "raw_bytes_per_day": 48550570
+  },
+  "confirmed_newly_registered_domain": {
+   "window": {
+    "from": "2026-10-15T13:02:00.468Z",
+    "to": "2026-10-15T13:12:00.468Z",
+    "rule": "earliest retained message, for 10 min"
+   },
+   "topic": "confirmed_newly_registered_domain",
+   "ranges": [
+    {
+     "partition": 0,
+     "start": 77668881,
+     "stop": 77670411,
+     "next": 77670411,
+     "high_watermark": 80520412,
+     "ended_by": "window"
+    }
+   ],
+   "first_offset": 77668881,
+   "last_offset": 77670410,
+   "first_ts": "2026-10-15T13:02:00.468Z",
+   "last_ts": "2026-10-15T13:12:00.465Z",
+   "messages": 1530,
+   "bytes": 319822,
+   "wire_bytes": 301089,
+   "raw_bytes": 193989,
+   "decoded_bytes": 301089,
+   "batches": 1530,
+   "control_batches": 0,
+   "failed_batches": 0,
+   "failed_wire_bytes": 0,
+   "fetches": 2,
+   "codecs": {
+    "none": 1530
+   },
+   "seconds": 0.521,
+   "messages_per_second": 2938,
+   "mb_per_second": 0.614,
+   "raw_mb_per_second": 0.372,
+   "ended_by": "window",
+   "messages_24h": 192241,
+   "wire_bytes_per_day": 37831144,
+   "raw_bytes_per_day": 24374274
+  }
+ },
+ "window_5min": {
+  "window": [
+   "2026-10-28T12:00:00.000Z",
+   "2026-10-28T12:05:00.000Z"
+  ],
+  "fallback": false,
+  "ranges": [
+   {
+    "partition": 0,
+    "start": 42694179049,
+    "stop": 42694454124,
+    "next": 42694454124,
+    "high_watermark": 42706862115,
+    "ended_by": "window"
+   }
+  ],
+  "bytes": 33586453,
+  "decoded_bytes": 91983006,
+  "batches": 2915,
+  "messages_per_second": 15757,
+  "raw_mb_per_second": 5.11,
+  "messages": 275075,
+  "raw_json_bytes": 89203612,
+  "wire_bytes": 33149851,
+  "distinct_certs_by_fingerprint": 275075,
+  "distinct_names": 366876,
+  "distinct_slds": 187421,
+  "first_seen": "2026-10-28T12:00:00.000Z",
+  "last_seen": "2026-10-28T12:04:59.000Z",
+  "fetch_secs": 17.457,
+  "json_errors": 0,
+  "ended_by": "window",
+  "types": {
+   "X509LogEntry": 140308,
+   "PrecertLogEntry": 134767
+  },
+  "per_source": {
+   "Sectigo Elephant2027h1": 48438,
+   "DigiCert Sphinx2027h1": 39910,
+   "DigiCert Sphinx2026h2": 39680,
+   "DigiCert Wyvern2026h2": 36864,
+   "DigiCert Wyvern2027h1": 36864,
+   "Sectigo Tiger2027h1": 30474,
+   "TrustAsia log2026a": 7040,
+   "TrustAsia HETU2027": 6304,
+   "TrustAsia log2026b": 5536,
+   "Google Xenon2026h2": 4896,
+   "Google Xenon2027h1": 4896,
+   "Google Argon2027h1": 4736,
+   "Google Argon2026h2": 4704,
+   "Sectigo Tiger2026h2": 3464,
+   "Sectigo Elephant2026h2": 1268,
+   "Sectigo Elephant2027h2": 1
+  }
+ },
+ "window_5min_seconds": 17.457,
+ "decode": {
+  "batches": 15210,
+  "by_codec": {
+   "snappy": 8715,
+   "none": 6495
+  },
+  "failures": {},
+  "failed_by_codec": {}
+ },
+ "snappy_failures": 0,
+ "errors": [],
+ "definitions": {
+  "messages": "the records of every whole batch counted; a batch counts when its offsets reach into the range read; control records excluded",
+  "bytes": "the Fetch v4 responses of the read as they came off the socket, framing and any batch past the range included",
+  "wire_bytes": "the counted batches exactly as the broker returned them, still compressed: the bytes the raw lane stores",
+  "raw_bytes": "the record values of the counted batches after decoding (the JSON messages)",
+  "decoded_bytes": "the counted batches after decompression, 61-byte batch headers included",
+  "messages_24h": "from step 2: the latest offset minus the offset at now - 24 h, summed over partitions",
+  "wire_bytes_per_day": "wire_bytes / messages * messages_24h",
+  "raw_bytes_per_day": "raw_bytes / messages * messages_24h",
+  "mb_per_second": "bytes / seconds / 1e6",
+  "raw_mb_per_second": "raw_bytes / seconds / 1e6",
+  "seconds": "wall time of the read loop, from the first Fetch to the last decoded batch",
+  "snappy_failures": "snappy batches that failed to decode: CRC-32C mismatch, a snappy error, or records that do not match the declared count",
+  "ended_by": "window: the read reached its stop offset; head: it reached the high watermark first; wall: the wall-time cap stopped it"
+ }
+}
