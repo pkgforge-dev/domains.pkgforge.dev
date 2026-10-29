@@ -99,15 +99,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 42 open, 12 partial, 0 blocked, 8 done.**
+**62 items. 42 open, 7 partial, 0 blocked, 13 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 24 | 12 | 0 | 8 | 44 |
+| P1 | 24 | 7 | 0 | 13 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 42 | 12 | 0 | 8 | 62 |
+| **All** | 42 | 7 | 0 | 13 | 62 |
 
 ## Entries
 
@@ -128,12 +128,12 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-013](foundation.md) | P1 | foundation | **done** | The workspace, the workerd test harness and CI |
 | [DOM-014](foundation.md) | P1 | foundation | **done** | Workflow policy check and pinned installers |
 | [DOM-015](foundation.md) | P1 | foundation | **done** | Names: normalisation, the Public Suffix List and reversed keys |
-| [DOM-016](foundation.md) | P1 | foundation | partial | The source registry and the adapter contract |
-| [DOM-017](storage.md) | P1 | storage | partial | The pack format: writer, reader, merge and sparse index |
-| [DOM-018](storage.md) | P1 | storage | partial | Verify a pack before it counts |
-| [DOM-019](storage.md) | P1 | storage | partial | GHCR packages, tags, the push tool and the anonymous-read check |
+| [DOM-016](foundation.md) | P1 | foundation | **done** | The source registry and the adapter contract |
+| [DOM-017](storage.md) | P1 | storage | **done** | The pack format: writer, reader, merge and sparse index |
+| [DOM-018](storage.md) | P1 | storage | **done** | Verify a pack before it counts |
+| [DOM-019](storage.md) | P1 | storage | **done** | GHCR packages, tags, the push tool and the anonymous-read check |
 | [DOM-020](storage.md) | P1 | storage | open | The root manifest and its forward-only promotion |
-| [DOM-021](storage.md) | P1 | storage | partial | The domain table: exact first and last seen, and the provisional filter |
+| [DOM-021](storage.md) | P1 | storage | **done** | The domain table: exact first and last seen, and the provisional filter |
 | [DOM-022](storage.md) | P1 | storage | open | The new-domain feed packs |
 | [DOM-023](storage.md) | P1 | storage | open | Compaction: hour, day, week, month and year |
 | [DOM-024](ingest.md) | P1 | ingest | open | The state cursors and the ingest workflow skeleton |

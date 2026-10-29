@@ -166,6 +166,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The two failures are both 1 MiB cold reads, at offsets 92,274,688 and 789,577,728. Each is `timeout@range`: the ranged GET from `pkg-containers.githubusercontent.com` passed the route's 10 s cap on one subrequest.
   - So from this colo, 2 of 30 cold reads of 1 MiB took more than 10 s at the blob store, and a cold read of 64 KiB or less had a p95 of 2.8 s to 3.4 s.
   - These are one place's reads, one at a time. The runner's reads and the loads measure the rest, and DOM-030 reads the 1 MiB tail when it sets the Worker's subrequest budget.
+- **Correction 2026-10-29T06:55Z (a test that read timing):** the gate of 2026-10-29T06:52Z failed once on `scripts/measure/range-load.test.mjs` "an answer that is not JSON 200 ...": the samples came back `worker-500`, `timeout@range`, `client-timeout`, `worker-400`. The test's probe plants its answers by arrival at the server, and two requests sent 100 ms apart arrived swapped on the loaded machine. The test now compares the sample keys as a set. The script's samples stay in request order; only the test changed.
 
 ## DOM-008 — Measure deflate-raw decode CPU in workerd
 
@@ -264,8 +265,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-017 — The pack format: writer, reader, merge and sparse index
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends success on ubuntu with `node scripts/test.mjs packages/pack` passing there (its 3 workerd tests among them), and its log is searched for `compresses otherwise than the vector's writer` and the result recorded here; then close.
+- **Status:** done
 - **Priority:** P1
 - **Effort:** L
 - **Source:** design A section 6.2 and design B section 6.2; both designs agree on immutable sorted packs, front coding, block compression and a sparse index. `docs/architecture.md` section 4.4 owns the contract.
@@ -410,11 +410,14 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The per-source cost of a whole day pack: DOM-038.
   - An RDAP date before the epoch of 2026-01-01: ruling 19, written by DOM-050.
 - **Built 2026-10-29T06:30Z (the bench's byte count):** `scripts/bench/pack.mjs` reports `decompressed_bytes` as the byte length of the inflated buffer, not `text.length`. A test in `scripts/bench/pack.test.mjs` holds it, and the mutant back to `text.length` fails it. The three stored runs in `docs/research/measure/DOM-017/` keep the old value, 78,100,284 for cs2, a count of characters, as `docs/format.md` section 13 says.
+- **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds the five `pack vectors:` tests passed and no diagnostic `compresses otherwise than the vector's writer`: the zlib of the Linux runner wrote each vector's bytes exactly.
+  - The three `pack workerd:` tests passed there: the vectors, packs of 3,000 names in deflate-raw and gzip, and a changed byte failing the CRC.
+  - The gate's three parts held on the wave (the suites; the three lenses and the verification; no deployed surface of this entry).
 
 ## DOM-018 — Verify a pack before it counts
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T09:00:00Z; then the `ci.yml` run on the commit that carries this record ends success on ubuntu-24.04 with the 50 `verify:` and 19 `verify-pack:` tests passing; then close.
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design B section 5.5 ("Verification before publish, the mirror's verify step, adapted") and design A section 8.2 and section 9; `docs/architecture.md` section 5.8.
@@ -557,11 +560,13 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `scripts/verify-pack.mjs` imports `@domains/adapter` by its package name.
   - Each change has a test in `packages/pack/test/verify.test.ts` or `scripts/verify-pack.test.mjs`, and each planted mutant failed it. One mutant, `crc` counted over `checked`, is equivalent and survives.
   - `node scripts/test.mjs packages/pack --name verify` passes 50 tests, and `node scripts/test.mjs scripts --name verify-pack` 19.
+- **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds 50 passed `verify:` tests and 19 passed `verify-pack:` tests.
+  - The gate's three parts held on the wave (the suites; the three lenses and the verification; no deployed surface of this entry).
 
 ## DOM-019 — GHCR packages, tags, the push tool and the anonymous-read check
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T09:00:00Z; then close when the `ci.yml` run on the commit that carries this record ends success on ubuntu-24.04, one dispatch of `ref-refresh.yml` ends success, `node scripts/ghcr/tags.mjs ref --prefix psl- --min 1` and the same with `ctlogs-` and `sources-` and `node scripts/ghcr/check-public.mjs ref` each exit 0 from a machine with no credential, and the two `ref` rows of `docs/resources.md` name that run
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** `docs/architecture.md` section 4.1 to section 4.3 and section 4.7; mirror-archlinux `docs/design.md` and `docs/worker.md`. The operator's ruling 6: Actions writes with its own `GITHUB_TOKEN` and keeps the anonymous-read check as the safety net.
@@ -700,6 +705,14 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `docs/architecture.md` section 4.2 has a `ref` row (one layer, the file as fetched or committed) and lists the seven kinds of `ARTIFACT_KINDS`.
   - `push.mjs` and `ref-inputs.mjs` end an error they do not know with exit 70 and its stack, as `tags.mjs` and `check-public.mjs` do. Each header names 70, and so does the push step of `ref-refresh.yml`.
   - Two raw reads of `push.mjs` that a fault could break are wrapped as faults, exit 1: the manifest blob of the OCI layout, and the file a `manifest fetch` writes. Tests in `scripts/ghcr/push.test.mjs` and `scripts/ghcr/ref-inputs.test.mjs` hold each change, and the planted mutants failed them.
+- **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds `✔ push: as a process with fixtures/fake-oras.mjs as oras, a tag holding another manifest is exit 3, and no oras process holds the token in its environment`, so the `NODE_OPTIONS=--import` process test runs on ubuntu too, and `✔ ghcr workerd:` passed.
+  - `ref-refresh.yml` run 40831098846, dispatched at 2026-10-29T06:44:59Z on 74dd42a, ended `success` at 06:45:33Z. Job `ref` printed `pushed ghcr.io/pkgforge-dev/domains.pkgforge.dev/ref:psl-1f96bae40adf sha256:455d7ea429d6...`, `pushed ...ref:ctlogs-29e361747007 sha256:38f73eb910b3...`, `pushed ...ref:sources-d33793f12605 sha256:5bdee5888ae8...`, and `public ...ref:sources-d33793f12605 ... via dummy token`. The step `Raise visibility-ref` was skipped. So oras's flags work as read: `push --oci-layout`, `copy --from-oci-layout --to-registry-config` and `manifest fetch --registry-config`.
+  - From this machine with no credential, at 2026-10-29T06:47:38Z: `node scripts/ghcr/tags.mjs ref --prefix psl- --min 1` printed `psl-1f96bae40adf` (exit 0), the same with `ctlogs-` printed `ctlogs-29e361747007` (exit 0) and with `sources-` printed `sources-d33793f12605` (exit 0). `node scripts/ghcr/check-public.mjs ref` printed `public ghcr.io/pkgforge-dev/domains.pkgforge.dev/ref:sources-d33793f12605 sha256:5bdee5888ae816417291cc25b4fa0a45c4807ea054dcf9c3cf34b35bb28fc52d via dummy token` (exit 0).
+  - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/ref/manifests/<tag>` answered 200 for each tag, with artifact type `application/vnd.pkgforge.domains.ref.v1` and one layer: `public_suffix_list.dat` 338,012 B, `log_list.json` 62,375 B and `sources.json` 214 B, each with `dev.pkgforge.domains.run` `40831098846`. The URL annotation of `sources.json` names commit 74dd42a.
+  - `https://github.com/pkgforge-dev/domains.pkgforge.dev/pkgs/container/domains.pkgforge.dev%2Fref` answered 200, so the package is linked to this repository.
+  - The PSL tag is `psl-1f96bae40adf`, not the fixture's `0232f4df0831`: the live list's VERSION and COMMIT lines changed after 2026-10-27, and its rules did not (the Prove re-run of 05:00Z found it).
+  - The gate's three parts held (the suites; the GHCR artifacts read anonymously above; the three lenses and the verification).
 
 ## DOM-020 — The root manifest and its forward-only promotion
 
@@ -742,8 +755,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-021 — The domain table: exact first and last seen, and the provisional filter
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends `success` on ubuntu, and its log shows the 45 `packages/ledger` tests passing, `ledger workerd` and `filter: the false-positive rate on 1,000,000 absent keys` among them; then close.
+- **Status:** done
 - **Priority:** P1
 - **Effort:** L
 - **Source:** design A section 4.2 (registrable-domain record, evidence) and design B section 5.2 ("Domain ledger") and section 9; `docs/architecture.md` section 2, section 3.3 and section 5.8.
@@ -869,6 +881,9 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - DOM-023's Approach says "empties the delta". DOM-023 takes the rebase, the `since` and precision arguments, and the `held` count of the Found above.
   - The `DLBF` and `DLBD` layouts live only in `packages/ledger/src/filter.ts`. `docs/format.md` has no section for them, and `docs/architecture.md` section 4 names neither tag `ledger-filter-DATE` nor `ledger-delta`. DOM-023 takes it with the first push of both tags.
   - `precisionsOf` has no production rows until an adapter fills `config/sources.json`. DOM-029 takes it with the THC adapter.
+- **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds `✔ ledger workerd: the hash, the filter and delta bytes, first seen, the corpus state and the aggregation answer in workerd as in Node` and `✔ filter: the false-positive rate on 1,000,000 absent keys is 0.8% to 1.2% at 10 bits a key and 7 hashes`.
+  - The gate's three parts held on the wave (the suites; the three lenses and the verification; no deployed surface of this entry).
 
 ## DOM-022 — The new-domain feed packs
 

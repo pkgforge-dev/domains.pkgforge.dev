@@ -222,8 +222,7 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
 
 ## DOM-016 — The source registry and the adapter contract
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends `success` on ubuntu-24.04, with `ok   node scripts/sources/build.mjs --check` and the test "every committed version of config/source-bits.json keeps its ids and bits in the file now" passed, not skipped, in its log; then close.
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 5.5 and design B section 5.4; `docs/architecture.md` section 3.5 and section 5.6. The operator ruling 1 of 2026-10-27: a VPS ingester is one more source, if a core source shuts down.
@@ -328,3 +327,7 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
   - DOM-057 (the reserved `vps-ct`) and DOM-051 (the `partial` label of `zone-walks`) carry Found notes of 2026-10-29T06:00Z.
   - `docs/architecture.md` section 2 names the eight families of `FAMILIES`. Section 5.6 states the list form of `source.json` with `failure_modes`, and that the ingest entries create `adapters/`. Section 3.1 says the PSL's hash is in the tag of the `ref` package (DOM-019), and DOM-020's Found of 06:00Z asks which hash the root names.
   - `ci.yml` checks out the whole history (`fetch-depth: 0`), so the bits git-history test reads every committed version on CI too.
+- **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log reads `ok   node scripts/sources/build.mjs --check` and `✔ adapter bits: every committed version of config/source-bits.json keeps its ids and bits in the file now`, run, not skipped, over the whole history (`fetch-depth: 0`).
+  - `node scripts/test.mjs packages/adapter --name "every committed version"` exits 0 on this machine at 06:49Z with that test run, now that `config/` has a commit.
+  - The gate's three parts held on the wave (the suites; the three lenses and the verification of 2026-10-29; no deployed surface of this entry).

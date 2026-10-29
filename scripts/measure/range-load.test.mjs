@@ -267,10 +267,9 @@ test('range load: an answer that is not JSON 200 counts by the Worker status, an
     assert.deepEqual(s.counts, { requests: 10, expected: 6, 429: 0, '5xx': 1, other: 3 });
     assert.deepEqual(s.by_status, { 206: 6, 'worker-500': 1, 'client-timeout': 1, 'timeout@range': 1, 'worker-400': 1 });
     assert.ok(s.latency_ms.max >= 1000, 'the client timeout counts in the latency');
-    assert.deepEqual(
-      s.samples.map((x) => x.key),
-      ['worker-500', 'client-timeout', 'timeout@range', 'worker-400'],
-    );
+    // The probe plants by arrival at the server, and two requests 100 ms apart
+    // can arrive swapped on a loaded machine, so the samples are compared as a set.
+    assert.deepEqual(s.samples.map((x) => x.key).sort(), ['client-timeout', 'timeout@range', 'worker-400', 'worker-500']);
   } finally {
     await p.close();
   }
