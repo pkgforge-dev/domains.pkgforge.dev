@@ -59,7 +59,8 @@
 //       name); a job that only calls root-promote.yml holds no group, and one in
 //       root-writer (its own or the workflow's) is refused: the caller and the
 //       called workflow would wait on each other (assumed: no page read states
-//       it, and nothing has measured it)
+//       it, and nothing has measured it). Two calls do queue in the group of
+//       root-promote.yml (MEASURED 2026-10-29T15:50Z, DOM-020).
 //   14  actions/upload-artifact sets `overwrite: true`
 //   15  no unquoted `if: !` (YAML reads it as a tag, not as a negation)
 //

@@ -99,15 +99,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 40 open, 9 partial, 0 blocked, 13 done.**
+**62 items. 40 open, 7 partial, 0 blocked, 15 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 22 | 9 | 0 | 13 | 44 |
+| P1 | 22 | 7 | 0 | 15 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 40 | 9 | 0 | 13 | 62 |
+| **All** | 40 | 7 | 0 | 15 | 62 |
 
 ## Entries
 
@@ -132,9 +132,9 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-017](storage.md) | P1 | storage | **done** | The pack format: writer, reader, merge and sparse index |
 | [DOM-018](storage.md) | P1 | storage | **done** | Verify a pack before it counts |
 | [DOM-019](storage.md) | P1 | storage | **done** | GHCR packages, tags, the push tool and the anonymous-read check |
-| [DOM-020](storage.md) | P1 | storage | partial | The root manifest and its forward-only promotion |
+| [DOM-020](storage.md) | P1 | storage | **done** | The root manifest and its forward-only promotion |
 | [DOM-021](storage.md) | P1 | storage | **done** | The domain table: exact first and last seen, and the provisional filter |
-| [DOM-022](storage.md) | P1 | storage | partial | The new-domain feed packs |
+| [DOM-022](storage.md) | P1 | storage | **done** | The new-domain feed packs |
 | [DOM-023](storage.md) | P1 | storage | open | Compaction: hour, day, week, month and year |
 | [DOM-024](ingest.md) | P1 | ingest | open | The state cursors and the ingest workflow skeleton |
 | [DOM-025](ops.md) | P2 | ops | open | The Worker hot tier, only if the clock verdict is a Worker |

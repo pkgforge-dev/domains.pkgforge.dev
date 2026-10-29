@@ -720,8 +720,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-020 — The root manifest and its forward-only promotion
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T17:00:00Z; after the push of wave 4, the `ci.yml` run of that commit ends `success` on ubuntu-24.04 with the `packages/root` and `scripts/root` tests passing. Then `gh workflow run root-promote.yml --ref main -f psl=psl-1f96bae40adf` ends `success`; `curl` of `root/manifests/latest` with no credential prints the artifact type `application/vnd.pkgforge.domains.root.v1` and the layers `root.json`, `sources.json` and `coverage.json`; `node scripts/root/show.mjs --ref latest` and `node scripts/ghcr/check-public.mjs root` exit 0. Then the ruling 18 run: dispatch `measure-root-writer.yml` twice one second apart and record both run ids and each promote job's start and end. Record the result in `docs/architecture.md` section 4.7 rule 3, the `root-promote.yml` header and the rule 13 header of `scripts/check-workflows.mjs`, replace `pending` in the two rows of `docs/resources.md`, delete `measure-root-writer.yml` and its row, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 6.2 (root manifest, promoted forward only, as mirror-archlinux promotes `latest`) and design B section 6.1 and section 5.3; `docs/architecture.md` section 4.6 and section 4.7 rules 2 to 4.
@@ -830,6 +829,15 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Open 2026-10-29T15:28Z:** the Waiting line names what closes this entry. Each other item has a Found in the entry that takes it.
   - The first dispatch proves two readings. `npm ci --omit=dev --ignore-scripts` links the workspace packages: MEASURED by the wave's integration at about 09:30Z in a scratch copy, exit 0 and 10 workspace links, and the final verification found that `promote.mjs`, `rollback.mjs` and `show.mjs` import only `@domains/adapter`, `ghcr`, `names`, `pack` and `root`, with `fixture.mjs` loaded lazily. `oras tag --registry-config` moves `latest`: read, not run, and the fake oras encodes the same reading.
   - DOM-023: the tier-tag conflict (its Decision), the verification before promotion, and THC's entry into `feed` through the day pack. DOM-024: the move of `state` as a job of its own. DOM-029: a quarantined day joins no root, and the holes it leaves. DOM-034: the issue key and the grant. DOM-042: `datasets.dumps`. DOM-060: `withdrawn` against a dataset a reader skips.
+- **Measured 2026-10-29T15:48:35Z to 15:51:10Z (the push of wave 4, 34c573f):**
+  - `gh workflow run root-promote.yml --ref main -f psl=psl-1f96bae40adf` made run 40905355025, which ended `success` at 15:49:20Z. Its log: `live none: root:latest does not exist; this is the first root`, `built root_seq 1 as_of none created 2026-10-29T15:49:10Z previous none psl 1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9 psl_live 0 packs 0`, then the push of `root:r-20261029t154910z` as `sha256:bd69a39c1810eaa1c3b21dfa9de4c097a806a2372cb21ad648e9ef34a80eaeac`, and `latest` read back with no credential.
+  - At 15:49:24Z, from the operator's workstation: `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest` answered 200 with `artifactType` `application/vnd.pkgforge.domains.root.v1` and the layers `root.json` (273 B), `sources.json` (50 B) and `coverage.json` (47 B). The three blobs, read the same way, hold `root_seq` 1 with no dataset and `withdrawn` `[]`, `{"format":"domains.root-sources.v1","sources":[]}` (`config/sources.json` registers no source yet) and `{"as_of":null,"day":null,"pairs":[],"gaps":{}}`.
+  - `node scripts/root/show.mjs --ref latest` exited 0 and printed `root_seq 1`, `as_of none`, `datasets none: no live pack` and `withdrawn none`. `node scripts/ghcr/check-public.mjs root` exited 0: `public ... root:latest sha256:bd69a39c... via dummy token`.
+  - Ruling 18: `gh workflow run measure-root-writer.yml --ref main` at 15:50:12Z and again at 15:50:16Z (the second dispatch call returned 4 s after the first) made runs 40905625954 (created 15:50:36Z) and 40905643334 (created 15:50:42Z). The first's promote job ran 15:50:39Z to 15:50:56Z, the second's 15:50:58Z to 15:51:10Z: it started 2 s after the first ended, while the first ran 3 s after its run was created. Both logged `unchanged root:latest sha256:bd69a39c... root_seq 1: nothing to promote, nothing written`. So two calls queue in the called file's group `root-writer`, and the group stays in `root-promote.yml`. That a caller in the group would wait on the workflow it calls stays assumed: this run does not test it.
+  - The caller is removed in this closing commit. `docs/architecture.md` section 4.7 rule 3, the `root-promote.yml` header, the rule 13 header of `scripts/check-workflows.mjs` and the two rows of `docs/resources.md` (the root package and the workflow) carry the result.
+- **Closed 2026-10-29T15:53Z (proven):** `ci.yml` run 40904791877 on 34c573f ended `success` at 2026-10-29T15:48:23Z on ubuntu-24.04: `ℹ tests 1360`, `ℹ pass 1360`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds `✔ root workerd: validateRoot and buildRoot answer in workerd as in Node, and a RootError keeps its code` and `✔ withdrawn: a rollback lists each manifest the live root names and the target does not, at its own created; a later root carries it, and a rollback that names it again takes it off`.
+  - The gate's three parts held: (a) the suites, locally and in CI; (b) the first promotion, the anonymous read of `root:latest` and the ruling 18 run above; (c) the three lenses of round 4b and the final verification (the Prove as it stands).
 
 ## DOM-021 — The domain table: exact first and last seen, and the provisional filter
 
@@ -965,8 +973,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-022 — The new-domain feed packs
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T17:00:00Z; after the push of wave 4, the `ci.yml` run of that commit ends `success` on ubuntu-24.04 with the `packages/feed`, `packages/pack`, `scripts/bench` and `verify-pack` tests passing, `feed workerd` among them; record its run id and its counts here, then close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 6.3 (`new-reg` day and hour files) and design B section 4 and section 6.3; `docs/architecture.md` section 3.3, section 7.3 and section 9. The operator's ruling 2 asks for windows of 1 h, 6 h, 12 h, 1 d and N days, on any suffix or parent.
@@ -1053,6 +1060,9 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - DOM-023: a time copy on every `d`, `w`, `m` and `y` pack of `feed` and `new-name`; the time copies of `w`, `m` and `y` by a k-way merge; the hour packs' suspect verdicts carried into `buildFeedDay`; the sizes of hour packs and the uncapped sort of an `h` or `seg` pack; the time copy's bytes on real `first_seen` times; and the 50-block page.
   - DOM-026: the certificate age of each event, in `EventFacts.certAges`. DOM-050: an RDAP creation date before 2026, in `EventFacts.rdapCreated`, which sets bit 5.
   - DOM-041: the dataset 7 time copy, the `fqdn` suffix, and `planWindow` and `readFeed` reused. DOM-032: the workerd CPU of a page through the time copy, and the key-copy rule on a large tier.
+- **Closed 2026-10-29T15:53Z (proven):** `ci.yml` run 40904791877 on 34c573f ended `success` at 2026-10-29T15:48:23Z on ubuntu-24.04: `ℹ tests 1360`, `ℹ pass 1360`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
+  - Its log holds `✔ feed workerd: the planner and readFeed over both copies answer in workerd as in Node, and refuse a time copy of another pack`, `✔ feed-window bench: the newest and the oldest page of many blocks read one or two blocks of the time copy; the key copy forced reads every block and prints FAIL, exit 1` and `✔ time: precision: a row reads back as day precision from a day source at the start of a day, else as second`.
+  - The gate's three parts held: (a) the suites, locally and in CI; (b) no deployed surface of this entry: the first `feed` pack is DOM-023's; (c) the three lenses of round 4b and the final verification (the Prove as it stands).
 
 ## DOM-023 — Compaction: hour, day, week, month and year
 

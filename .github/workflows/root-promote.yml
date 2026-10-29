@@ -10,10 +10,10 @@
 # Such a caller holds no group of its own, since a caller and the called
 # workflow in one group would wait on each other (assumed: no page read states
 # it, and nothing has measured it), and scripts/check-workflows.mjs rule 13
-# refuses a caller in root-writer. That two calls queue in this file's group
-# is not measured either: measure-root-writer.yml is DOM-020's caller,
-# dispatched twice one second apart to measure that the second call's promote
-# job starts only after the first's ends.
+# refuses a caller in root-writer. Two calls queue in this file's group:
+# MEASURED 2026-10-29T15:50Z (DOM-020), a caller dispatched twice made runs
+# 40905625954 and 40905643334, and the second call's promote job started 2 s
+# after the first's ended (docs/architecture.md section 4.7 rule 3).
 #
 # scripts/root/promote.mjs reads the live root with no credential, builds the
 # next one (root_seq the live one plus 1, previous the live digest, the
