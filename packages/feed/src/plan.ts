@@ -124,7 +124,9 @@ export function keyRangeOf(query: { readonly suffix?: string | null; readonly un
     bounds.push([underKey, rangeOfDescendants(underKey)[1]]);
   }
   // The intersection: the highest start and the lowest end.
+  // biome-ignore lint/complexity/useMathMinMax: the values are strings; Math.max and Math.min would read them as NaN
   const lo = bounds.length === 0 ? null : bounds.map((b) => b[0]).reduce((a, b) => (b > a ? b : a));
+  // biome-ignore lint/complexity/useMathMinMax: the values are strings; Math.max and Math.min would read them as NaN
   const hi = bounds.length === 0 ? null : bounds.map((b) => b[1]).reduce((a, b) => (b < a ? b : a));
   return { lo, hi, suffixKey, underKey, labels };
 }

@@ -333,7 +333,9 @@ function assemble(
 // A replacement holds what it replaces: its span covers every replaced span,
 // and it carries every source they carried. Only a rollback shrinks the root.
 function checkCovers(p: PackEntry, gone: readonly PackEntry[]): void {
+  // biome-ignore lint/complexity/useMathMinMax: the values are strings; Math.max and Math.min would read them as NaN
   const start = gone.reduce((a, o) => (o.span.start < a ? o.span.start : a), p.span.start);
+  // biome-ignore lint/complexity/useMathMinMax: the values are strings; Math.max and Math.min would read them as NaN
   const end = gone.reduce((a, o) => (o.span.end > a ? o.span.end : a), p.span.end);
   if (start !== p.span.start || end !== p.span.end) {
     throw new RootError("replace", `the replacement by ${p.tag} spans ${p.span.start} to ${p.span.end}, and the packs it replaces reach ${start} to ${end}; a replacement covers what it replaces`);
