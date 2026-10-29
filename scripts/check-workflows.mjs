@@ -51,10 +51,15 @@
 //   11  runner `ubuntu-24.04` only, with no job `container:` or `services:`
 //   12  a workflow with `schedule:` has `workflow_dispatch:` too
 //   13  a concurrency `queue` is `single` or `max`, and `max` never with a
-//       `cancel-in-progress` that is not false; a job that runs `oras tag`, runs
-//       scripts/ghcr/push.mjs with `state` or `root`, or calls root-promote.yml
-//       is in the group `root-writer` with `queue: max` and
-//       `cancel-in-progress: false` (its own or the workflow's)
+//       `cancel-in-progress` that is not false; a job that runs `oras tag`,
+//       scripts/ghcr/push.mjs with `state` or `root`, or scripts/root/promote.mjs
+//       or rollback.mjs is in the group `root-writer` with `queue: max` and
+//       `cancel-in-progress: false` (its own or the workflow's), and so is
+//       every job of root-promote.yml itself (ruling 18, read by the file's
+//       name); a job that only calls root-promote.yml holds no group, and one in
+//       root-writer (its own or the workflow's) is refused: the caller and the
+//       called workflow would wait on each other (assumed: no page read states
+//       it, and nothing has measured it)
 //   14  actions/upload-artifact sets `overwrite: true`
 //   15  no unquoted `if: !` (YAML reads it as a tag, not as a negation)
 //
@@ -62,7 +67,8 @@
 //   node scripts/check-workflows.mjs            every *.yml and *.yaml of .github/workflows/,
 //                                               then rule 10 over the scripts and packages (scriptFiles)
 //   node scripts/check-workflows.mjs FILE...    those files alone (the fixtures, a draft): a
-//                                               .yml or .yaml as a workflow, any other as a script
+//                                               .yml or .yaml as a workflow, any other as a script;
+//                                               a file named root-promote.yml is held as that workflow
 //
 // Prints `FILE:LINE: rule N: what` on stderr for each finding.
 // Exit codes: 0 every file keeps every rule, 1 a finding, 2 a file could not be
@@ -122,8 +128,11 @@ export const ACTION_PINS = {
 // branch to publish, and has no Pages site.
 const NEVER_WRITE = ['contents', 'pages', 'id-token'];
 // Rule 3: a job that calls the local root-promote.yml grants the called
-// workflow what its `promote` job holds (DOM-020, TODO/storage.md).
-export const ROOT_PROMOTE_GRANTS = ['packages', 'issues'];
+// workflow what its `promote` job holds (DOM-020, TODO/storage.md): packages
+// alone. `issues` joins this list when DOM-034 adds the issue script that the
+// job's last step stands in for; until then no step of the job uses it, so
+// neither the job nor a caller holds it.
+export const ROOT_PROMOTE_GRANTS = ['packages'];
 const RUNNER = 'ubuntu-24.04';
 const ROOT_WRITER = 'root-writer';
 
@@ -189,7 +198,10 @@ const SCRIPT_DIRS = ['scripts', 'packages'];
 const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|mts|cts|sh)$/;
 const SCRIPT_EXEMPT = new Set(['scripts/check-workflows.test.mjs']);
 // Rule 13: a step that moves a tag of the root or of state.
-const ROOT_MOVE = [/\boras\s+tag\b/, /scripts\/ghcr\/push\.mjs\b[^\n]*\b(?:state|root)\b/];
+const ROOT_MOVE = [/\boras\s+tag\b/, /scripts\/ghcr\/push\.mjs\b[^\n]*\b(?:state|root)\b/, /\bscripts\/root\/(?:promote|rollback)\.mjs\b/];
+// Rule 13 (ruling 18): the one workflow that moves root:latest for every
+// caller, read by its file name; it holds the group root-writer itself.
+const ROOT_PROMOTE_FILE = /(?:^|\/)root-promote\.ya?ml$/;
 const PINNED = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[^@\s]+)?@[0-9a-f]{40}$/;
 const VERSION_COMMENT = /^[ \t]+#[ \t]*(v\d+\.\d+\.\d+)(?:[ \t]|$)/;
 const LOCAL_USES = /^\.\//;
@@ -287,6 +299,7 @@ function checkConcurrency(ctx, c, path) {
 }
 
 const holdsRootWriter = (c) => isObj(c) && c.group === ROOT_WRITER && c.queue === 'max' && c['cancel-in-progress'] === false;
+const inRootWriter = (c) => isObj(c) && c.group === ROOT_WRITER;
 
 function checkWorkflow(ctx) {
   const { wf } = ctx;
@@ -337,9 +350,24 @@ function checkWorkflow(ctx) {
     if (job.secrets !== undefined) ctx.add(9, ctx.at('jobs', id, 'secrets'), `job ${id} passes secrets; the repository holds none, and github.token is the token`);
     // Rule 13, the job's group.
     checkConcurrency(ctx, job.concurrency, ['jobs', id, 'concurrency']);
-    const movesRoot = (reusable && ROOT_PROMOTE.test(job.uses)) || runsOf(job).some(([, s]) => ROOT_MOVE.some((re) => re.test(s.run.replace(/\\\r?\n/g, ' '))));
+    const movesRoot = runsOf(job).some(([, s]) => ROOT_MOVE.some((re) => re.test(s.run.replace(/\\\r?\n/g, ' '))));
     if (movesRoot && !holdsRootWriter(wf.concurrency) && !holdsRootWriter(job.concurrency)) {
       ctx.add(13, ctx.at('jobs', id), `job ${id} moves a root or state tag outside the group ${ROOT_WRITER} with queue: max and cancel-in-progress: false`);
+    }
+    // Ruling 18: root-promote.yml holds the group, so a job that calls it holds none.
+    if (reusable && ROOT_PROMOTE.test(job.uses) && (inRootWriter(wf.concurrency) || inRootWriter(job.concurrency))) {
+      ctx.add(
+        13,
+        ctx.at('jobs', id),
+        `job ${id} calls root-promote.yml from inside the group ${ROOT_WRITER}; root-promote.yml holds the group itself (ruling 18), and the caller and the called workflow would wait on each other (assumed, not measured)`,
+      );
+    }
+    if (ctx.name !== null && ROOT_PROMOTE_FILE.test(ctx.name) && !holdsRootWriter(wf.concurrency) && !holdsRootWriter(job.concurrency)) {
+      ctx.add(
+        13,
+        ctx.at('jobs', id),
+        `job ${id} of root-promote.yml is outside the group ${ROOT_WRITER} with queue: max and cancel-in-progress: false; every promotion of the root waits in it (ruling 18)`,
+      );
     }
 
     for (const [i, step] of stepsOf(job)) {
@@ -444,8 +472,10 @@ function checkTags(ctx) {
   });
 }
 
-// The findings of one workflow's text: [{ line, rule, what }], by line.
-export function checkText(text) {
+// The findings of one workflow's text: [{ line, rule, what }], by line. `name`
+// is the file's path as shown: root-promote.yml is held to its own clause of
+// rule 13 by it.
+export function checkText(text, name = null) {
   const lc = new LineCounter();
   const doc = parseDocument(text, { lineCounter: lc, merge: true, prettyErrors: false });
   const findings = [];
@@ -473,7 +503,7 @@ export function checkText(text) {
     add('parse', 1, 'the file is not a YAML mapping');
     return done();
   }
-  const ctx = { doc, lc, text, wf, jobs: isObj(wf.jobs) ? wf.jobs : {}, add, at: (...path) => lineAt(doc, lc, path) };
+  const ctx = { doc, lc, text, name, wf, jobs: isObj(wf.jobs) ? wf.jobs : {}, add, at: (...path) => lineAt(doc, lc, path) };
   if (!isObj(wf.jobs)) add('parse', ctx.at('jobs'), 'jobs is not a mapping of jobs');
   checkWorkflow(ctx);
   checkStrings(ctx);
@@ -585,7 +615,7 @@ function main() {
       }
     }
   };
-  check(files, (text) => checkText(text));
+  check(files, (text, f) => checkText(text, f.shown));
   check(scripts, (text, f) => checkScript(text, isShell(f.shown, text)));
   if (unreadable > 0) process.exit(2);
   if (count > 0) {

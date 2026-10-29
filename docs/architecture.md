@@ -73,7 +73,7 @@ R2 is a cache. A reader that does not trust the Worker reads GHCR directly.
 | `confidence` | `warming` while the corpus is younger than 90 days, else `full`. |
 | `suspect` | An `oi-nrd` event whose certificate is older than 7 days, or a domain whose RDAP creation date is before 2026-01-01 (ruling 19). The default feed hides suspect events. |
 | `provisional` | A newness verdict made by the hourly filter. The daily job makes it exact (§5.8). |
-| `corroborated` | Two sources of different families saw the domain within 48 h of each other. |
+| `corroborated` | Two sources of different families first saw the domain within 48 h of each other. A day value stands for its whole day: two first sightings count when the two farthest instants of their intervals are at most 48 h apart. |
 | segment | The pack one adapter writes for one window. A segment is immutable. |
 
 The OpenINTEL newly registered stream means "first seen in a certificate", not a registration date.
@@ -109,8 +109,8 @@ This holds for names and for the new-domain feed. Hash partitioning cannot answe
 | --- | --- | --- | --- | --- |
 | `names` | `names` | reversed name | source mask, then per set bit `(first, last)`. Flag `wild`. | 10 B a name [E] |
 | `domains` | `names` | reversed registrable domain | source mask, per set bit `(first, last)`, evidence list | 14 B a domain [E] |
-| `feed` | `feed` | reversed registrable domain, one record a key | `first_seen`, source mask, basis bits, confidence, flags | 15 to 30 MB a day [E] |
-| `new-name` | `feed` | reversed name, one record a key | the same shape, name level | 250 MB a day [E] |
+| `feed` | `feed` | reversed registrable domain, one record a key | `first_seen`, source mask, basis bits, confidence, flags | about 2 to 7 MB a day [E] for the key copy, and about 4 to 14 MB with its time copy: 0.3 to 0.7 million rows a day (design B section 6.3, from its measurements M4 and M6) at the 6.1 to 9.3 B a row of a day pack's key copy, and a pack with its time copy 1.982 to 2.104 times its key copy (both MEASURED 2026-10-29 on bench packs, `docs/format.md` section 14.6). |
+| `new-name` | `feed` | reversed name, one record a key | the same shape, name level | 250 MB a day [E], the key copy alone; about twice that with its time copy, as for `feed` |
 | `rev` | `rev` | IP address (4 or 16 bytes, big endian) | the names that resolve to the address | measured by DOM-043 |
 
 `first` and `last` are varints. The unit is the source's precision. Days since 2026-01-01 for a day source.
@@ -118,7 +118,8 @@ Seconds since 2026-01-01T00:00:00Z for a second source. A record never stores a 
 
 The `domains` dataset is the ledger. It holds one record per registrable domain, with per-source first and last seen.
 It decides whether a domain is new. The `feed` dataset is a view of it, sorted for window queries.
-A `feed` or `new-name` pack holds one record a key, and `first_seen` is a field of it, not part of the key. The order of its rows by `first_seen` is the optional layer `tidx` (§4.4, DOM-022).
+A `feed` or `new-name` pack holds one record a key, and `first_seen` is a field of it, not part of the key. The same rows in `first_seen` order are the pack's optional time copy: a DPK1 pack of its own (dataset 6 for `feed`, 7 for `new-name`), keyed by `first_seen` and then the key, in the layers `time.idx` and `time.part.NNN` of the same manifest (`docs/format.md` section 14, DOM-022). A page in time order reads the time copy from the bound of its window until the page is full, so no Worker sorts a day pack.
+A `feed` row stores `first_seen` in seconds and no precision. A reader reads the precision back from the row's sources (`rowPrecision` of `packages/feed`): the row is day-precision when one of its sources is a day source and `first_seen` is the start of a day, and its `first_seen` then stands for that whole day (§7.4). A row whose every source is a day source and whose `first_seen` is not the start of a day is refused.
 
 An evidence entry is `(tier, basis, source, at, confidence)`.
 
@@ -199,7 +200,7 @@ Every artifact is an OCI manifest with an `artifactType` of the form `applicatio
 
 | Kind | Layers (by title) |
 | --- | --- |
-| `pack` | `part.000`, `part.001`, and so on (blocks, at most 1 GiB each), `idx` (the sparse index), optional `txt.gz` (a plain sorted bulk file). Day packs of `feed` also carry `tidx` (the row order by `first_seen`) and `summary.json` (new registrable domains per suffix and source). |
+| `pack` | `part.000`, `part.001`, and so on (blocks, at most 1 GiB each), `idx` (the sparse index), optional `txt.gz` (a plain sorted bulk file). A pack of `feed` or `new-name` may carry its time copy, `time.idx` and `time.part.000` and up (the same rows in `first_seen` order, `docs/format.md` section 14), and day packs of `feed` carry `summary.json` (new registrable domains per suffix and source). |
 | `segment` | the same as `pack`, and optional `raw` (the file as fetched) |
 | `root` | `root.json`, `sources.json`, `coverage.json` |
 | `state` | `state.json` |
@@ -269,21 +270,29 @@ A tier is a merge level. A pack of a higher tier covers the spans of the packs i
 | `y` | one year | the month packs | the yearly compaction |
 
 The live set is the smallest set of packs that covers `[corpus_since, as_of]` with disjoint spans. The root lists the live set.
+The one exception is in `names`, `domains` and `rev`: a segment may overlap a pack of other sources, as the THC day segment lies beside the hour packs of the live lanes until the daily compaction. `feed` and `new-name` have no exception. A window is read over disjoint packs (`planWindow` of `packages/feed`), and a source that arrives as one day segment enters them through the day pack.
 A query reads the live set. Its worst fan-out is 6 segments, 24 hours, 6 days, 4 weeks, 11 months and the years: about 50 packs for the `names` dataset.
 Each pack costs at most two range reads. The `feed` dataset is small, so its fan-out is cheap.
 Compaction replaces packs in the live set. It never deletes a pack from GHCR.
 
 ### 4.6 The root manifest
 
-`root:latest` is an OCI manifest of kind `root`. Its layer `root.json` is the machine contract (§11). It holds:
+`root:latest` is an OCI manifest of kind `root`, at most 64 KiB, the Worker's cap. Its layers are `root.json`, `sources.json` and `coverage.json`, each `application/json`. Its layer `root.json` is the machine contract (§11). `validateRoot` of `packages/root` (DOM-020) holds its schema, and refuses a `format` it does not know. It holds:
 
-- `format` (`domains.root.v1`), `root_seq` (an integer that only grows), `as_of`, `created`, and `previous` (the digest of the previous root).
-- `corpus_since` per dataset, and `gaps` per source (for example the THC days 2026-10-04 and 2026-10-09).
-- `psl` (the sha256 of the pinned list).
-- `datasets`, with the live packs of each. Each pack has `repo`, `tag`, `tier`, `span`, `manifest` (digest), `pack` and `idx` (digest and size), `parts`, `count`, `key_min`, `key_max` and `sources`.
-- Counts and the `through` time of each source.
+- `format` (`domains.root.v1`), `root_seq` (a whole number from 1 that only grows), `as_of` (the latest span end of a live pack, or null when the root names none), `created` (when the promotion built it, to the second; the dated tag `r-<created>` of `rootTag` names it), and `previous` (the manifest digest of the root it replaced; null for the first root alone, `root_seq` 1).
+- `psl`: the sha256 of the list pinned at promotion, the `dev.pkgforge.domains.sha256` annotation of the `ref` package's `psl-<sha12>` (held equal to that tag's one layer).
+- `psl_live`: the sorted sha256 of every list a live pack was built under, read from each pack's `dev.pkgforge.domains.psl` (ruling 22). A new list is recomputed at the next compaction (§5.4). Until then `psl_live` names the older lists beside it, and `psl` is in `psl_live` only once a pack is built under it.
+- `corpus_since` per dataset (the first span start of its packs), `gaps` per source (the days it is known to lack, carried forward, for example the THC days 2026-10-04 and 2026-10-09), `through` per source (the latest span end of a live pack that carries it), and `counts` per dataset (packs and records).
+- `datasets`, with the live packs of each, in span order. Each pack has `repo`, `tag`, `tier` (`seg` for a segment, or `h` to `y`), `span` (`start`, `end`), `manifest` (digest), `pack` (`sha256`, the decoded identity, and `bytes`, from its annotations), `idx` and each of `parts` (digest and size), `count`, `key_min` and `key_max` (from its index head; null for a pack of no record), `sources` and `psl`. A pack of `feed` or `new-name` that carries a time copy (`docs/format.md` section 14) also has `time`: `{ "idx": { digest, size }, "parts": [{ digest, size }, ...] }`, its layers `time.idx` and `time.part.000` and up. A pack with no time copy has no `time` field, never a null one, and no pack of another dataset has one. `packFromManifest` takes the two layers both or neither, and holds the time index head to the pack: its dataset byte (6 for `feed`, 7 for `new-name`), its record count (the key index's), each part's size (the layer's), and the first `first_seen` of its key bounds no earlier than the span's start and the last before its end, the half of the bind `readFeed` holds before it reads a block of the copy. `validateRoot` holds the shape, each blob at least the header of its kind (64 B for the index, 16 B for a part), and `planWindow` of `packages/feed` reads it. A writer's `validateRoot` also refuses a pack of `feed` or `new-name` of tier `d`, `w`, `m` or `y` that holds records and lists no time copy, since `readFeed` would refuse every page over it; a reader's leaves that to `readFeed`, so one bad pack fails the pages over it and not the whole root. `pack.bytes` counts the key copy alone, as the annotations do.
+- `withdrawn`: the manifests a rollback took out of the live set, each `{ "manifest": "sha256:...", "at": ... }`, where `at` is the `created` of the root that withdrew it, sorted by manifest, and `[]` in the first root. A rollback's new root lists the live root's entries, each with its own `at`, plus each manifest that the live root or a root between it and the target names and the target does not (at its own `created`), minus each manifest the target names. So a pack a compaction replaced after the target was live, which no live root names any more, is listed too. A root of that chain created more than 31 days before the rollback adds nothing: the run that first added a pack it names started before that root, past GitHub's 30 days of re-runs, and a newer root that names the pack adds it. Every root drops the entries whose `at` is more than 31 days before its `created`: GitHub re-runs a workflow run up to 30 days after its initial run (READ 2026-10-29T11:19:40Z, https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs), and the day more is a margin. `validateRoot` holds its shape and order, each `at` no later than `created` and at most 31 days before it, and no manifest it lists among the live packs. A writer refuses a root without it.
 
-The root is a few tens of KB. A Worker reads it once, then reads blobs by digest.
+Every derived field (`as_of`, `psl_live`, `corpus_since`, `through`, `counts`) is computed again from the packs by `validateRoot` and must be equal. A writer refuses a field or a dataset it does not know. A reader ignores them (§11), and then holds only the per-dataset fields of the datasets it knows.
+
+The live-set rule of §4.5, as `validateRoot` holds it for each dataset. A compacted pack (`h` to `y`) spans exactly its tier unit, aligned, under the tag `tierTag` gives it. Two compacted packs never overlap. Two packs that share a source never overlap, so a merge that left a pack it replaced in the set is refused. In `names`, `domains` and `rev` a segment may overlap a pack of other sources: the THC day segment lies beside the hour packs of the live lanes until the daily compaction. That is the one exception to the disjoint spans of §4.5. In `feed` and `new-name` no two packs overlap, a segment neither (`SEGMENT_OVERLAP` of `packages/root`). The union of the spans is one interval from `corpus_since`, with no hole, so a day a source lacks is an empty pack of that day, its gap in `gaps`. No manifest digest appears twice in a root.
+
+`sources.json` (format `domains.root-sources.v1`) is the registry, `config/sources.json`, with each source's `through`, held equal to `root.json`, and its `fetched` time, given or carried from the previous root (§3.5). A live pack may carry only a source the registry holds. `coverage.json` is the coverage table of DOM-035. Until DOM-035 writes it, the layer holds the table's shape with nothing measured: `as_of` and `day` null, no pair, no gap.
+
+The first promotion finds no `root:latest`: the root is `root_seq` 1, `previous` null, `as_of` null, with no dataset unless it adds packs, and `psl` the list it is given to pin. `layerBytes` writes each layer as compact JSON with one final newline: machines read it, whatever its spacing. `root.json` then holds about 0.73 KB for each pack entry of one part and three sources, about 97 B for each further part and about 115 B for each withdrawn entry: about 37 KB (36,742 B) for 50 packs of one dataset, the worst fan-out §4.5 gives for `names`, and about 182 KB (181,552 B) for 50 packs in each of the five datasets [E]. A time copy of one part adds 218 B to its pack's entry [E] (50 `feed` hour packs with one, less 50 without). Each is measured on synthetic entries with `node scripts/root/size.mjs` at 2026-10-29T14:34:49Z, and its test holds these figures; the first real roots replace them. The 64 KiB cap is the manifest's, not the layer's: `scripts/root/lib.mjs` reads a layer of up to 8 MiB. A Worker reads it once, then reads blobs by digest.
 
 ### 4.7 Write rules
 
@@ -292,12 +301,17 @@ A static check refuses them (entry DOM-014).
 
 1. **Write-once tags.** A tag that exists is never written again. A script reads the tag first. The same digest means skip. Another digest is a fault that stops the job.
    A file source that republishes other bytes gets a new tag with a new `sha12`.
-2. **Forward-only root.** `root:latest` moves only after everything it names exists on GHCR and passed verification (§5.8).
-   Promotion reads the live root just before the push. It refuses a root whose `as_of` or `root_seq` is not above the live one.
-3. **One writer.** Every job that moves `root:latest` or `state` runs in the concurrency group `root-writer` with `queue: max` and no cancel.
+2. **Forward-only root.** `root:latest` moves only after everything it names exists on GHCR, by an anonymous HEAD of each pack's manifest by digest. Verification (§5.8) is the duty of the job that wrote each pack, before it calls the promotion; `scripts/root/promote.mjs` holds each pack's manifest and index head to each other and does not check that the verification ran. It refuses a pack whose manifest carries `dev.pkgforge.domains.quarantine`: no field of the root would keep a quarantined segment out of `new`. It builds the next root with `root_seq` the live one plus 1 and `previous` the live digest, and each replacement spans every pack it replaces and carries each of their sources.
+   It reads `latest` with the job's token just before it pushes the root under its dated tag `r-<created>` (write-once, with `scripts/ghcr/push.mjs`), and again just before it moves `latest` with `oras tag`. Either read refuses the move, exit 1, when `latest` is not the root the run planned on, when the new `root_seq` is not above the live one, when the new root was created no later than the live one, or, outside a rollback, when the new root shrinks the live one: an `as_of` below it, a dataset's `corpus_since` later or gone, or a source's `through` earlier or gone.
+   `as_of` may stay equal: a compaction replaces packs and does not extend the corpus. A rollback (`scripts/root/rollback.mjs`) is a new root with a higher `root_seq` that names the packs of an older root, so it may shrink the root, never lower `root_seq`. Its target must have been live once: it is on the chain of `previous` from `latest`, so a dated root that never became `latest` is refused.
+   A rollback lists in `withdrawn` each pack it takes out, and each pack a root since the target named and a compaction replaced (§4.6), and every later root refuses an addition or a replacement whose manifest `withdrawn` lists, so a re-run of the promotion that first added such a pack cannot put it back. A withdrawn pack comes back through a rollback to a root that names it, or under its own digest once its entry leaves the list (§4.6). `buildRoot` does not refuse a pack of the same span under another manifest digest, but a rebuilt tier pack has no tag to take: `tierTag` fixes its tag by its span, and the withdrawn pack holds that tag, write-once (rule 1). The same holds for any tier pack found bad after its push. DOM-023 is to settle it with a rebuild suffix on a tier tag, so that a rebuilt pack of the same span takes a tag of its own (its Decision of 2026-10-29); until it is built, a rebuilt tier pack has no tag.
+   A refusal after the dated push leaves that dated root unreferenced, which is harmless. Then `latest` is read back as a consumer reads it, with no credential: its digest is the pushed one, and its `root.json` is the root built.
+3. **One writer.** Every move of `root:latest` runs in `.github/workflows/root-promote.yml`, whose concurrency group is `root-writer` with `queue: max` and no cancel (ruling 18). A workflow whose job only calls it holds no group of its own, since a caller in `root-writer` would wait on the workflow it calls. That is assumed: no page read states it, and nothing has measured it. That two calls queue in the called file's group is not measured either: DOM-020's caller `measure-root-writer.yml`, dispatched twice one second apart, measures whether the second call's promote job starts only after the first's ends. Rule 13 of `scripts/check-workflows.mjs` holds both. Every other job that moves `state` runs in `root-writer` itself.
    The job reads the live root, applies its additions and replacements, and pushes. Two writers never move the root at once.
    Jobs that run in parallel, such as the ingest lanes, write segments and cursor proposals only. The one `promote` job advances `state` and the root (§5.4).
-4. **Re-run guard.** A re-run of an older run reads the live root first and writes nothing the live root already supersedes.
+4. **Re-run guard.** A re-run of an older run (`GITHUB_RUN_ATTEMPT` above 1) reads the live root first. It drops every addition and replacement that the live root already names, or supersedes with a pack of a higher tier whose span and sources cover it. It writes nothing when nothing is left to change.
+   A re-run of a rollback writes nothing: it ends `unchanged` when the live root already names the target's datasets and gaps, and is refused otherwise, since promotions may have landed after the first attempt. A rollback is dispatched again, never re-run.
+   A re-run after a rollback is refused by `withdrawn` (rule 2): a re-run whose addition or replacement a rollback took out exits 1 and writes nothing. A `GITHUB_RUN_ATTEMPT` that is not a whole number from 1, in digits alone, is exit 2 before anything is read.
 5. **Rate limits.** A 429 from GHCR costs no attempt. The script pauses 20 to 60 seconds, with a total cap, then tries again.
 6. **First push from a workflow.** A package first pushed from outside is not linked to the repository, and the workflow token can never write to it.
    Each package's first push comes from a workflow (READ `mirror@669ac72:docs/design.md`, "Running outside GitHub Actions").
@@ -454,7 +468,7 @@ The VPS therefore holds nothing that can write GHCR, and a compromised VPS can o
 
 This step adapts the mirror's verify step. A job fails when any check fails.
 
-1. Decode the whole pack. Check bytewise key order, uniqueness, charset, label length, no upper case, and that counts match the annotations. The verifier (DOM-018) prints SKIP for a check with nothing to compare, so a job that promotes names the checks it needs with `--require`.
+1. Decode the whole pack. Check bytewise key order, uniqueness, charset, label length, no upper case, and that counts match the annotations. The verifier (DOM-018) prints SKIP for a check with nothing to compare, so the job that writes a pack names the checks it needs with `--require` (with `time` for a pack that carries a time copy) before it calls the promotion, which does not check that it ran (section 4.7, rule 2).
 2. Re-find 1,000 random keys with the reader module the Worker uses. One TypeScript module runs in Node and in workerd.
 3. Compare volume with the median of the last 7 days that were not quarantined. A THC day under 40% of the median is quarantined: it is pushed with the annotation `dev.pkgforge.domains.quarantine` set to `1`, excluded from `new` computations, and an issue `anomaly-<source>` opens.
    THC's volume fell to about a third in early October with no stated reason: 843 to 986 MB a day in September, 984 and 957 MB on 10-01 and 10-02, 445 MB on 10-03, and 77 to 340 MB a day from 10-05 (MEASURED 2026-10-27T09:34:52Z, `curl -sS 'https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/tree?recursive=true'`, sizes summed per file).
@@ -601,11 +615,11 @@ Our own routes.
 | `since` | `1h`, `6h`, `12h`, `1d`, `Nd` (N at most 31), or an ISO 8601 time. Default `1d`. |
 | `until` | An ISO 8601 time. Default: now. |
 | `kind` | `registrable` (default) or `fqdn` |
-| `suffix` | A public suffix: `np`, `com.np`, `co.uk`, `xyz`. One contiguous key range. |
+| `suffix` | A public suffix: `np`, `com.np`, `co.uk`, `xyz`. One contiguous key range. For `kind=registrable` it keeps the domains whose suffix is exactly it, one label under it: `suffix=np` keeps `example.np` and leaves `example.com.np`, whose suffix is `com.np`. For `kind=fqdn` it keeps every name under it, and DOM-041 narrows that by the PSL. |
 | `under` | Any parent: a TLD, a suffix, a registrable domain or a name. One contiguous key range. |
-| `basis` | `any` (default), `seen`, `claimed`, `registered`, `zone`, `rdap`, `nrd-list`, `ct` |
-| `source` | One or more source ids |
-| `min_confidence` | 1 to 10, for `registered` rows |
+| `basis` | `any` (default), `seen`, `claimed`, `registered`, `zone`, `rdap`, `nrd-list`, `ct`. `any` and `seen` keep every row: each row of the feed is newly seen. `claimed` keeps a row with a basis of tier 1 or 2 (`zone`, `rdap`, `nrd-list`, `nrd-ct+rdap`), and `registered` one with a registry claim (`zone`, `rdap`, `nrd-ct+rdap`). `zone`, `rdap` and `nrd-list` keep a row with that basis, and `ct` one with `ct-first`. |
+| `source` | One or more source ids. A row is kept when at least one of them carries it. |
+| `min_confidence` | 1 to 10. It keeps the rows that a registry claim backs at least that strongly: a `zone` or `rdap` basis, which outranks every OpenINTEL level, or an `nrd-ct+rdap` basis whose stored OpenINTEL level is 1 to the value, level 1 being the closest to the RDAP date. Every other row is left out, a row of no stated level (0) among them. |
 | `suspect` | `exclude` (default), `include`, `only` |
 | `provisional` | `include` (default) or `exclude` |
 | `order` | `first_seen.desc` (default) or `first_seen.asc` |
@@ -613,6 +627,8 @@ Our own routes.
 
 A window is read from the live set. A window of 1 h to 12 h reads segments and hour packs.
 A window of N days reads day packs, and week packs where a week is whole. `meta.tiers_read` lists them.
+A pack of tier `d`, `w`, `m` or `y` is read through its time copy, from the bound of the window in `order`, and one without a time copy is refused; a segment or an hour pack may have none and is read from its key copy and a sort (`docs/format.md` section 14.4).
+A page of 1,000 rows with no filter read 1 or 2 blocks of a day pack of 500,000 synthetic rows. A filter that drops most of the rows read costs their blocks too: `source=oi-nrd` on a window from 12:00, ascending, read the 49 blocks of the day's day-precision rows (§7.4) before its first row, 50 in all (MEASURED 2026-10-29T14:42:47Z, `docs/format.md` section 14.6). The block budget of §7.6 bounds such a page.
 
 ### 7.4 Time
 

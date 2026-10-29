@@ -8,6 +8,10 @@ import { nodeCompress } from "../node/index.ts";
 import {
   type DatasetCodec,
   type DomainRecord,
+  FEED_SUSPECT,
+  FEED_SUSPECT_CERT,
+  FEED_SUSPECT_RDAP,
+  FEED_SUSPECT_REASONS,
   type FeedRecord,
   MemorySink,
   NAMES_CODEC,
@@ -79,6 +83,12 @@ export function randomDomains(n: number, seed: number): DomainRecord[] {
   });
 }
 
+// Feed flags of bits 0 to 3 from one draw, with the reasons a suspect row
+// holds (bit 4, bit 5 or both, from the same draw): a row is suspect exactly
+// when it holds a reason (docs/format.md section 5.4).
+const REASONS = [FEED_SUSPECT_CERT, FEED_SUSPECT_RDAP, FEED_SUSPECT_REASONS];
+export const feedFlagsOf = (draw: number): number => draw | ((draw & FEED_SUSPECT) === 0 ? 0 : REASONS[draw % 3]);
+
 export function randomFeed(n: number, seed: number): FeedRecord[] {
   const next = rng(seed + 3);
   return randomKeys(n, seed).map((key) => {
@@ -90,7 +100,7 @@ export function randomFeed(n: number, seed: number): FeedRecord[] {
       sources,
       basis: Math.floor(next() * 32),
       confidence: Math.floor(next() * 11),
-      feedFlags: Math.floor(next() * 16),
+      feedFlags: feedFlagsOf(Math.floor(next() * 16)),
     };
   });
 }

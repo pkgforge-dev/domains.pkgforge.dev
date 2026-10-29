@@ -6,7 +6,7 @@ is the only one.
 
 ## State
 
-- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it.
+- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), is the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 22 on 2026-10-29), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 42 open, 7 partial, 0 blocked, 13 done.**
+**62 items. 40 open, 9 partial, 0 blocked, 13 done.**
 
 ## What this session did
 
@@ -63,10 +63,16 @@ is the only one.
   - A reader can refuse a valid block too large for a Worker before reading it (`maxRawBlockBytes`), and can hold the parts table to the store's sizes (`partSizes`).
   - Settled in `docs/architecture.md` section 3.3: a feed pack holds one record a domain, with `first_seen` a field, and `new-name` is DPK1 dataset 5.
 - Closed DOM-016, DOM-017, DOM-018, DOM-019 and DOM-021 on `ci.yml` run 40830988277 (1,172 of 1,172 tests on ubuntu-24.04, none skipped). DOM-019 also on `ref-refresh.yml` run 40831098846: the package `ref` now holds the PSL, the CT log list and `sources.json`, and reads with no credential.
+- Built the fourth wave on 2026-10-29, two entries, now partial:
+  - DOM-020: the root. `packages/root`, `scripts/root/` and `.github/workflows/root-promote.yml`; rule 13 of the workflow check under ruling 18; the GHCR form of `scripts/verify-pack.mjs`; and `measure-root-writer.yml`, the caller that measures ruling 18 and goes at the entry's close.
+  - DOM-022: the feed. `packages/feed`; the time copy that replaced the planned `tidx` layer (DPK1 datasets 6 and 7, `docs/format.md` section 14); the reason bits 4 and 5 of `feed_flags`; the check `time` of the verifier; and `scripts/bench/feed-window.mjs`, with its 21 runs in `docs/research/measure/DOM-022/`.
+- Ran the three lenses (door sweep, claim audit, guard mutation) on the build and again on the fixes, fixed or answered every finding in four rounds, and had a final verification plant 90 mutants: 87 killed by the named test, 3 equivalent. `npm run gate` exited 0 at 2026-10-29T14:51:43Z with 1,359 tests: 1,356 pass and 3 platform skips of this Windows machine.
+- Decided under ruling 20, each in its entry: the time copy in place of `tidx`, since a page by `tidx` read 122 of 123 blocks and one by the time copy reads 2; the `withdrawn` list of the root, kept 31 days, so a re-run cannot put back a pack a rollback took out; no overlapping packs in `feed` and `new-name`; compact `root.json`; `issues: write` out of the promotion until DOM-034; and a rebuild suffix on tier tags, which DOM-023 builds.
+- Fixed the two problems of the final verification: a writer's `validateRoot` now refuses a pack of `feed` or `new-name` of tier `d` to `y` that holds records and no time copy, and `docs/architecture.md` section 3.3 sizes the feed at about 2 to 7 MB a day [E] for the key copy. Section 5.8 step 1 now gives the verify to the job that writes a pack.
 
 ## What is in progress
 
-Seven entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Nine entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
@@ -77,24 +83,29 @@ Seven entries are partial. Each one's Waiting line names the instant its result 
 | DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
 | DOM-011 | 24 hours of the `measure-tiles.yml` chain |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
+| DOM-020 | the push of wave 4: the first dispatch of `root-promote.yml`, the anonymous read of `root:latest`, and the ruling 18 run of `measure-root-writer.yml` |
+| DOM-022 | the `ci.yml` run of the commit that carries this record |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
 
 ## Start here next session
 
-1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
+1. Wave 4, the root and the feed (DOM-020, DOM-022), is the commit that carries this record. Push it once `npm run gate` exits 0 on it, and read its `ci.yml` run. When that run ends `success` on ubuntu-24.04, close DOM-022 (its Waiting line).
+2. DOM-020's steps after the push, in its Waiting line: the first dispatch of `root-promote.yml` with `psl=psl-1f96bae40adf`, the anonymous read of `root:latest` with `curl` and `node scripts/root/show.mjs --ref latest`, and the ruling 18 run, `measure-root-writer.yml` dispatched twice one second apart. Then close DOM-020, and delete `measure-root-writer.yml` and its row in `docs/resources.md` in the same commit.
+3. Renovate's pull requests #1 (biome), #2 (node) and #3 (workers-types), each into the tree with a green gate (ruling 20).
+4. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-011 closes after its 24 hours, and DOM-012 after 7 days.
-2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. The root and the feed: DOM-020 (it changes rule 13 of the workflow check, ruling 18, and writes `psl_live`, ruling 22) and DOM-022. Then the three Renovate updates #1 to #3, each with a green gate (ruling 20). Then compaction: DOM-023.
-4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
-5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
-6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
-7. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
-8. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
-9. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
-10. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
-11. The root documents and the consumer contract: DOM-059, DOM-060.
+5. DOM-003, once DOM-001 and DOM-002 have closed.
+6. Compaction: DOM-023, with its Decision of 2026-10-29T15:18Z (a rebuild suffix on tier tags) and the duties its Found of 2026-10-29T15:30Z lists.
+7. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
+8. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
+9. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+10. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
+11. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
+12. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
+13. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
+14. The root documents and the consumer contract: DOM-059, DOM-060.
 
 `node scripts/todo/next.mjs` derives the same waves from the `Depends on` lines.
 
@@ -113,7 +124,7 @@ DOM-062's zone rule is settled: the operator applied the exclusion of `domains.p
 
 Former Operator actions 1 (a wrangler login: present, on the operator's account (its name is not recorded: it carries the workers.dev subdomain), R2 enabled, MEASURED 2026-10-28T10:19:05Z) and 3 (the default workflow permission: `read` since 2026-10-28T10:18:52Z) are settled. The deletion of the probe Worker and its bucket is the agent's under ruling 14 (DOM-056).
 
-**Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence.
+**Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence. The questions of wave 4 were decided on 2026-10-29 under ruling 20, each in its entry: the time copy in place of `tidx` (DOM-022), no overlapping packs in `feed` and `new-name` and the `withdrawn` list (DOM-020), and the conflict of a rebuilt tier pack with its write-once tag, decided as a rebuild suffix on tier tags that DOM-023 builds (DOM-023's Decision of 2026-10-29T15:18Z, `docs/architecture.md` section 4.7 rule 2).
 
 **Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the questions of 2026-10-29 the same day (rulings 18 to 22).
 

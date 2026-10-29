@@ -1,0 +1,202 @@
+# DOM-020 (TODO/storage.md): move root:latest of
+# ghcr.io/pkgforge-dev/domains.pkgforge.dev/root forward, the one object the
+# Worker and every outside consumer read first (docs/architecture.md sections
+# 4.6 and 4.7, and section 11).
+#
+# It is the one writer of root:latest. Every move of latest is meant to wait
+# in the concurrency group root-writer below, with queue: max and no cancel,
+# whoever starts it (ruling 18): a dispatch here, or an ingest or compaction
+# workflow whose job only calls this file (`uses: ./.github/workflows/root-promote.yml`).
+# Such a caller holds no group of its own, since a caller and the called
+# workflow in one group would wait on each other (assumed: no page read states
+# it, and nothing has measured it), and scripts/check-workflows.mjs rule 13
+# refuses a caller in root-writer. That two calls queue in this file's group
+# is not measured either: measure-root-writer.yml is DOM-020's caller,
+# dispatched twice one second apart to measure that the second call's promote
+# job starts only after the first's ends.
+#
+# scripts/root/promote.mjs reads the live root with no credential, builds the
+# next one (root_seq the live one plus 1, previous the live digest, the
+# live-set rule held, as_of never below the live one), checks that GHCR holds
+# every pack it names, pushes it under its dated tag r-<created> with
+# scripts/ghcr/push.mjs (write-once), reads latest again with the job's token
+# just before the move and refuses if it moved, runs `oras tag` to latest, and
+# reads latest back as a consumer does. With rollback_to, scripts/root/rollback.mjs
+# builds a new root (root_seq still grows) that names an older root's packs.
+# Nothing here deletes anything from GHCR (AGENTS.md absolute 13).
+#
+# The first run creates the root package with this job's own GITHUB_TOKEN (ruling
+# 6): no root exists, so it writes root_seq 1 with no previous and no pack, and
+# names the pinned PSL given as `psl`. Verifying the packs a caller adds is the
+# duty of the job that wrote them (scripts/verify-pack.mjs, section 5.8), and
+# nothing here checks that it ran: this job holds each pack's manifest and
+# index head to each other, and refuses a quarantined one.
+#
+#   gh workflow run root-promote.yml --ref main -f psl=psl-1f96bae40adf
+#   node scripts/root/show.mjs --ref latest
+name: Promote the root
+
+on:
+  workflow_call:
+    inputs:
+      add:
+        description: The packs to add, PACKAGE:TAG separated by spaces or newlines
+        type: string
+        required: false
+        default: ""
+      replace:
+        description: The replacements, OLD[,OLD...]=NEW separated by spaces or newlines, each a PACKAGE:TAG
+        type: string
+        required: false
+        default: ""
+      psl:
+        description: The psl-<sha12> tag of the ref package to pin; empty keeps the live root's
+        type: string
+        required: false
+        default: ""
+      rollback_to:
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch:
+    inputs:
+      add:
+        description: The packs to add, PACKAGE:TAG separated by spaces or newlines
+        type: string
+        required: false
+        default: ""
+      replace:
+        description: The replacements, OLD[,OLD...]=NEW separated by spaces or newlines, each a PACKAGE:TAG
+        type: string
+        required: false
+        default: ""
+      psl:
+        description: The psl-<sha12> tag of the ref package to pin; empty keeps the live root's
+        type: string
+        required: false
+        default: ""
+      rollback_to:
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it
+        type: string
+        required: false
+        default: ""
+
+permissions: {}
+
+# Ruling 18: every promotion of the root waits here, up to 100 queued in turn
+# (mirror-archlinux sync.yml). GitHub refuses queue: max with cancel-in-progress: true.
+concurrency:
+  group: root-writer
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  promote:
+    # Only main's code moves the root: a dispatch or a caller on another branch is skipped whole.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # A caller's job takes no timeout-minutes (a reusable workflow call), so this file holds it.
+    timeout-minutes: 15
+    # issues: write joins with scripts/track-issue (DOM-034), which raises an
+    # issue when a promotion is refused; until it lands no step uses it, so the
+    # job does not hold it, and the last step stands in.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The scripts import the workspace packages by name (@domains/root,
+      # @domains/ghcr, @domains/pack, @domains/adapter, @domains/names).
+      # --omit=dev links the workspaces and
+      # installs no package from the registry: every external dependency of
+      # this repository is a devDependency, and a job that holds packages: write
+      # runs none of them. The import below fails the step if a link is missing.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/root'); await import('@domains/ghcr'); await import('@domains/pack'); await import('@domains/adapter'); await import('@domains/names');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The only step that holds the job's token, which reaches oras on stdin
+      # (scripts/ghcr/push.mjs, scripts/root/lib.mjs). The inputs reach the
+      # script through env and `read -a`, word by word on any whitespace, never
+      # globbed; each word is checked by the script. rc is the script's own exit code.
+      - name: Move root:latest
+        id: move
+        timeout-minutes: 10
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          ADD: ${{ inputs.add }}
+          REPLACE: ${{ inputs.replace }}
+          PSL: ${{ inputs.psl }}
+          ROLLBACK_TO: ${{ inputs.rollback_to }}
+        run: |
+          set -uo pipefail
+          # Split on spaces, tabs and newlines alike: a caller may pass a job
+          # output of several lines. read -d '' reads to the end and exits 1 there.
+          read -r -d '' -a adds <<< "$ADD" || true
+          read -r -d '' -a replaces <<< "$REPLACE" || true
+          rc=0
+          if [ -n "$ROLLBACK_TO" ]; then
+            if [ "${#adds[@]}" -gt 0 ] || [ "${#replaces[@]}" -gt 0 ] || [ -n "$PSL" ]; then
+              echo "::error::rollback_to takes no add, replace or psl"
+              rc=2
+            else
+              node scripts/root/rollback.mjs --to "$ROLLBACK_TO" || rc=$?
+            fi
+          else
+            args=()
+            for a in "${adds[@]}"; do args+=(--add "$a"); done
+            for r in "${replaces[@]}"; do args+=(--replace "$r"); done
+            if [ -n "$PSL" ]; then args+=(--psl "$PSL"); fi
+            node scripts/root/promote.mjs "${args[@]}" || rc=$?
+          fi
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the move of root:latest exited $rc (1 a fault or a refusal, 2 could not run, 3 a dated tag holds another manifest, 4 not public, 70 an internal error)"
+          fi
+          exit "$rc"
+
+      # No credential in this step: the read a consumer makes, after the move.
+      - name: Read root:latest anonymously
+        id: public
+        timeout-minutes: 3
+        run: |
+          rc=0
+          node scripts/root/show.mjs --ref latest || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # ⚠ A no-op that fails the job. DOM-034 replaces it with scripts/track-issue,
+      # which raises the issue of a refused promotion, or visibility-root when
+      # the anonymous read exits 4. It opens nothing today.
+      - name: Raise an issue (a no-op until DOM-034)
+        if: ${{ failure() }}
+        env:
+          MOVE_RC: ${{ steps.move.outputs.rc }}
+          READ_RC: ${{ steps.public.outputs.rc }}
+        run: |
+          echo "::error::the promotion failed (move exit ${MOVE_RC:-none}, anonymous read exit ${READ_RC:-none}). scripts/track-issue, which raises the issue, comes with DOM-034; until then this step raises nothing and fails the job."
+          exit 1

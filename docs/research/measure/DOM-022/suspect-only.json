@@ -1,0 +1,70 @@
+{
+  "schema": "domains.bench.feed-window.v3",
+  "entry": "DOM-022",
+  "started_at": "2026-10-29T14:42:23.351Z",
+  "finished_at": "2026-10-29T14:42:30.911Z",
+  "runtime": {
+    "writer": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "seed": 1,
+  "suspect_share": 0.01,
+  "day_share": 0.4,
+  "rows_of": "synthetic, from the seed: distinct registrable domains of 2026-10-26 under a weighted list of suffixes; first_seen synthetic, from the seed: a share 0.4 of day-precision rows of a day source (bit 8) at the start of 2026-10-26, the rest second-precision rows of a second source (bit 1) at a random second of it; no row provisional; a share 0.01 of the rows suspect (suspect-cert), drawn from a second generator of the seed",
+  "read_of": "readFeed of packages/feed with its defaults (block budget 2000, copy auto) and the filter suspect=only, over the window 2026-10-26T00:00:00Z to 2026-10-27T00:00:00Z, every read of a part and of an index of either copy counted; read_ms is Node wall time of one run in this process, not workerd CPU time, and moves with the load of the machine",
+  "rows": 500000,
+  "day_precision_rows": 200374,
+  "suspect_rows": 4900,
+  "records_per_block": 4096,
+  "key_copy": {
+    "blocks": 123,
+    "part_bytes": 4417714,
+    "idx_bytes": 5127,
+    "bytes": 4422841,
+    "bytes_per_row": 8.846
+  },
+  "time_copy": {
+    "blocks": 123,
+    "part_bytes": 4371656,
+    "idx_bytes": 5596,
+    "bytes": 4377252,
+    "bytes_per_row": 8.755
+  },
+  "time_to_key_bytes": 0.99,
+  "write_ms": 6078.311,
+  "window": {
+    "start": "2026-10-26T00:00:00Z",
+    "end": "2026-10-27T00:00:00Z",
+    "suffix": null,
+    "suspect": "only",
+    "sources": null,
+    "rows": 4900
+  },
+  "page": {
+    "order": "first_seen.desc",
+    "limit": 1000,
+    "copy_asked": "auto",
+    "copy_read": "time",
+    "rows": 1000,
+    "partial": false,
+    "blocks_read": 25,
+    "key_blocks_read": 0,
+    "time_blocks_read": 25,
+    "blocks_read_share": 0.203,
+    "block_bytes_read": 988350,
+    "rows_decoded": 98592,
+    "idx_reads": 3,
+    "idx_bytes_read": 13335,
+    "read_ms": 320.64
+  },
+  "criteria": [
+    {
+      "name": "one-page-at-most-40-blocks",
+      "value": 25,
+      "limit": 40,
+      "pass": true
+    }
+  ],
+  "pass": true
+}

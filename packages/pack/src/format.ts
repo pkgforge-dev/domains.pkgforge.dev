@@ -18,8 +18,15 @@ export const DATASET_DOMAINS = 2;
 export const DATASET_FEED = 3;
 export const DATASET_REV = 4;
 export const DATASET_NEW_NAME = 5;
-// The annotation value of each dataset id.
-export const DATASET_LABELS: Readonly<Record<number, string>> = Object.freeze({ 1: "names", 2: "domains", 3: "feed", 4: "rev", 5: "new-name" });
+// The time copies of datasets 3 and 5 (docs/format.md section 14): DPK1 packs
+// of their own in the layers time.idx and time.part.NNN of the manifest of
+// their key copy. They have no manifest and no annotation of their own.
+export const DATASET_FEED_TIME = 6;
+export const DATASET_NEW_NAME_TIME = 7;
+// The name of each dataset id: the annotation value of the datasets 1 to 5,
+// and the codec name of the time copies 6 and 7, which no annotation carries
+// (packAnnotations refuses them).
+export const DATASET_LABELS: Readonly<Record<number, string>> = Object.freeze({ 1: "names", 2: "domains", 3: "feed", 4: "rev", 5: "new-name", 6: "feed-time", 7: "new-name-time" });
 // The longest key of the datasets whose key is a reversed name (1, 2, 3 and
 // 5): a name is at most 253 bytes (docs/architecture.md section 3.1).
 export const NAME_KEY_BYTES = 253;
@@ -66,6 +73,10 @@ export const ANNOTATIONS = Object.freeze({
 // The layer title of part n: part.000, part.001, and up.
 export const partTitle = (n: number): string => `part.${String(n).padStart(3, "0")}`;
 export const IDX_TITLE = "idx";
+// The layers of a time copy, in the manifest of its key copy: time.idx, and
+// time.part.000, time.part.001, and up, numbered as the parts are.
+export const TIME_IDX_TITLE = "time.idx";
+export const timePartTitle = (n: number): string => `time.${partTitle(n)}`;
 
 export interface PartHeader {
   readonly dataset: number;

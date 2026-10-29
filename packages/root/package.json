@@ -1,0 +1,11 @@
+{
+  "name": "@domains/root",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The root manifest root.json (docs/architecture.md section 4.6): its schema and validateRoot, the live-set rule, buildRoot and rollbackRoot, the forward-only check, the re-run guard and the sources layer. Runs in Node and in workerd alike.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

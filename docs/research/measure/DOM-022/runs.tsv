@@ -1,0 +1,21 @@
+result	2026-10-29T14:41:06Z	2026-10-29T14:41:15Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --limit 1000
+asc	2026-10-29T14:41:15Z	2026-10-29T14:41:24Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.asc --limit 1000
+suffix-com-np	2026-10-29T14:41:24Z	2026-10-29T14:41:33Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix com.np --limit 1000
+suffix-com-np-time	2026-10-29T14:41:33Z	2026-10-29T14:41:42Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix com.np --copy time --limit 1000
+suffix-com	2026-10-29T14:41:42Z	2026-10-29T14:41:50Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix com --limit 1000
+suffix-com-key	2026-10-29T14:41:50Z	2026-10-29T14:41:59Z	exit 1	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix com --copy key --limit 1000
+suffix-de	2026-10-29T14:41:59Z	2026-10-29T14:42:06Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix de --limit 1000
+suffix-de-key	2026-10-29T14:42:06Z	2026-10-29T14:42:15Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix de --copy key --limit 1000
+suffix-de-time	2026-10-29T14:42:15Z	2026-10-29T14:42:23Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suffix de --copy time --limit 1000
+suspect-only	2026-10-29T14:42:23Z	2026-10-29T14:42:30Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --suspect-share 0.01 --suspect only --limit 1000
+from-desc	2026-10-29T14:42:31Z	2026-10-29T14:42:38Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --from 2026-10-26T12:00:00Z --limit 1000
+from-asc	2026-10-29T14:42:38Z	2026-10-29T14:42:47Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.asc --from 2026-10-26T12:00:00Z --limit 1000
+from-asc-oi-nrd	2026-10-29T14:42:47Z	2026-10-29T14:42:57Z	exit 1	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.asc --from 2026-10-26T12:00:00Z --source oi-nrd --limit 1000
+from-desc-isc-new	2026-10-29T14:42:57Z	2026-10-29T14:43:05Z	exit 0	node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --from 2026-10-26T12:00:00Z --source isc-new --limit 1000
+whoisds-desc	2026-10-29T14:43:05Z	2026-10-29T14:43:07Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/whoisds-2026-10-28.txt --order first_seen.desc --limit 1000
+whoisds-asc	2026-10-29T14:43:07Z	2026-10-29T14:43:08Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/whoisds-2026-10-28.txt --order first_seen.asc --limit 1000
+whoisds-day-desc	2026-10-29T14:43:08Z	2026-10-29T14:43:09Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/whoisds-2026-10-28.txt --order first_seen.desc --day-share 1 --limit 1000
+isc-desc	2026-10-29T14:43:09Z	2026-10-29T14:43:15Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/isc-2026-10-28.txt --order first_seen.desc --limit 1000
+isc-asc	2026-10-29T14:43:15Z	2026-10-29T14:43:22Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/isc-2026-10-28.txt --order first_seen.asc --limit 1000
+isc-day-desc	2026-10-29T14:43:22Z	2026-10-29T14:43:27Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/isc-2026-10-28.txt --order first_seen.desc --day-share 1 --limit 1000
+isc-second-desc	2026-10-29T14:43:27Z	2026-10-29T14:43:34Z	exit 0	node scripts/bench/feed-window.mjs --names .tmp/refix-w4b/DOM-022/names/isc-2026-10-28.txt --order first_seen.desc --day-share 0 --limit 1000

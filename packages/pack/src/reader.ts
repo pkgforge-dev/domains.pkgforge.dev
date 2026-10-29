@@ -21,7 +21,7 @@
 //
 // get, scan and blockOf search the index by comparing index keys bytewise,
 // which finds the right block when the index key of a block is the key of its
-// first record: the datasets 1, 2, 3 and 5. A codec whose index key is not its
+// first record: the datasets 1, 2, 3, 5, 6 and 7. A codec whose index key is not its
 // record key (dataset 4) searches with PackIndex and readBlock itself.
 import { BUILTIN_CODECS, type DatasetCodec, type PackRecord } from "./codec.ts";
 import { ByteReader } from "./bytes.ts";
@@ -96,7 +96,7 @@ export class PackReader<R> {
     if (builtin === undefined)
       throw new PackError(
         "dataset",
-        `the pack is dataset ${index.header.dataset} (${DATASET_LABELS[index.header.dataset] ?? "unknown"}); this reader ships codecs for 1, 2, 3 and 5 and was given none`,
+        `the pack is dataset ${index.header.dataset} (${DATASET_LABELS[index.header.dataset] ?? "unknown"}); this reader ships codecs for 1, 2, 3, 5, 6 and 7 and was given none`,
       );
     // The reader only decodes: encodeRecord, the one member whose parameter
     // type differs between the three codecs, is never called through it.

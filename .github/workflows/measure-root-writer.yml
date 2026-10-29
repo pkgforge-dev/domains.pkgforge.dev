@@ -1,0 +1,42 @@
+# DOM-020 (TODO/storage.md): the measurement of ruling 18. Every move of
+# root:latest is meant to wait in the concurrency group root-writer of
+# .github/workflows/root-promote.yml, and a workflow whose job only calls that
+# file holds no group of its own (scripts/check-workflows.mjs rule 13). That
+# GitHub queues two such calls in the called file's group is assumed, not
+# measured (docs/architecture.md section 4.7 rule 3); this caller measures it.
+#
+# Its one job only calls root-promote.yml, with no inputs. Run it once a root
+# exists: each call then ends `unchanged` and writes nothing
+# (scripts/root/promote.mjs), unless config/sources.json changed since the live
+# root, when the first call promotes that change and the second ends unchanged.
+#
+# The measurement: two dispatches one second apart, then the start and end
+# times of each run's promote job. Ruling 18 holds when the second call's
+# promote job starts only after the first call's promote job ends.
+#   gh workflow run measure-root-writer.yml --ref main
+#   gh workflow run measure-root-writer.yml --ref main      (one second later)
+#   gh run list --workflow measure-root-writer.yml --limit 2 --json databaseId,createdAt
+#   gh run view <id> --json jobs      (each run: the startedAt and completedAt of its promote job)
+#
+# This file is deleted in DOM-020's closing commit (docs/resources.md).
+name: Measure the root writer
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # No concurrency group here, nor at the top: root-promote.yml holds
+  # root-writer itself (ruling 18), and a caller in the group would wait on the
+  # workflow it calls (assumed, not measured: this run does not test it). The
+  # grants are those of root-promote.yml's job.
+  call:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/root-promote.yml

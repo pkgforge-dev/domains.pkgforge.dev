@@ -23,7 +23,10 @@
 //              readBlock and decodeBlock, the reader the Worker runs: it reads
 //              whole, inflates to its raw length, matches its CRC-32, decodes
 //              and holds its count; the records then sum to the index's count
-//              and to the `count` annotation
+//              and to the `count` annotation. `record` also holds the feed_flags
+//              of each feed or new-name row to the rule of docs/format.md section
+//              5.4 (feedFlagsFault, the writer's own): suspect set exactly when a
+//              reason bit is, bits 6 and 7 zero
 //   order, unique   the first key of each block is above the last key of the
 //              block before it; decodeBlock holds the order inside a block, where
 //              a repeated key cannot be written and fails as `order` or `record`
@@ -34,6 +37,16 @@
 //   sha256     the SHA-256 of the raw blocks is the `sha256` annotation
 //   refind     1,000 keys drawn with a seeded generator, and the first and the
 //              last, are found by PackReader.get over the index read by range
+//   time       the time copy of a feed or new-name pack (docs/format.md section
+//              14), when one is given: its index and parts pass the checks above
+//              as a pack of their own (idx, length, header, and every block
+//              through PackReader), it binds to the key copy (timeBindFault:
+//              its dataset, its records, its first_seen inside the span), its
+//              blocks ascend by time key across their boundaries, its head's
+//              bounds are its first and last time key, and its rows are the rows
+//              of the key copy (RowSum of each copy, compared). With no time copy
+//              it skips, so the job that writes a pack that must carry one names
+//              it in `require`.
 //   psl        the `psl` annotation is the hash of the list the names were checked with
 //   sources    every source bit of a record belongs to a source the annotation names
 //   precision  each named source has the registry's precision, and every time of
@@ -42,7 +55,8 @@
 //              caller passes (checkBand of @domains/adapter): ok, hold or quarantine
 //
 // What runs after a failure. A failure of idx, dataset, length or header ends
-// the run: nothing after them can trust the bytes. A block that fails inflate,
+// the run: nothing after them can trust the bytes. The time check runs only
+// when every block of the key copy decoded, since it compares their rows. A block that fails inflate,
 // crc, record or count is reported and the pass goes on to the next block; the
 // checks of the whole pack then do not run: sha256 needs every block read
 // whole, and the count sum, bounds, refind and volume need every block
@@ -81,13 +95,14 @@
 // The volume rule is passed in, not imported, so @domains/pack, which the
 // Worker imports for its reader, does not depend on @domains/adapter.
 import { fromKey, normalise, type Psl, scan } from "@domains/names";
-import { BUILTIN_CODECS, type DatasetCodec, type DomainRecord, type FeedRecord, type NameRecord, type PackRecord } from "./codec.ts";
+import { BUILTIN_CODECS, type DatasetCodec, type DomainRecord, type FeedRecord, feedFlagsFault, type NameRecord, type PackRecord, timeCodecOf } from "./codec.ts";
 import { PackError, type PackErrorCode } from "./errors.ts";
-import { ANNOTATIONS, DATASET_DOMAINS, DATASET_FEED, DATASET_LABELS, DATASET_NAMES, DATASET_NEW_NAME, PART_HEADER_BYTES, partTitle, readPartHeader } from "./format.ts";
-import { type Idx, PackIndex, readIdx } from "./idx.ts";
+import { ANNOTATIONS, DATASET_DOMAINS, DATASET_FEED, DATASET_LABELS, DATASET_NAMES, DATASET_NEW_NAME, PART_HEADER_BYTES, partTitle, readPartHeader, timePartTitle } from "./format.ts";
+import { type Idx, type IdxHead, PackIndex, readIdx } from "./idx.ts";
 import { PackReader } from "./reader.ts";
 import { Sha256 } from "./sha256.ts";
 import { type ByteSource, bytesSource, type RangeSource, readExact, readPart } from "./source.ts";
+import { RowSum, type TimeSpan, timeBindFault } from "./time.ts";
 
 export const CHECKS = Object.freeze([
   "idx",
@@ -104,6 +119,7 @@ export const CHECKS = Object.freeze([
   "name",
   "sha256",
   "refind",
+  "time",
   "psl",
   "sources",
   "precision",
@@ -199,9 +215,14 @@ export interface VerifyOptions {
   readonly refind?: number;
   readonly maxFailures?: number;
   // The checks that must not skip: one of them that skipped makes the verdict
-  // unverified and `ok` false. A promote job names the annotations it needs
-  // compared (count, length, sha256 and up).
+  // unverified and `ok` false. The job that writes a pack, before it calls the
+  // promotion (docs/architecture.md section 4.7, rule 2), names the annotations
+  // it needs compared (count, length, sha256 and up), and `time` for a pack
+  // that must carry a time copy.
   readonly require?: readonly CheckName[];
+  // The time copy of a feed or new-name pack: its index (the layer time.idx)
+  // and its parts (time.part.NNN) with the bytes each holds as stored.
+  readonly time?: { readonly idx: ByteSource | Uint8Array; readonly parts: PartSource };
 }
 
 // The parts of a pack read by range, and the bytes each part holds as stored:
@@ -236,6 +257,8 @@ export interface VerifyStats {
   // Quoted by quoteKey.
   readonly keyMin: string | null;
   readonly keyMax: string | null;
+  // The time copy, when one was given and its index parsed.
+  readonly time: { readonly parts: number; readonly blocks: number; readonly records: number; readonly idxBytes: number; readonly partBytes: number } | null;
 }
 
 export interface VerifyResult {
@@ -582,6 +605,11 @@ function checkOptions(o: VerifyOptions): { refind: number; seed: number; maxFail
   if (!isWhole(seed) || seed > 0xffff_ffff) throw usage(`seed ${String(seed)} is not a whole number below 2^32`);
   if (!isWhole(maxFailures) || maxFailures < 1) throw usage(`maxFailures ${String(maxFailures)} is not a whole number above 0`);
   if (o.now !== undefined) secondsOf(o.now, "now");
+  if (o.time !== undefined) {
+    const t = o.time as { idx?: unknown; parts?: Partial<PartSource> } | null;
+    if (t === null || typeof t !== "object" || t.idx === undefined || typeof t.parts?.read !== "function" || !Array.isArray(t.parts.sizes) || !t.parts.sizes.every(isWhole))
+      throw usage("the time copy is not an index and a PartSource with the whole-number size of each part");
+  }
   if (o.volume !== undefined) {
     if (typeof o.volume.judge !== "function") throw usage("the volume check has no judge");
     if (o.volume.value !== undefined && !isWhole(o.volume.value)) throw usage(`the volume value ${String(o.volume.value)} is not a whole number`);
@@ -590,6 +618,93 @@ function checkOptions(o: VerifyOptions): { refind: number; seed: number; maxFail
   if (!Array.isArray(required)) throw usage("require is not a list of checks");
   for (const c of required) if (!(CHECKS as readonly unknown[]).includes(c)) throw usage(`require names ${JSON.stringify(c)}, which is not a check; the checks are ${CHECKS.join(", ")}`);
   return { refind, seed, maxFailures, required };
+}
+
+// ---- the time copy
+
+const spanSeconds = (span: NonNullable<Expect["span"]>): TimeSpan => ({ t0: secondsOf(span.start, "span.start"), t1: secondsOf(span.end, "span.end") });
+
+// The time check: the time copy read whole as a pack of its own, bound to the
+// key copy, its rows summed and compared with the key copy's sum. Every fault
+// is a failure of `time`; the stats of the time copy, once its index parsed.
+async function checkTime(time: NonNullable<VerifyOptions["time"]>, keyHead: IdxHead, keySum: RowSum, span: TimeSpan | null, report: Report): Promise<VerifyStats["time"]> {
+  const fail = (detail: string): null => {
+    report.fail("time", detail);
+    return null;
+  };
+  const source = time.idx instanceof Uint8Array ? bytesSource(time.idx) : time.idx;
+  if (!isWhole(source.size)) throw usage(`the time copy's index size ${String(source.size)} is not a whole number`);
+  let idxBytes: Uint8Array;
+  let idx: Idx;
+  try {
+    idxBytes = await readExact(source, 0, source.size, "the time copy's index");
+    idx = readIdx(idxBytes);
+  } catch (error) {
+    if (!(error instanceof PackError)) throw error;
+    return fail(`the time copy's index is refused: ${error.code}: ${error.message}`);
+  }
+  const { header } = idx.head;
+  const sizes = time.parts.sizes;
+  const stats = { parts: header.parts, blocks: header.blocks, records: header.records, idxBytes: idxBytes.length, partBytes: sizes.reduce((sum, n) => sum + n, 0) };
+  const bind = timeBindFault(keyHead, idx.head, span);
+  if (bind !== null) {
+    fail(bind);
+    return stats;
+  }
+  const codec = timeCodecOf(keyHead.header.dataset) as DatasetCodec<FeedRecord>;
+  // length, then header: as the key copy's, each part by its own title.
+  if (sizes.length !== idx.head.parts.length) fail(`the time copy's index names ${idx.head.parts.length} part(s) and ${sizes.length} were given`);
+  for (let i = 0; i < Math.min(sizes.length, idx.head.parts.length); i += 1)
+    if (sizes[i] !== idx.head.parts[i].bytes) fail(`${timePartTitle(i)} holds ${sizes[i]} B, the time copy's index says ${idx.head.parts[i].bytes} B`);
+  if (report.failed("time")) return stats;
+  for (let i = 0; i < idx.head.parts.length; i += 1) {
+    const title = timePartTitle(i);
+    try {
+      const h = readPartHeader(await readPart(time.parts, i, 0, PART_HEADER_BYTES, title), title);
+      if (h.dataset !== header.dataset || h.recordsPerBlock !== header.recordsPerBlock || h.codec !== header.codec || h.part !== i)
+        fail(
+          `${title} names dataset ${h.dataset}, ${h.recordsPerBlock} records a block, codec ${h.codec} and part ${h.part}; its index ${header.dataset}, ${header.recordsPerBlock}, ${header.codec} and ${i}`,
+        );
+    } catch (error) {
+      if (!(error instanceof PackError)) throw error;
+      fail(`${title}: ${error.code}: ${error.message}`);
+    }
+  }
+  if (report.failed("time")) return stats;
+  // Every block through the reader a Worker runs, the order across block
+  // boundaries, the head's bounds, and the sum of the rows.
+  const reader = new PackReader<FeedRecord>(await PackIndex.open(idxBytes), time.parts, codec);
+  const sum = new RowSum();
+  let first: string | null = null;
+  let last: string | null = null;
+  let whole = true;
+  for (const entry of idx.entries) {
+    let rows: FeedRecord[];
+    try {
+      rows = await reader.records(entry);
+    } catch (error) {
+      if (!(error instanceof PackError)) throw error;
+      fail(`block ${entry.index} of the time copy: ${error.code}: ${error.message}`);
+      whole = false;
+      continue;
+    }
+    const head = codec.key(rows[0]);
+    if (last !== null && !(head > last)) fail(`block ${entry.index} of the time copy starts at or below the last time key of the block before it`);
+    first ??= head;
+    last = codec.key(rows[rows.length - 1]);
+    for (const row of rows) sum.add(row);
+  }
+  if (!whole) return stats;
+  if (idx.head.keyMin !== first || idx.head.keyMax !== last) fail("the time copy's head bounds are not its first and last time key");
+  if (sum.count !== keySum.count || sum.hex() !== keySum.hex())
+    fail(`the time copy's ${sum.count} rows are not the ${keySum.count} rows of the key copy: their sums are ${sum.hex().slice(0, 16)}… and ${keySum.hex().slice(0, 16)}…`);
+  if (!report.failed("time"))
+    report.note(
+      "time",
+      "pass",
+      `the time copy (${header.parts} part(s), ${header.blocks} block(s)) holds the ${sum.count} rows of the key copy in (first_seen, key) order${span === null ? "" : ", inside the span"}`,
+    );
+  return stats;
 }
 
 // ---- the verifier
@@ -614,6 +729,7 @@ export async function verifyPack(idx: ByteSource | Uint8Array, parts: PartSource
     refound: 0,
     keyMin: null as string | null,
     keyMax: null as string | null,
+    time: null as VerifyStats["time"],
   };
   let volume: VolumeVerdict | null = null;
   const finish = (stoppedBy: CheckName | null): VerifyResult => {
@@ -693,6 +809,9 @@ export async function verifyPack(idx: ByteSource | Uint8Array, parts: PartSource
   const draw = drawOrdinals(header.records, opts.refind, opts.seed);
   const sample: { key: string; json: string }[] = [];
   const sha = new Sha256();
+  // The rows of the key copy, summed for the time check when a time copy is
+  // given for a dataset that has one.
+  const keySum = options.time !== undefined && FEED_SHAPED.has(header.dataset) ? new RowSum() : null;
   // Blocks that inflated, that also matched their CRC-32, that also decoded.
   let inflated = 0;
   let checked = 0;
@@ -737,8 +856,13 @@ export async function verifyPack(idx: ByteSource | Uint8Array, parts: PartSource
       const key = codec.key(record);
       const fault = nameFault(key, options.psl);
       if (fault !== null) report.fail("name", `the key ${quoteKey(key)}: ${fault}`);
+      if (FEED_SHAPED.has(header.dataset)) {
+        const flags = feedFlagsFault((record as FeedRecord).feedFlags);
+        if (flags !== null) report.fail("record", `the record ${quoteKey(key)} has ${flags}`);
+      }
       if (sources !== null) checkStamps(header.dataset, record, key, sources, report);
       if (draw.has(base + k)) sample.push({ key, json: JSON.stringify(record) });
+      if (keySum !== null) keySum.add(record as FeedRecord);
     }
     lastKey = codec.key(records[records.length - 1]);
     stats.records += records.length;
@@ -823,6 +947,12 @@ export async function verifyPack(idx: ByteSource | Uint8Array, parts: PartSource
       }
     if (!report.failed("refind")) report.note("refind", "pass", `${stats.refound} key(s), the first and the last among them, found by get through the index read by range (seed ${opts.seed})`);
   }
+
+  // time
+  if (options.time === undefined) report.note("time", "skip", "no time copy given");
+  else if (timeCodecOf(header.dataset) === null) report.fail("time", `a time copy is given for dataset ${header.dataset} (${label}), which has none: only feed and new-name do`);
+  else if (!decodedWhole || keySum === null) report.note("time", "skip", "a block of the key copy did not decode, so its rows are not known to compare");
+  else stats.time = await checkTime(options.time, whole.head, keySum, want.span === undefined ? null : spanSeconds(want.span), report);
 
   // psl
   if (want.psl === undefined) report.note("psl", "skip", `no psl annotation; the names were checked under the list ${options.psl.sha256}`);

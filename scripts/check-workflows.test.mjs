@@ -92,7 +92,8 @@ test('workflow policy: JOB_GRANTS holds every job name of the DOM-014 table in T
     assert.ok(names.length > 0, perm);
     for (const n of names) assert.ok(JOB_GRANTS[perm].includes(n), `${perm}: ${n} is in the entry's table and not in JOB_GRANTS`);
   }
-  assert.deepEqual(ROOT_PROMOTE_GRANTS, ['packages', 'issues']);
+  // issues joins with the issue script of DOM-034; until then a caller holds packages alone.
+  assert.deepEqual(ROOT_PROMOTE_GRANTS, ['packages']);
 });
 
 test('workflow policy: rule 1 refuses write-all and read-all, and a missing top-level permissions', () => {
@@ -125,17 +126,31 @@ test('workflow policy: rule 3 refuses a grant outside its row, a grant with no r
   refusedBy(merged, '3');
 });
 
-const CALLER = (uses, extra = '') =>
+// clean.yml with a job `release` that calls `uses`, holding the grants of
+// root-promote.yml's job (contents: read, packages: write) and `extra` lines,
+// and no group of its own unless `group` names one (ruling 18:
+// root-promote.yml holds root-writer itself).
+const CALLER = (uses, extra = '', group = null) =>
   CLEAN.concat(
-    `\n  release:\n    needs: promote\n    permissions:\n      contents: read\n      packages: write\n      issues: write\n${extra}    concurrency:\n      group: root-writer\n      queue: max\n      cancel-in-progress: false\n    uses: ${uses}\n`,
+    `\n  release:\n    needs: promote\n    permissions:\n      contents: read\n      packages: write\n${extra}${group === null ? '' : `    concurrency:\n      group: ${group}\n      queue: max\n      cancel-in-progress: false\n`}    uses: ${uses}\n`,
   );
+const ROOT_PROMOTE_FILE = join(ROOT, '.github', 'workflows', 'root-promote.yml');
+const ROOT_PROMOTE_NAME = '.github/workflows/root-promote.yml';
 
 test('workflow policy: rule 3 lets a job that calls root-promote.yml hold its grants, and rules 5 and 11 skip a reusable call', () => {
   accepted(CALLER('./.github/workflows/root-promote.yml'));
+  // The job `promote` of root-promote.yml may hold packages and issues by JOB_GRANTS; today it holds packages alone.
+  for (const perm of ['packages', 'issues']) assert.ok(JOB_GRANTS[perm].includes('promote'), perm);
   refusedBy(CALLER('./.github/workflows/root-promote.yml', '      actions: write\n'), '3');
   const other = checkText(CALLER('./.github/workflows/other.yml'));
   assert.deepEqual(rulesOf(other), ['3']);
-  assert.equal(other.length, 2, 'packages and issues');
+  assert.equal(other.length, 1, 'packages');
+});
+
+test('workflow policy: rule 3 refuses issues: write on a job that calls root-promote.yml until DOM-034 adds the issue script', () => {
+  const f = checkText(CALLER('./.github/workflows/root-promote.yml', '      issues: write\n'));
+  assert.deepEqual(rulesOf(f), ['3'], JSON.stringify(f));
+  assert.match(f[0].what, /^job release holds issues: write, and JOB_GRANTS names only /);
 });
 
 test('workflow policy: rule 4 refuses a job whose default shell is not bash', () => {
@@ -423,14 +438,78 @@ test('workflow policy: rule 5 refuses a timeout-minutes with no value', () => {
   refusedBy(plant('    timeout-minutes: 5\n', '    timeout-minutes:\n'), '5');
 });
 
-test('workflow policy: rule 13 refuses an unknown queue, a cancel from an expression, and a state push or a root-promote call outside root-writer', () => {
+test('workflow policy: rule 13 refuses an unknown queue, a cancel from an expression, and a state push outside root-writer', () => {
   refusedBy(plant('  queue: max\n  cancel-in-progress: false\n\ndefaults:', '  queue: all\n  cancel-in-progress: false\n\ndefaults:'), '13');
   refusedBy(plant('  queue: max\n  cancel-in-progress: false\n\ndefaults:', "  queue: max\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n\ndefaults:"), '13');
   const CHAIN = '        run: gh workflow run clean.yml --ref main --repo "$GITHUB_REPOSITORY"\n';
   refusedBy(plant(CHAIN, '        run: |\n          node scripts/ghcr/push.mjs \\\n            "$PKG/state" latest state.json:application/json\n'), '13');
   accepted(plant(CHAIN, '        run: node scripts/ghcr/push.mjs "$PKG/obs" seg-1 seg.bin:application/octet-stream\n'));
-  const caller = CALLER('./.github/workflows/root-promote.yml').replace(/(\n {2}release:[\s\S]*?)\n {4}concurrency:\n {6}group: root-writer\n {6}queue: max\n {6}cancel-in-progress: false\n/, '$1\n');
-  refusedBy(caller, '13');
+});
+
+test('workflow policy: rule 13 lets a job that only calls root-promote.yml hold no group, and refuses one inside root-writer (ruling 18)', () => {
+  // The caller with no group of its own: root-promote.yml holds it.
+  accepted(CALLER('./.github/workflows/root-promote.yml'));
+  // The caller in root-writer, its own: it would wait on the workflow it calls (assumed, not measured).
+  const own = checkText(CALLER('./.github/workflows/root-promote.yml', '', 'root-writer'));
+  assert.deepEqual(rulesOf(own), ['13'], JSON.stringify(own));
+  assert.match(own[0].what, /job release calls root-promote\.yml from inside the group root-writer; root-promote\.yml holds the group itself \(ruling 18\)/);
+  // The caller in root-writer through its workflow's group.
+  const viaWorkflow = plant('  group: clean\n', '  group: root-writer\n').concat(
+    '\n  release:\n    needs: promote\n    permissions:\n      contents: read\n      packages: write\n    uses: ./.github/workflows/root-promote.yml\n',
+  );
+  const wf = checkText(viaWorkflow);
+  assert.deepEqual(rulesOf(wf), ['13'], JSON.stringify(wf));
+  assert.match(wf[0].what, /job release calls root-promote\.yml from inside the group root-writer/);
+  // Another group on the caller is its own business; a call of another workflow is not this rule's.
+  accepted(CALLER('./.github/workflows/root-promote.yml', '', 'release'));
+  // A file whose name only ends in root-promote.yml is another workflow: inside
+  // root-writer it gets no clause of this rule, and no grant of rule 3.
+  const nearMiss = checkText(CALLER('./.github/workflows/not-root-promote.yml', '', 'root-writer'));
+  assert.deepEqual(rulesOf(nearMiss), ['3'], JSON.stringify(nearMiss));
+  assert.equal(nearMiss.length, 1, 'packages, and no rule 13');
+});
+
+test('workflow policy: rule 13 holds root-promote.yml itself in root-writer with queue: max and no cancel (ruling 18), by its name', () => {
+  const text = readFileSync(ROOT_PROMOTE_FILE, 'utf8');
+  assert.deepEqual(checkText(text, ROOT_PROMOTE_NAME), []);
+  const swap = (from, to) => {
+    assert.equal(text.split(from).length - 1, 1, from);
+    return text.replace(from, to);
+  };
+  const GROUP = 'concurrency:\n  group: root-writer\n  queue: max\n  cancel-in-progress: false\n';
+  // Planted: the group gone, and the step that runs promote.mjs renamed, so
+  // that the clause of the file's name is the only guard left to fire.
+  const RUN = 'node scripts/root/promote.mjs "${args[@]}"';
+  const bare = swap(GROUP, 'concurrency:\n  group: promote\n  queue: max\n  cancel-in-progress: false\n')
+    .replace(RUN, 'node scripts/root/other.mjs "${args[@]}"')
+    .replace('node scripts/root/rollback.mjs', 'node scripts/root/other.mjs');
+  const byName = checkText(bare, ROOT_PROMOTE_NAME);
+  assert.deepEqual(rulesOf(byName), ['13'], JSON.stringify(byName));
+  assert.match(byName[0].what, /job promote of root-promote\.yml is outside the group root-writer .* \(ruling 18\)/);
+  assert.deepEqual(checkText(bare, '.github/workflows/other.yml'), [], 'the same text under another name is no mover');
+  assert.deepEqual(checkText(bare, '.github/workflows/other-root-promote.yml'), [], 'a name that only ends in root-promote.yml is another workflow');
+  assert.deepEqual(rulesOf(checkText(bare, 'drafts/root-promote.yaml')), ['13'], 'the clause reads the file name in any directory, .yaml too');
+  // The group on the job instead of the workflow: its own, which the clause accepts.
+  const onJob = swap(GROUP, '').replace('  promote:\n', `  promote:\n${GROUP.replace(/^/gm, '    ').trimEnd()}\n`);
+  assert.match(onJob, /^ {2}promote:\n {4}concurrency:\n {6}group: root-writer\n {6}queue: max\n {6}cancel-in-progress: false\n/m);
+  assert.doesNotMatch(onJob, /^concurrency:/m);
+  assert.deepEqual(checkText(onJob.replace(RUN, 'node scripts/root/other.mjs "${args[@]}"').replace('node scripts/root/rollback.mjs', 'node scripts/root/other.mjs'), ROOT_PROMOTE_NAME), []);
+  // The group without queue: max, or with a cancel: refused by the same clause.
+  for (const g of ['concurrency:\n  group: root-writer\n  cancel-in-progress: false\n', 'concurrency:\n  group: root-writer\n  queue: single\n  cancel-in-progress: false\n']) {
+    const f = checkText(swap(GROUP, g).replace(RUN, 'node scripts/root/other.mjs "${args[@]}"').replace('node scripts/root/rollback.mjs', 'node scripts/root/other.mjs'), ROOT_PROMOTE_NAME);
+    assert.deepEqual(rulesOf(f), ['13'], JSON.stringify(f));
+  }
+});
+
+test('workflow policy: rule 13 reads a run of scripts/root/promote.mjs or rollback.mjs as a move of the root, under any name', () => {
+  const CHAIN = '        run: gh workflow run clean.yml --ref main --repo "$GITHUB_REPOSITORY"\n';
+  for (const cmd of ['node scripts/root/promote.mjs --add names:names-d-20261026', 'node scripts/root/rollback.mjs --to r-20261029t080000z']) {
+    const f = checkText(plant(CHAIN, `        run: ${cmd}\n`));
+    assert.deepEqual(rulesOf(f), ['13'], JSON.stringify(f));
+    assert.match(f[0].what, /job measure-chain moves a root or state tag outside the group root-writer/);
+  }
+  // show.mjs only reads.
+  accepted(plant(CHAIN, '        run: node scripts/root/show.mjs --ref latest\n'));
 });
 
 test('workflow policy: rule 13 accepts queue: single, and refuses a root push, and a root-writer group with no queue or no cancel-in-progress: false', () => {
@@ -478,6 +557,29 @@ test('workflow policy: the command line exits 1 and prints FILE:LINE: rule on de
   const good = cli('scripts/fixtures/workflows/clean.yml');
   assert.equal(good.status, 0, good.stdout + good.stderr);
   assert.match(good.stdout, /1 workflow file\(s\) keep the 15 rules/);
+});
+
+test('workflow policy: the command line holds a file named root-promote.yml to its clause of rule 13, and passes the real one', () => {
+  const good = cli('.github/workflows/root-promote.yml');
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  mkdirSync(join(ROOT, '.tmp'), { recursive: true });
+  const dir = mkdtempSync(join(ROOT, '.tmp', 'check-workflows-'));
+  dirs.push(dir);
+  const text = readFileSync(ROOT_PROMOTE_FILE, 'utf8')
+    .replace('  group: root-writer\n', '  group: promote\n')
+    .replaceAll('scripts/root/promote.mjs', 'scripts/root/other.mjs')
+    .replaceAll('scripts/root/rollback.mjs', 'scripts/root/other.mjs');
+  writeFileSync(join(dir, 'root-promote.yml'), text);
+  writeFileSync(join(dir, 'renamed.yml'), text);
+  const rel = (f) =>
+    join(dir, f)
+      .slice(ROOT.length + 1)
+      .replaceAll('\\', '/');
+  const bad = cli(rel('root-promote.yml'));
+  assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+  assert.match(bad.stderr, /root-promote\.yml:\d+: rule 13: job promote of root-promote\.yml is outside the group root-writer/);
+  const renamed = cli(rel('renamed.yml'));
+  assert.equal(renamed.status, 0, renamed.stdout + renamed.stderr);
 });
 
 test('workflow policy: the command line exits 2 on a file it cannot read, even beside a finding', () => {

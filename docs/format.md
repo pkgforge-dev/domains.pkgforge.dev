@@ -41,7 +41,8 @@ section 4.2). Its layers by title:
 | --- | --- |
 | `part.000`, `part.001`, and up | The parts: a 16-byte header, then compressed blocks back to back. A title has at least three digits. |
 | `idx` | The index: a head and a second level. |
-| other titles | Optional layers (`txt.gz`, `tidx`, `summary.json`). A reader that does not know a layer ignores it. |
+| `time.idx`, `time.part.000` and up | Optional, on a pack of `feed` or `new-name`: its time copy, the same rows in `(first_seen, key)` order as a DPK1 pack of its own, with the index `time.idx` and the parts `time.part.NNN` (section 14). |
+| other titles | Optional layers (`txt.gz`, `summary.json`). A reader that does not know a layer ignores it. |
 
 A pack holds its records in ascending key order, with no key twice. The records
 fill blocks in order. Every block holds `records a block` records, except the
@@ -55,7 +56,7 @@ index with zero blocks.
 | --- | --- | --- | --- |
 | 0 | 4 | magic | `DPK1`: `44 50 4b 31` |
 | 4 | 1 | version | `1` |
-| 5 | 1 | dataset | `1` names, `2` domains, `3` feed, `4` reverse IP, `5` new-name |
+| 5 | 1 | dataset | `1` names, `2` domains, `3` feed, `4` reverse IP, `5` new-name, `6` the time copy of feed, `7` the time copy of new-name (section 14) |
 | 6 | 2 | records a block | `u16`, 1 to 65,535 |
 | 8 | 2 | part number | `u16`, 0 for `part.000` |
 | 10 | 1 | codec | `1` deflate-raw, `2` gzip |
@@ -89,7 +90,9 @@ bytes (MEASURED 2026-10-29T03:21:22Z, Node v26.7.0, zlib
 that passes either bound, and a reader refuses a block whose keys pass 16 MiB
 at the record that passes it. A key of the datasets 1, 2, 3 and 5 is at most
 253 bytes, so a block of theirs never passes the key bound: 65,535 keys of 253
-bytes are 16,580,355 bytes.
+bytes are 16,580,355 bytes. A key of the time copies 6 and 7 is at most 257
+bytes (section 14.1), so a block of at most 65,280 of their records never
+passes it: 65,280 keys of 257 bytes are 16,776,960 bytes.
 
 A block in the part is 1 to `raw + floor(raw / 8) + 1,024` bytes, `raw` being
 its raw length. An encoder that cannot shrink a block stores it, and the fixed
@@ -109,8 +112,8 @@ byte with a key before it. So a reader decodes any block alone.
 
 ### 5.1 The key prefix
 
-A record of the datasets `names`, `domains`, `feed` and `new-name` starts with
-its key:
+A record of the datasets `names`, `domains`, `feed` and `new-name`, and of
+their time copies 6 and 7 (section 14.1), starts with its key:
 
 | Field | Encoding | Meaning |
 | --- | --- | --- |
@@ -191,11 +194,26 @@ that `packages/names` accepts, not only a registrable domain
 | 1 | suspect |
 | 2 | corroborated |
 | 3 | censored |
-| 4 to 7 | reserved: the writer writes zero, and a reader keeps what it reads |
+| 4 | suspect-cert: a reason of `suspect`, an event whose certificate is older than 7 days |
+| 5 | suspect-rdap: a reason of `suspect`, an RDAP creation date before 2026-01-01 (`TODO/RULES.md` §5, ruling 19) |
+| 6 and 7 | reserved: the writer writes zero, the verifier refuses another value, and a reader keeps what it reads |
+
+A row is suspect exactly when it holds at least one reason: bit 1 is set when
+bit 4 or bit 5 is, and only then. The writer refuses a row that breaks this
+(`record`), and so does the verifier: its `record` check fails a pack that
+holds one, or a row with bit 6 or 7 set, by the writer's own rule
+(`feedFlagsFault` of `packages/pack`), so a pack from another writer is held
+to it before it is promoted. A reader keeps what it reads. The merge of section 5.6 ORs the
+three bits, so a merged row keeps the rule. A stored suspect row so says which
+rule made it suspect; the certificate age and the RDAP date themselves are not
+stored. The two reason bits are additive under section 11.
 
 A `feed` or `new-name` pack holds one record a key. `first_seen` is a field of
-the record, not part of the key. The order of the rows by `first_seen` is the
-optional layer `tidx`, which DOM-022 defines.
+the record, not part of the key. The same rows in `first_seen` order are the
+pack's optional time copy (section 14), so a page of a window in time order
+reads blocks of the time copy from the bound of its window instead of sorting
+the pack: 1 or 2 for a page of 1,000 rows with no filter in the runs of
+section 14.6, and up to 50 when a filter drops most of the rows it reads.
 
 ### 5.5 Dataset 4, reverse IP
 
@@ -312,7 +330,7 @@ One entry for each block:
 | Field | Encoding |
 | --- | --- |
 | length of the index key | `u16` |
-| the index key | the key of the first record of the block, for the datasets 1, 2, 3 and 5 |
+| the index key | the key of the first record of the block, for the datasets 1, 2, 3, 5, 6 and 7 (for 6 and 7 its time key, section 14.1) |
 | part | `u16` |
 | offset of the block in its part | `u64` |
 | compressed length | `u32`, 1 to `raw + floor(raw / 8) + 1,024` (section 4) |
@@ -320,8 +338,8 @@ One entry for each block:
 | records | `u16`: `records a block`, except for the last block of the pack |
 | CRC-32 of the raw block | `u32` |
 
-Index keys never descend. For the datasets 1, 2, 3 and 5 they ascend, because the
-index key of a block is the key of its first record.
+Index keys never descend. For the datasets 1, 2, 3, 5, 6 and 7 they ascend,
+because the index key of a block is the key of its first record.
 
 ### 6.6 What a reader checks
 
@@ -402,6 +420,12 @@ yet.
 | `dev.pkgforge.domains.sha256` | the SHA-256 of the raw blocks, concatenated in order |
 | `dev.pkgforge.domains.writer` | the Node version and the zlib version of the writer |
 
+The annotations describe the key copy alone: `idx` and the parts `part.NNN`.
+A time copy (section 14) has no manifest and no annotation of its own, and
+`packAnnotations` refuses the datasets 6 and 7. Its layers ride in the manifest
+of its key copy, and the `time` check of the verifier holds it to that copy
+(section 14.2).
+
 The SHA-256 is of the decoded records, not of the compressed blobs. Two writers
 with one input and one `records a block` give one SHA-256, even when their
 zlib builds give other compressed bytes. The push tool of DOM-019 treats a tag
@@ -473,6 +497,13 @@ These are the rules of `docs/architecture.md` section 11, applied to the pack.
 - A change that a reader of version 1 refuses is a new version: a change to any
   byte table of this document, a new codec byte, a new dataset id, or a new
   value of any other `u8` enumeration that the reader refuses.
+- The datasets 6 and 7 are new dataset ids in the layers of a time copy alone
+  (section 14). A reader of version 1 that does not know them reads the parts
+  and the index of the pack, which are unchanged, and ignores the layers
+  `time.idx` and `time.part.NNN` as it ignores any layer it does not know. So
+  the time copy is a new optional layer: an additive change. A pack whose own
+  `idx` and parts were of dataset 6 or 7 would be a new version. No manifest of
+  its own carries one: `packAnnotations` refuses them (section 8).
 
 ## 12. A worked example
 
@@ -567,3 +598,327 @@ In both runs a day source that saw every name on one day costs 0.3 to 0.45
 bytes a name. A second source with random seconds costs about 6 bytes a name
 more. In both runs, 1,000 lookups through an index opened once, with no page
 cache, each read one index page and one block: two range reads.
+
+## 14. The time copy
+
+A pack of the dataset `feed` or `new-name` holds its rows in key order. A page
+of a window in `first_seen` order needs them in time order. The time copy is
+the same rows in `(first_seen, key)` order: optional on each pack, written by
+`writeFeedPack` of `packages/feed` and read by `readFeed` of the same
+package. A reader that does not know it ignores its
+layers (section 11), so a pack with a time copy reads as a pack without one.
+
+Why a copy of the rows, and not an index of positions. The design before this
+one was an optional layer of `(first_seen, ordinal)` pairs over the key copy.
+A pair names a row, not its bytes, so a reader of a row in time order reads the
+row's block of the key copy. The newest rows of a day hold keys spread over the
+whole key range, so one page of them read almost every block: MEASURED
+2026-10-29T09:05:25Z to 09:05:45Z, `node scripts/bench/feed-window.mjs --rows
+500000 --order first_seen.desc --limit 1000` on the code of that design, 122 of
+the 123 blocks of the pack read and 499,712 rows decoded for one page of 1,000
+rows (`docs/research/measure/DOM-022/replaced-ordinal-index-desc.json`). The
+time copy holds the rows themselves, so the newest rows are in its last blocks:
+the same command reads 2 blocks (section 14.6). It costs 0.982 to 1.104 of the
+key copy's bytes in the runs of section 14.6, by how many rows share one
+second, so a pack that carries one is about twice the size.
+
+### 14.1 The layout
+
+The time copy is a DPK1 pack in its own right, sections 2 to 6, in the layers
+`time.idx` (its index) and `time.part.000`, `time.part.001` and up (its parts,
+numbered as the parts of section 2) of the manifest of its key copy. It is of
+its own dataset: `6` for the time copy of `feed` (3), `7` for that of
+`new-name` (5). It holds every row of its key copy once.
+
+The key of a record of 6 or 7 is the row's time key: its `first_seen` as 4
+bytes, big-endian, then the row's own key (a reversed name, section 1).
+Big-endian makes the bytewise order of time keys the order by
+`(first_seen, key)`. A time key is 5 to 257 bytes. Its `first_seen` is 0 to
+2^32 - 1, a time in the year 2162; the key copy's is a `varint` of up to
+2^53 - 1, and section 14.3 says what the writer does with a larger one.
+
+The record is the key prefix of section 5.1 over the time key, with the row's
+`flags` in its `word`, then the fields of section 5.4 after `first_seen`, which
+the time key holds: sources (`mask`), `basis` (`varint`), `confidence` (`u8`)
+and `feed_flags` (`u8`). A record decodes to the row of the key copy: the key
+is the time key without its first 4 bytes, and `first_seen` is those 4 bytes.
+A test of `packages/pack` (`test/time.test.ts`) holds one record by hand: the
+row `com.a` at `first_seen` 300 with source bit 1, basis bits `04`,
+confidence 0 and `feed_flags` `12` (suspect and suspect-cert) is the raw
+block
+
+```text
+00240000012c636f6d2e6102040012
+```
+
+`shared` 0, `word` `24` (9 << 2), the time key `00 00 01 2c` and `com.a`, the
+mask `02`, the basis bits `04`, the confidence `00` and `feed_flags` `12`.
+
+The index is the index of section 6. Its index keys and its key bounds are time
+keys, so `key_min` and `key_max` of its head hold the first and the last
+`first_seen` of the copy. Its head parses with the head reader of
+`packages/pack` (`parseHead`), so a root can hold its record count and the
+size of each part as it holds the key copy's: `packFromManifest` of
+`packages/root` does, and the root lists the copy as the pack's `time`
+(`docs/architecture.md` section 4.6).
+
+The time copy has no manifest and no annotation of its own (section 8).
+
+Why this encoding. Sections 2 to 6 serve it unchanged: one writer, one
+reader, one index, one verifier, and no third format. It takes a dataset byte
+of its own because a reader opens a pack with the codec of its dataset, and a
+record of 6 or 7 is not a record of 3 or 5: its key holds 4 bytes of time and
+is not a name. The rules of section 1 for a name key are kept on the row key
+inside the time key, not on the time key: the writer refuses a row key above
+253 bytes, as the key copy's writer does; the row keys are the key copy's,
+whose names the verifier's `name` check holds to `[a-z0-9_.-]`, and the `time`
+check holds the two copies to the same rows (section 14.2). The format itself
+accepts any byte in a key, the 4 bytes of time among them. A reader of 6 or 7
+refuses a time key of 4 bytes or fewer (`record`): it holds no row key.
+
+### 14.2 The bind
+
+A time copy is bound to its key copy. A reader that holds the two index heads
+checks the half of the bind the heads hold (`timeBindFault` of
+`packages/pack`):
+
+1. its dataset is the time dataset of the key copy's: 6 for 3, 7 for 5;
+2. it holds as many records as the key copy;
+3. its first and last `first_seen`, read from its key bounds, lie inside the
+   span `[start, end)` of the pack, when the caller gives the span.
+
+That the time copy holds exactly the rows of its key copy needs every row of
+both. The `time` check of the verifier (`verifyPack` of `packages/pack`,
+`scripts/verify-pack.mjs`) reads the time copy whole, as a pack of its own:
+its index, the size of each part against the index, each part header, every
+block through the reader with the checks of section 6.6, the order of time keys
+across block boundaries, and the head's key bounds against its first and last
+time key. It checks the bind of the heads, with the span of the annotations.
+Then it compares the rows: it sums the rows of each copy with an order-free sum
+(`RowSum`: the SHA-256 of each row's fields as JSON, added in eight 32-bit lanes
+modulo 2^32, and the count of rows), and the two sums must be equal. The key
+copy is read in key order and the time copy in time order, and addition does
+not depend on the order. The sum finds a time copy written from other rows,
+one changed field of one row among them. It is no defence against rows forged
+to collide.
+
+The verifier prints the check as `time`. It is `SKIP` when no time copy is
+given, so the job that writes a pack that must carry one runs the verifier
+with `--require time` before it calls the promotion, which makes that skip
+unverified, exit 1. The promotion does not check that the verifier ran
+(`docs/architecture.md` section 4.7, rule 2). The check runs only when every
+block of the key copy decoded, since it compares their rows. The local form
+takes the files `time.idx` and `time.part.NNN` beside `idx` and `part.NNN`,
+and the GHCR form reads the layers of those titles from the manifest.
+
+### 14.3 The writer
+
+`writeFeedPack(rows, { codec, compress, sink, time: { sink } })` writes the key
+copy to `sink` and, when `time` is given, the time copy to the sink of `time`.
+The rows come in ascending key order, one a key. With a time copy it reads
+every row into memory first and checks each `first_seen` before it writes a
+byte: a `first_seen` that is not 0 to 2^32 - 1 is refused (`FeedError`, code
+`time`), and neither sink then holds a byte. A test of `packages/feed` plants
+the value at the first, a middle and the last of 300 rows and counts the
+writes of both sinks: 0 and 0. Then it writes the key copy. A row that the
+key copy's writer refuses (a key out of order, a field out of range) is refused
+as it is written, and the key sink then holds what the writer wrote before it,
+as after any refusal of the writer (section 6.6), and the time sink holds
+nothing. Then it sorts the rows by `(first_seen, key)` and writes the time
+copy. It does not check the bind of the two heads it wrote: the time copy is
+written from the rows the key copy took, with the time codec of the key copy's
+dataset, so the heads bind by construction and no check there could refuse.
+The reader and the verifier hold the bind.
+
+Without `time`, the rows stream to the key copy, none is held, and a
+`first_seen` of up to 2^53 - 1 is written. DOM-023 is to write a time copy for
+each pack of the tiers `d`, `w`, `m` and `y` of `feed` and `new-name`, and
+`readFeed` refuses such a pack without one (section 14.4). The memory an
+in-memory sort of a `w`, `m` or `y` pack takes is not measured, nor is the size
+of an hour pack, which is read from its key copy and a sort.
+
+### 14.4 A read in time order
+
+`readFeed` reads the live packs of a window one after another, in the order of
+their spans, newest first for `first_seen.desc`. Every row's `first_seen` lies
+in the span of its pack (the builder refuses another), so the rows of the
+packs follow each other in order. Each pack is read from one of its copies.
+
+- A pack of tier `h` or `seg` with no time copy: every block of the key range
+  of the key copy is read, the rows kept, and sorted in memory. The range is
+  read whole within the block budget or not at all, since the rows of a part
+  of it are not the first rows of the order.
+- A pack of tier `d`, `w`, `m` or `y` with no time copy: refused
+  (`FeedError` `time`, `TIME_COPY_TIERS` of `packages/feed`) before a block of
+  it is read, so no page sorts such a pack whole.
+- A pack with a time copy and no key range (no `suffix`, no `under`): the time
+  copy.
+- A pack with a time copy and a key range. Let `R` be the blocks of the key
+  copy that the range spans, which its index gives with no block read, `B` the
+  blocks of the key copy, `r` the records a block of the time copy, and `w` the
+  rows the page still takes. The key copy reads the `R` blocks. The time copy
+  reads blocks until it holds `w` rows of the range: if the rows of the range
+  are spread over time as the rows of the pack are, a block of the time copy
+  holds about `r * R / B` of them, so it reads about `w * B / (r * R)` blocks.
+  The reader takes the key copy when `R * R * r <= w * B` and the `R` blocks fit
+  the budget left (`keyCopyFirst`), and the time copy otherwise. For a page of
+  1,000 rows over a pack of 123 blocks of 4,096 records, that is a range of 5
+  blocks or fewer. The rule weighs blocks read: the key copy also sorts the rows
+  of its `R` blocks, at most 20,480 rows at that threshold. The estimate does
+  not know the filters, and a filter that drops most rows (`suspect=only`,
+  `basis=rdap`) makes the time copy read more than it estimates; the block
+  budget bounds that page.
+
+In the time copy, a bound is a time key. The pair `(t, "")`, the time key of
+`t` alone, is the first time key of the second `t`. A window `[t0, t1)` is the
+run of time keys from `(t0, "")` up to `(t1, "")`. A day-precision row has its
+`first_seen` at the start of its day and stands for the whole day
+(`docs/architecture.md` section 7.4), so a window that starts inside a day also
+reads the run of that day's first second, `(day start, "")` up to
+`(day start + 1, "")`. Both runs are cut to the span of the pack. A cursor
+`(first_seen, key)` cuts the runs: `first_seen.asc` starts at the time key of
+`(first_seen, key + 0x00)`, the smallest pair above the cursor, and
+`first_seen.desc` ends at the cursor's time key, exclusive. The index gives the
+block of a bound (section 7: a search of the top level held in memory, one page
+read, a search of the page). The page reads blocks from there in order,
+backwards for `first_seen.desc`, until it holds its rows. Each row is checked
+against the key range, the window and the filters after its block is read, so
+a row they drop costs its block too. No block is read twice in one page.
+
+The block budget, 2,000 blocks a request (`docs/architecture.md` section 7.6),
+counts the blocks of both copies. When the next block would pass it, the page
+ends with `partial` and a cursor at its last row. A page that cannot give one
+row inside the budget is refused (`budget`).
+
+### 14.5 What a reader checks
+
+| Who | Check | Refusal |
+| --- | --- | --- |
+| `packFromManifest` of `packages/root`, at promotion | The layers `time.idx` and `time.part.NNN` both or neither, in order, on a pack of `feed` or `new-name` alone; the time index head's dataset byte (6 or 7), its record count against the key index's, each part's size against its layer, and, for a pack of records, the first and last `first_seen` of its key bounds inside the pack's span: the half of the bind (section 14.2) that the heads hold. | `RootError` `pack` |
+| `validateRoot` of `packages/root` | A pack's `time` is `{ idx, parts }` of digests and sizes, on a pack of `feed` or `new-name` alone. | `RootError` `pack`, or `schema` for a field missing or unknown |
+| `validateRoot` of `packages/root`, a writer's (strict) | A pack of `feed` or `new-name` of tier `d`, `w`, `m` or `y` that holds records lists its time copy (`TIME_COPY_TIERS`, equal to that of `packages/feed`, a test holds). A reader's leaves it to `readFeed`, so a bad pack fails the pages over it, not the root. | `RootError` `pack` |
+| `readFeed` | The pack opened is of the dataset the plan reads. | `FeedError` `usage` |
+| `readFeed` | The pack has a time copy exactly when the live set lists one. | `FeedError` `usage` |
+| `readFeed` | A pack of tier `d`, `w`, `m` or `y` has a time copy. | `FeedError` `time` |
+| `readFeed`, before a block of either copy is read | The bind of the two heads (section 14.2), with the pack's span from the live set. | `FeedError` `time` |
+| `writeFeedPack` | A `first_seen` that is not 0 to 2^32 - 1, before any write. | `FeedError` `time` |
+| `PackReader` | Every check of section 6.6 on each block either copy reads, and, when the live set gives them, the part sizes against the parts table. | `PackError` and its code |
+| The codecs of 6 and 7 | A time key of 4 bytes or fewer when read. A row key above 253 bytes, a `first_seen` above 2^32 - 1, or a row that breaks a rule of section 5.4, when written. | `PackError` `record` |
+| `verifyPack`, `scripts/verify-pack.mjs` | The `time` check of section 14.2. | `FAIL time` |
+
+The checks of `readFeed` run in that order, before the page reads a block of
+either copy; a test of `packages/feed` counts the reads of both copies' parts
+and finds 0 for each refusal of the last three.
+
+A reader that holds only the heads cannot tell a time copy of other rows with
+the same count inside the same span: it would serve those rows. The `time`
+check sees it, so the job that writes a pack with a time copy runs the
+verifier with `--require time` before it calls the promotion, which does not
+check that it ran (section 14.2).
+
+### 14.6 Measured cost
+
+`scripts/bench/feed-window.mjs` writes a day pack and its time copy with
+`writeFeedPack`, the production writer at 4,096 records a block, reads one page
+of a window of the day with `readFeed` and its defaults, counts each range read
+of either copy, and compares the page, row by row and field by field, with a
+sort of every row of the window that passes the filter of the page: a page that
+differs exits 3, and none did. The bench exits 1 when a page reads more than 40
+blocks. The rows are synthetic from the seed 1: 500,000 distinct registrable
+domains of 2026-10-26 under a weighted list of suffixes, 200,374 of them (the
+share 0.4 of `--day-share`, its default) at the start of the day from a day
+source and the rest at a random second from a second source. Node v26.7.0, zlib
+1.3.2.1-motley-42c2f19, on win32 x64. Each run's JSON is in
+`docs/research/measure/DOM-022/`, named in the tables, and `runs.tsv` there
+holds each run's command, its UTC start and end, and its exit code, read from
+the process itself.
+
+MEASURED 2026-10-29T14:41:06Z to 14:41:15Z, `node scripts/bench/feed-window.mjs
+--rows 500000 --order first_seen.desc --limit 1000`, exit 0 (`result.json`):
+
+| Copy | Blocks | Parts | Index | Bytes a row |
+| --- | --- | --- | --- | --- |
+| key | 123 | 4,405,063 B | 5,127 B | 8.82 |
+| time | 123 | 4,359,671 B | 5,596 B | 8.731 |
+
+The time copy is 0.99 of the key copy's bytes here, so the pack with both is
+1.99 times the key copy alone. These synthetic `first_seen` values put 40% of
+the rows at one second, where the time copy holds them in key order and front
+codes them as the key copy does.
+
+One page of 1,000 rows, each run the same command with the changes named,
+MEASURED 2026-10-29T14:41:06Z to 14:43:05Z. The window is the whole day unless
+`--from` cuts it at 12:00.
+
+| Run | File | Rows of the window | Copy read | Blocks read | Bytes read | Rows decoded | Exit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| as above | `result.json` | 500,000 | time | 2 | 44,071 | 4,384 | 0 |
+| `--order first_seen.asc` | `asc.json` | 500,000 | time | 1 | 29,477 | 4,096 | 0 |
+| `--suffix com.np` | `suffix-com-np.json` | 6,703 | key, 3 blocks of range | 3 | 113,855 | 12,288 | 0 |
+| `--suffix com.np --copy time` | `suffix-com-np-time.json` | 6,703 | time | 20 | 781,322 | 78,112 | 0 |
+| `--suffix de` | `suffix-de.json` | 33,141 | time | 5 | 167,042 | 16,672 | 0 |
+| `--suffix de --copy key` | `suffix-de-key.json` | 33,141 | key, 9 blocks of range | 9 | 332,385 | 36,864 | 0 |
+| `--suffix de --copy time` | `suffix-de-time.json` | 33,141 | time | 5 | 167,042 | 16,672 | 0 |
+| `--suffix com` | `suffix-com.json` | 267,121 | time | 2 | 44,071 | 4,384 | 0 |
+| `--suffix com --copy key` | `suffix-com-key.json` | 267,121 | key, 66 blocks of range | 66 | 2,318,359 | 270,336 | 1 |
+| `--suspect-share 0.01 --suspect only` | `suspect-only.json` | 4,900 | time | 25 | 988,350 | 98,592 | 0 |
+| `--from 2026-10-26T12:00:00Z` | `from-desc.json` | 349,840 | time | 2 | 44,071 | 4,384 | 0 |
+| `--from 2026-10-26T12:00:00Z --order first_seen.asc` | `from-asc.json` | 349,840 | time | 1 | 29,477 | 4,096 | 0 |
+| `--from 2026-10-26T12:00:00Z --order first_seen.asc --source oi-nrd` | `from-asc-oi-nrd.json` | 149,466 | time | 50 | 1,408,937 | 204,800 | 1 |
+| `--from 2026-10-26T12:00:00Z --source isc-new` | `from-desc-isc-new.json` | 200,374 | time | 39 | 1,548,169 | 155,936 | 0 |
+
+The rule of section 14.4 chose the copy that read fewer blocks in each pair:
+the key copy for `com.np` (3 blocks against 20), the time copy for `de` (5
+against 9) and for `com` (2 against 66). `--copy` forces a copy. The
+`--suspect only` page is a filtered scan of the time copy: 4,900 of the
+500,000 rows carry the flag, and the page read the newest blocks until it held
+1,000 of them.
+
+A window cut inside the day reads the run of the day's first second too,
+since a day-precision row stands for its whole day (section 14.4). With no
+filter that costs nothing more: the 200,374 day rows are rows of the window,
+and an ascending page takes its 1,000 rows from the first block of that run.
+A filter that drops them makes the page read the run whole: `--source oi-nrd`,
+ascending from 12:00, read the 49 blocks of the day rows and kept none of
+them, then 1 block from 12:00, 50 blocks in all, above the 40 of DOM-022's
+Prove. Descending with `--source isc-new`, the page read the blocks from the
+end of the day down to 12:00, whose second-precision rows the filter drops,
+before it reached the day rows: 39 blocks. So a page reads 1 or 2 blocks for
+a window with no filter, or a filter most rows pass; a filter that drops most
+rows, on a window cut inside a day or not, reads the blocks of the rows it
+drops until the page is full, within the block budget of 2,000 (section 14.4).
+
+Real names. MEASURED 2026-10-29T14:43:05Z to 14:43:34Z, the same bench with
+`--names FILE` in place of `--rows`: the keys are the names of a real list,
+each normalised and reduced to its registrable domain, and their `first_seen`
+values and sources are synthetic, from the seed, as above, at the
+`--day-share` named. Two lists of `docs/sources.md`, fetched 2026-10-29:
+WhoisDS's daily file of 2026-10-28 (`newly-registered-domains-2026-10-28.zip`,
+580,041 bytes, SHA-256 `32da7cfc…`, the response dated 11:47:37Z), and ISC's
+dated file `domaindata.2026-10-28.json.gz` (2,936,790 bytes, SHA-256
+`94250002…`, the response dated 11:48:11Z, its `Last-Modified` 11:31:01Z). The
+files given to `--names`, one name a line, are made by `unzip -p
+newly-registered-domains-2026-10-28.zip domain-names.txt > whoisds.txt` and by
+`gzip -dc domaindata.2026-10-28.json.gz | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).map(r=>r.domainname).join("\n")))' > isc.txt`
+(SHA-256 `4c8f5bae…` and `6bca0a0a…`, each exit 0, 2026-10-29T14:35:02Z and
+14:35:19Z). ISC's own `firstseen` is `2026-10-28` on all 343,215 rows of that
+file (MEASURED 2026-10-29T14:35:19Z, the same `gzip -dc` piped to a `node -e`
+that counts the rows by `firstseen`), so `--day-share 1`, every row at the
+start of its day from a day source, is the shape ISC's own day gives. WhoisDS
+is a day source too (precision `day` in `docs/sources.md`).
+
+| List | Rows | Day share | Key copy, bytes a row | Time copy, bytes a row | Time to key | One page | Files |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| WhoisDS 2026-10-28 | 69,798 distinct of 70,000 lines | 0.4 | 9.311 (18 blocks) | 9.86 (18 blocks) | 1.059 | desc 2, asc 1 blocks | `whoisds-desc.json`, `whoisds-asc.json` |
+| WhoisDS 2026-10-28 | 69,798 | 1 | 7.185 | 7.071 | 0.984 | desc 2 blocks | `whoisds-day-desc.json` |
+| ISC 2026-10-28 | 343,215 | 0.4 | 8.266 (84 blocks) | 8.744 (84 blocks) | 1.058 | desc 1, asc 1 blocks | `isc-desc.json`, `isc-asc.json` |
+| ISC 2026-10-28 | 343,215 | 1, ISC's own shape | 6.115 | 6.007 | 0.982 | desc 1 block | `isc-day-desc.json` |
+| ISC 2026-10-28 | 343,215 | 0, every row at a second | 9.051 | 9.99 | 1.104 | desc 1 block | `isc-second-desc.json` |
+
+The time copy's bytes depend on how many rows share one second: rows of one
+second sit in key order in the time copy too, and front code as the key copy
+does, while rows spread over the seconds of the day do not. Over these runs
+the time copy is 0.982 to 1.104 of the key copy's bytes, so a pack with both is
+1.982 to 2.104 times the key copy alone. These are bytes a row of a day pack
+of the sizes measured; the rows a day of `feed` and `new-name` are not
+measured.

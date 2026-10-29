@@ -28,7 +28,9 @@ import { PackError } from "./errors.ts";
 import {
   ANNOTATIONS,
   CODEC_FORMATS,
+  DATASET_FEED_TIME,
   DATASET_LABELS,
+  DATASET_NEW_NAME_TIME,
   DEFAULT_CODEC,
   DEFAULT_PAGE_ENTRIES,
   DEFAULT_PART_LIMIT,
@@ -296,6 +298,9 @@ export class MemorySink implements PackSink {
 export function packAnnotations(summary: PackSummary, writer: string): Record<string, string> {
   const dataset = DATASET_LABELS[summary.dataset];
   if (dataset === undefined) throw usage(`dataset ${summary.dataset} has no annotation name`);
+  // A time copy rides in the manifest of its key copy, whose annotations
+  // describe the key copy alone (docs/format.md section 14).
+  if (summary.dataset === DATASET_FEED_TIME || summary.dataset === DATASET_NEW_NAME_TIME) throw usage(`dataset ${summary.dataset} (${dataset}) is a time copy, which has no manifest of its own`);
   if (writer.length === 0) throw usage("the writer annotation is empty");
   return {
     [ANNOTATIONS.dataset]: dataset,

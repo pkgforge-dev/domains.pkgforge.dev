@@ -5,6 +5,7 @@
 //   PackIndex, readIdx            the index read by range, or whole
 //   mergeRecords, mergePacks      the k-way merge by key
 //   NAMES_CODEC, DOMAINS_CODEC, FEED_CODEC, NEW_NAME_CODEC   the records of the datasets 1, 2, 3 and 5
+//   FEED_TIME_CODEC, NEW_NAME_TIME_CODEC, timeBindFault, RowSum   the time copies 6 and 7 of 3 and 5, and their bind
 //   crc32, Sha256                 the block CRC and the decoded digest
 //   verifyPack, expectFromAnnotations   the verifier of a pack before it counts (DOM-018)
 // It imports nothing from `node:`, so the reader runs in Node and in workerd.
@@ -24,15 +25,27 @@ export {
   FEED_CORROBORATED,
   FEED_PROVISIONAL,
   FEED_SUSPECT,
+  FEED_SUSPECT_CERT,
+  FEED_SUSPECT_RDAP,
+  FEED_SUSPECT_REASONS,
+  FEED_TIME_CODEC,
+  feedFlagsFault,
   FLAG_EXACT,
   FLAG_WILDCARD,
+  MAX_TIME_FIRST_SEEN,
   mergeBits,
   mergeEvidence,
   mergeSeen,
   NAMES_CODEC,
   NEW_NAME_CODEC,
+  NEW_NAME_TIME_CODEC,
   readKey,
+  splitTimeKey,
   strongerConfidence,
+  TIME_KEY_BYTES,
+  TIME_PREFIX_BYTES,
+  timeCodecOf,
+  timeKey,
   writeKey,
 } from "./codec.ts";
 export { crc32, hex32 } from "./crc32.ts";
@@ -46,9 +59,11 @@ export {
   CODEC_GZIP,
   DATASET_DOMAINS,
   DATASET_FEED,
+  DATASET_FEED_TIME,
   DATASET_LABELS,
   DATASET_NAMES,
   DATASET_NEW_NAME,
+  DATASET_NEW_NAME_TIME,
   DATASET_REV,
   DEFAULT_CODEC,
   DEFAULT_PAGE_ENTRIES,
@@ -67,6 +82,8 @@ export {
   packedLimit,
   partTitle,
   readPartHeader,
+  TIME_IDX_TITLE,
+  timePartTitle,
   VERSION,
 } from "./format.ts";
 export type { BlockEntry, Idx, IdxContent, IdxHead, IdxHeader, IndexOptions, PageRef, PartEntry } from "./idx.ts";
@@ -74,6 +91,8 @@ export { checkPartSizes, checkTiling, DEFAULT_HEAD_READ, encodeIdx, headCrc, IDX
 export { mergePacks, mergeRecords } from "./merge.ts";
 export { inflate, PackReader } from "./reader.ts";
 export { Sha256, sha256Hex } from "./sha256.ts";
+export type { TimeSpan } from "./time.ts";
+export { RowSum, timeBindFault } from "./time.ts";
 export type {
   CheckName,
   CheckOutcome,

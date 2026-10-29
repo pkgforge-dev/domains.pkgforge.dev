@@ -88,6 +88,10 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs apps/api --name "new"` passes.
 - **Found 2026-10-28T23:38Z (DOM-015):** `isPublicSuffix` of `packages/names` follows the list's algorithm, so under the implicit rule `*` any single label is a public suffix, `zz` included. For `suffix=zz` to answer 400 `unknown-suffix`, this entry checks the list's explicit rules as well, a check the package does not offer yet.
 - **Found 2026-10-29T04:54Z (DOM-017, wave 3 verification):** every pack this route reads is opened as DOM-030's Found note of the same time says, with `partSizes` and `maxRawBlockBytes`.
+- **Correction 2026-10-29T15:30Z (Approach, Read plan):** the bullet reads "the root's `datasets.feed.packs`". `root.json` lists `datasets.feed` as the list of pack entries itself (`docs/architecture.md` section 4.6, `RootJson` of `packages/root`). `planWindow` of `packages/feed` takes `root.datasets` as it is and refuses another shape (DOM-022's Found of 2026-10-29T10:49Z). The route reads the window with `planWindow` and `readFeed` of `packages/feed`, which give the order by `first_seen`, the cursor `(first_seen, key)`, the filters and the block budget. A pack of tier `d`, `w`, `m` or `y` is read through its time copy, and an hour pack or a segment from its key copy and a sort (`docs/format.md` section 14.4). `feed` and `new-name` hold no overlapping packs (`SEGMENT_OVERLAP` of `packages/root/src/root.ts`), so the Order bullet's disjoint tiers hold.
+- **Found 2026-10-29T15:30Z (DOM-022, wave 4: two costs not measured):**
+  - The workerd CPU of one page through the time copy. DOM-022's bench reports the wall time of Node only (`read_ms`). The cases to time in workerd: the page of 2 blocks, `first_seen.desc` with no filter, and the page of 25 blocks with `suspect=only` (`docs/research/measure/DOM-022/result.json` and `suspect-only.json`). DOM-008 gives the decode CPU of one block.
+  - The key-copy rule of `readFeed` (`keyCopyFirst`) weighs blocks read, not the sort. On a large tier with a page of 10,000 rows, it allows a sort of up to `R * r` rows inside the budget of 2,000 blocks. It is measured only on a day pack of 123 blocks. DOM-054 measures the caps with this route.
 
 ## DOM-033 — /v1/domain, /v1/sources, /v1/status and /v1/coverage
 
@@ -118,6 +122,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `curl -sS 'https://domains.pkgforge.dev/v1/suffixes?since=7d' | jq '.data | to_entries | sort_by(-.value.new_registrable) | .[0:5]'` prints the five largest suffixes.
   - `curl -sS -o /dev/null -w '%{http_code}' https://domains.pkgforge.dev/v1/domain/not-a-real-domain-xyz-123.com` prints `404`.
   - `node scripts/test.mjs apps/api --name "domain"` and `node scripts/test.mjs packages/compact --name "summary"` pass.
+- **Correction 2026-10-29T15:30Z (Premise, the empty coverage layer):** the Premise gives the layer as `{"pairs":[],"gaps":{}}` until DOM-035 closes. DOM-020 writes `{"as_of":null,"day":null,"pairs":[],"gaps":{}}`: `EMPTY_COVERAGE` of `packages/root/src/build.ts`, the shape of `docs/architecture.md` section 4.6 and of DOM-035's Output bullet, with nothing measured. A rollback takes the target's coverage table.
 
 ## DOM-039 — Subdomains, name lookup, name listing and batch lookup
 
@@ -304,6 +309,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs packages/reader` passes, and `node scripts/test.mjs packages/docs --name "contract"` passes.
   - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq '.layers[].annotations["org.opencontainers.image.title"]'` lists `root.json`, `sources.json` and `coverage.json`.
   - Planted break: remove a route from the registry without editing `stable.json`, and `node scripts/test.mjs packages/docs --name "contract"` fails.
+- **Found 2026-10-29T15:30Z (DOM-020, wave 4: the reader's mode of the root):** `validateRoot(json, { strict: false })` of `packages/root` is the reader's check of `root.json`, and `openRoot` reuses it. It skips a dataset it does not know and keeps only the fields of the datasets it knows. `withdrawn` is required and checked in both modes, but a reader that skips an unknown dataset does not check that dataset's packs against `withdrawn`. `docs/consumer.md` states it beside the rule that a reader ignores unknown fields. A reader's mode also leaves a `d`, `w`, `m` or `y` pack of `feed` or `new-name` with no time copy to `readFeed`, which refuses the pages over it (`docs/format.md` section 14.5).
 
 ## DOM-062 — Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev
 

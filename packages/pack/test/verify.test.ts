@@ -31,20 +31,27 @@ import {
   BUILTIN_CODECS,
   type ByteSource,
   ByteWriter,
+  type DatasetCodec,
   DOMAINS_CODEC,
   type DomainRecord,
   encodeIdx,
   encodePartHeader,
   FEED_CODEC,
+  FEED_SUSPECT,
+  FEED_SUSPECT_CERT,
+  FEED_TIME_CODEC,
   type FeedRecord,
   FLAG_EXACT,
   FLAG_WILDCARD,
   NAMES_CODEC,
   type NameRecord,
   NEW_NAME_CODEC,
+  NEW_NAME_TIME_CODEC,
   PackReader,
   partsSource,
   Sha256,
+  timeKey,
+  writeKey,
 } from "../src/index.ts";
 import { CHECKS, type CheckName, type Expect, expectFromAnnotations, KEY_SHOWN, type PartSource, quoteKey, type VerifyOptions, type VerifyResult, verifyPack } from "../src/verify.ts";
 import { collect, type MemPack, writeMem } from "./helpers.ts";
@@ -178,7 +185,7 @@ const feedPack = async (rows: FeedRecord[], codec = FEED_CODEC): Promise<TestPac
 
 // ---- the clean pack
 
-test("verify: the clean pack passes every check, and its volume at the median is ok", async () => {
+test("verify: the clean pack passes every check but time, which skips: a names pack has no time copy; and its volume at the median is ok", async () => {
   const r = await verify(clean, clean.expect, { volume: volumeAt(CLEAN_COUNT) });
   assert.deepEqual(r.errors, []);
   assert.equal(r.ok, true);
@@ -187,8 +194,9 @@ test("verify: the clean pack passes every check, and its volume at the median is
     r.checks.map((c) => c.check),
     [...CHECKS],
   );
-  for (const c of r.checks) assert.equal(c.status, "pass", `${c.check}: ${c.detail}`);
-  assert.deepEqual(r.unverified, []);
+  for (const c of r.checks) assert.equal(c.status, c.check === "time" ? "skip" : "pass", `${c.check}: ${c.detail}`);
+  assert.equal(detailOf(r, "time"), "no time copy given");
+  assert.deepEqual(r.unverified, ["time"]);
   assert.equal(r.stats.records, CLEAN_COUNT);
   assert.equal(r.stats.blocks, 10);
   assert.equal(r.stats.sha256, clean.expect.sha256);
@@ -693,8 +701,8 @@ test("verify: a new-name pack (dataset 5) is checked as a feed pack: it passes, 
   assert.deepEqual(r.errors, []);
   assert.equal(r.stats.dataset, 5);
   assert.match(detailOf(r, "dataset"), /^5 \(new-name\), as the annotation says$/);
-  // Every check but the volume, which has no rule here.
-  assert.deepEqual(r.unverified, ["volume"]);
+  // Every check but the time copy, which is not given, and the volume, which has no rule here.
+  assert.deepEqual(r.unverified, ["time", "volume"]);
   const bad = await feedPack(
     feedRows().map((x, i) => (i === 7 ? { ...x, firstSeen: DAY } : x)),
     NEW_NAME_CODEC,
@@ -713,7 +721,7 @@ test("verify: an empty pack fails no check, and the checks over its blocks and r
   // Nothing to read or to find: skip, never a pass over 0 blocks or 0 keys.
   for (const check of OF_BLOCKS) assert.deepEqual([status(r)[check], detailOf(r, check)], ["skip", "the pack holds no block"], check);
   assert.deepEqual([status(r).refind, detailOf(r, "refind")], ["skip", "the pack holds no record to find"]);
-  assert.deepEqual(r.unverified, [...OF_BLOCKS, "refind", "volume"]);
+  assert.deepEqual(r.unverified, [...OF_BLOCKS, "refind", "time", "volume"]);
   // The checks that compared the pack with its head and its annotations pass,
   // and sources and precision say that only the registry was compared.
   for (const check of ["count", "bounds", "sha256"] as const) assert.equal(status(r)[check], "pass", check);
@@ -740,7 +748,7 @@ test("verify: a check with nothing to compare against is listed as skip, never a
   const r = await verify(clean, {});
   assert.equal(r.ok, true);
   assert.equal(r.verdict, "ok");
-  const skipped: CheckName[] = ["dataset", "length", "count", "sha256", "psl", "sources", "precision", "volume"];
+  const skipped: CheckName[] = ["dataset", "length", "count", "sha256", "time", "psl", "sources", "precision", "volume"];
   const s = status(r);
   for (const check of CHECKS) assert.equal(s[check], skipped.includes(check) ? "skip" : "pass", check);
   assert.deepEqual(r.unverified, skipped);
@@ -759,7 +767,7 @@ test("verify: a check of require that skipped makes the verdict unverified, belo
   assert.equal(r.verdict, "unverified");
   // Every annotation the pack states, each required: ok.
   const all = await verify(clean, clean.expect, { require: ["dataset", "length", "count", "sha256", "psl", "sources", "precision"] });
-  assert.deepEqual([all.ok, all.verdict, all.unverified], [true, "ok", ["volume"]]);
+  assert.deepEqual([all.ok, all.verdict, all.unverified], [true, "ok", ["time", "volume"]]);
   // A failure ranks above it.
   const failing = await verify(clean, { count: CLEAN_COUNT + 1 }, { require: ["sha256"] });
   assert.deepEqual([failing.ok, failing.verdict, failed(failing)], [false, "fail", ["count"]]);
@@ -837,6 +845,211 @@ test("verify: the committed fixtures hold the synthetic records and match their 
   // The committed clean pack passes with its own annotations.
   const r = await verifyPack(idx, sized([part]), expectFromAnnotations(annotations), { psl: PSL, registry: REGISTRY });
   assert.deepEqual(r.errors, []);
+});
+
+// ---- the time copy (docs/format.md section 14)
+
+// The feed rows in (first_seen, key) order.
+const byTime = (a: FeedRecord, b: FeedRecord): number => a.firstSeen - b.firstSeen || byKey(a, b);
+
+// A time copy written from `rows` (sorted here) with `codec`, at 16 records a
+// block, as the PartSource and index verifyPack takes.
+async function timeCopy(rows: FeedRecord[], codec = FEED_TIME_CODEC): Promise<{ idx: Uint8Array; parts: PartSource; mem: MemPack }> {
+  const mem = await writeMem([...rows].sort(byTime), { codec, recordsPerBlock: 16, pageEntries: 4 });
+  return { idx: mem.summary.idx, parts: sized(mem.parts), mem };
+}
+
+// Synthetic feed rows whose first_seen values repeat and do not follow the
+// keys: the time copy is in another order than the key copy.
+const timedRows = (): FeedRecord[] => feedRows().map((r, i) => ({ ...r, firstSeen: DAY_START + ((i * 7919) % 300) * 60 }));
+
+test("verify: a feed pack's time copy passes time, holding the key copy's rows in (first_seen, key) order; with none, time skips and --require time is unverified", async () => {
+  const rows = timedRows();
+  const pack = await feedPack(rows);
+  const time = await timeCopy(rows);
+  assert.ok(time.mem.summary.blocks > 1);
+  const r = await verify(pack, pack.expect, { time });
+  assert.deepEqual(r.errors, []);
+  assert.equal(status(r).time, "pass");
+  assert.match(detailOf(r, "time"), /^the time copy \(1 part\(s\), 38 block\(s\)\) holds the 600 rows of the key copy in \(first_seen, key\) order, inside the span$/);
+  assert.deepEqual(r.stats.time, { parts: 1, blocks: 38, records: 600, idxBytes: time.idx.length, partBytes: time.mem.summary.partBytes });
+  // new-name with its own time copy, dataset 7.
+  const nn = await feedPack(rows, NEW_NAME_CODEC);
+  assert.equal(status(await verify(nn, nn.expect, { time: await timeCopy(rows, NEW_NAME_TIME_CODEC) })).time, "pass");
+  // No time copy: skip, and a job that requires it gets unverified.
+  const none = await verify(pack, pack.expect, { require: ["time"] });
+  assert.deepEqual([none.ok, none.verdict, status(none).time, detailOf(none, "time")], [false, "unverified", "skip", "no time copy given"]);
+  assert.deepEqual([(await verify(pack, pack.expect, { time, require: ["time"] })).verdict], ["ok"]);
+});
+
+test("verify: a time copy of other rows fails time alone, by its bind or by its rows: fewer or more records, another dataset, rows outside the span, one row changed", async () => {
+  const rows = timedRows();
+  const pack = await feedPack(rows);
+  const timeOf = (other: FeedRecord[], codec = FEED_TIME_CODEC) => timeCopy(other, codec);
+  // One row fewer, and one row more: the bind's records, each way.
+  failsAlone(await verify(pack, pack.expect, { time: await timeOf(rows.slice(1)) }), "time", /^the time copy holds 599 records and its key copy 600$/);
+  const extra: FeedRecord = { ...rows[0], key: "com.synthetic-extra-row" };
+  assert.ok(!rows.some((x) => x.key === extra.key));
+  failsAlone(await verify(pack, pack.expect, { time: await timeOf([...rows, extra]) }), "time", /^the time copy holds 601 records and its key copy 600$/);
+  // The time copy of new-name beside a feed key copy: the bind's dataset.
+  failsAlone(await verify(pack, pack.expect, { time: await timeOf(rows, NEW_NAME_TIME_CODEC) }), "time", /^the time copy is dataset 7; the time copy of dataset 3 is dataset 6$/);
+  // Every row a day later: outside the span of the annotations.
+  failsAlone(await verify(pack, pack.expect, { time: await timeOf(rows.map((x) => ({ ...x, firstSeen: x.firstSeen + 86_400 }))) }), "time", /outside the span \[\d+, \d+\) of the pack$/);
+  // The same count, the same span, one row's confidence changed: the bind holds
+  // and the sums differ. A reader's bind check cannot see this; the verifier does.
+  const changed = rows.map((x, i) => (i === 300 ? { ...x, confidence: 3 } : x));
+  failsAlone(
+    await verify(pack, pack.expect, { time: await timeOf(changed) }),
+    "time",
+    /^the time copy's 600 rows are not the 600 rows of the key copy: their sums are [0-9a-f]{16}… and [0-9a-f]{16}…$/,
+  );
+  // One row moved by a second inside the span: its time key is another.
+  const moved = rows.map((x, i) => (i === 7 ? { ...x, firstSeen: x.firstSeen + 1 } : x));
+  failsAlone(await verify(pack, pack.expect, { time: await timeOf(moved) }), "time", /are not the 600 rows of the key copy/);
+});
+
+test("verify: a time copy whose bytes break fails time alone: a part shorter than its index, a part more than it names, a part header that differs in each field, a block that does not inflate", async () => {
+  const rows = timedRows();
+  const pack = await feedPack(rows);
+  const time = await timeCopy(rows);
+  const part = time.mem.parts[0];
+  const withPart = (bytes: Uint8Array, size = bytes.length) => ({ idx: time.idx, parts: sized([bytes], [size]) });
+  // A part shorter than the index says.
+  failsAlone(await verify(pack, pack.expect, { time: withPart(part.subarray(0, part.length - 1)) }), "time", /^time\.part\.000 holds \d+ B, the time copy's index says \d+ B$/);
+  // A second time part that the index does not name.
+  failsAlone(await verify(pack, pack.expect, { time: { idx: time.idx, parts: sized([part, part]) } }), "time", /^the time copy's index names 1 part\(s\) and 2 were given$/);
+  // A part header that differs from its index in one field: byte 5 the
+  // dataset, 6 the records a block, 8 the part number, 10 the codec (2, gzip,
+  // a codec the reader knows).
+  for (const [at, value, said] of [
+    [5, 3, "dataset 3, 16 records a block, codec 1 and part 0"],
+    [6, 17, "dataset 6, 17 records a block, codec 1 and part 0"],
+    [8, 1, "dataset 6, 16 records a block, codec 1 and part 1"],
+    [10, 2, "dataset 6, 16 records a block, codec 2 and part 0"],
+  ] as const) {
+    const changed = part.slice();
+    changed[at] = value;
+    failsAlone(await verify(pack, pack.expect, { time: withPart(changed) }), "time", new RegExp(`^time\\.part\\.000 names ${said}; its index 6, 16, 1 and 0$`));
+  }
+  // A byte of a block flipped: the block of the time copy is refused by the reader.
+  const flipped = part.slice();
+  flipped[40] ^= 0xff;
+  const r = await verify(pack, pack.expect, { time: withPart(flipped) });
+  failsAlone(r, "time", /^block 0 of the time copy: (inflate|crc): /);
+  // A time copy given for a names pack.
+  failsAlone(await verify(clean, clean.expect, { time }), "time", /^a time copy is given for dataset 1 \(names\), which has none: only feed and new-name do$/);
+  // An index that does not parse.
+  failsAlone(await verify(pack, pack.expect, { time: { idx: time.idx.subarray(0, 63), parts: time.parts } }), "time", /^the time copy's index is refused: head: /);
+});
+
+test("verify: the time check skips when a block of the key copy did not decode, and a time option that is not a copy is a usage error", async () => {
+  const rows = timedRows();
+  const pack = await feedPack(rows);
+  const time = await timeCopy(rows);
+  const broken = pack.parts[0].slice();
+  broken[40] ^= 0xff;
+  const r = await verify(pack, pack.expect, { time }, sized([broken]));
+  assert.equal(status(r).time, "skip");
+  assert.equal(detailOf(r, "time"), "a block of the key copy did not decode, so its rows are not known to compare");
+  await assert.rejects(() => verify(pack, pack.expect, { time: { idx: time.idx } as never }), /^PackError: the time copy is not an index and a PartSource/);
+});
+
+// A one-part time copy of dataset 6 built by hand: each block written by
+// FEED_TIME_CODEC (which holds the order inside it) and compressed by the
+// production compressor, and an index of those blocks with the head bounds
+// given, by default the first and the last time key of `rows`. The writer's
+// own order check across blocks and its bounds are not on this path.
+async function assembleTime(blocks: readonly FeedRecord[][], rows: readonly FeedRecord[], bounds: { keyMin?: string; keyMax?: string } = {}): Promise<{ idx: Uint8Array; parts: PartSource }> {
+  const chunks: Uint8Array[] = [encodePartHeader({ dataset: 6, recordsPerBlock: 16, part: 0, codec: 1 })];
+  const entries: BlockEntry[] = [];
+  let offset = 16;
+  for (const block of blocks) {
+    const out = new ByteWriter();
+    let prev: FeedRecord | null = null;
+    for (const r of block) {
+      FEED_TIME_CODEC.encodeRecord(prev, r, out);
+      prev = r;
+    }
+    const raw = out.take();
+    const packed = await nodeCompress(1, raw);
+    entries.push({ index: entries.length, key: FEED_TIME_CODEC.key(block[0]), part: 0, offset, packed: packed.length, raw: raw.length, records: block.length, crc: zlibCrc32(raw) });
+    chunks.push(packed);
+    offset += packed.length;
+  }
+  const part = concat(chunks);
+  const sorted = [...rows].sort(byTime);
+  const idx = encodeIdx({
+    dataset: 6,
+    codec: 1,
+    recordsPerBlock: 16,
+    pageEntries: 4,
+    records: rows.length,
+    parts: [{ bytes: part.length, firstBlock: 0, blocks: entries.length }],
+    keyMin: bounds.keyMin ?? FEED_TIME_CODEC.key(sorted[0]),
+    keyMax: bounds.keyMax ?? FEED_TIME_CODEC.key(sorted[sorted.length - 1]),
+    entries,
+  });
+  return { idx, parts: sized([part]) };
+}
+
+test("verify: a time copy whose blocks overlap across a boundary, or whose head bounds are a second off, fails time alone", async () => {
+  const rows = timedRows();
+  const pack = await feedPack(rows);
+  const inTime = [...rows].sort(byTime);
+  const blocks: FeedRecord[][] = [];
+  for (let i = 0; i < inTime.length; i += 16) blocks.push(inTime.slice(i, i + 16));
+  // The blocks of the writer, assembled by hand: the control passes.
+  const control = await verify(pack, pack.expect, { time: await assembleTime(blocks, rows) });
+  assert.deepEqual(control.errors, []);
+  assert.equal(status(control).time, "pass");
+  // The first row of block 1 and the last row of block 0 change places: each
+  // block in order, the index keys ascending, the same rows and bounds, and
+  // block 1 starts below the last time key of block 0.
+  const a = [...blocks[0].slice(0, 15), blocks[1][0]];
+  const b = [blocks[0][15], ...blocks[1].slice(1)];
+  const overlap = await verify(pack, pack.expect, { time: await assembleTime([a, b, ...blocks.slice(2)], rows) });
+  failsAlone(overlap, "time", /^block 1 of the time copy starts at or below the last time key of the block before it$/);
+  // The head's smallest time key a second after the first row's, and,
+  // apart, its largest a second before the last row's: both inside the span.
+  const first = inTime[0];
+  const last = inTime[inTime.length - 1];
+  const bounds = /^the time copy's head bounds are not its first and last time key$/;
+  failsAlone(await verify(pack, pack.expect, { time: await assembleTime(blocks, rows, { keyMin: timeKey(first.firstSeen + 1, first.key) }) }), "time", bounds);
+  failsAlone(await verify(pack, pack.expect, { time: await assembleTime(blocks, rows, { keyMax: timeKey(last.firstSeen - 1, last.key) }) }), "time", bounds);
+});
+
+// A writer other than encodeRecord (synthetic): the record layout of `codec`
+// with every field written as given, the feed_flags rule left out.
+const laxFeed = (codec: DatasetCodec<FeedRecord>): DatasetCodec<FeedRecord> => ({
+  ...codec,
+  encodeRecord(prev: FeedRecord | null, r: FeedRecord, out: ByteWriter): void {
+    writeKey(prev === null ? null : prev.key, r.key, r.flags, out, codec.maxKeyBytes);
+    out.varint(r.firstSeen);
+    out.mask(r.sources);
+    out.varint(r.basis);
+    out.u8(r.confidence);
+    out.u8(r.feedFlags);
+  },
+});
+
+test("verify: a feed or new-name row whose feed_flags break the rule of section 5.4 fails record alone: suspect with no reason, a reason with no suspect, a reserved bit", async () => {
+  const at = (flags: number) => feedRows().map((x, i) => (i === 9 ? { ...x, feedFlags: flags } : x));
+  for (const codec of [FEED_CODEC, NEW_NAME_CODEC]) {
+    // The strict codec refuses each of these rows; the lax writer writes them.
+    assert.throws(() => codec.encodeRecord(null, at(FEED_SUSPECT)[9], new ByteWriter()), /suspect \(bit 1\) is set exactly when a reason is/);
+    // Control: a suspect row with its reason, written by the lax writer, passes.
+    assert.deepEqual((await verify(await feedPack(at(FEED_SUSPECT | FEED_SUSPECT_CERT), laxFeed(codec)))).errors, [], codec.name);
+    const key = literal(quoteKey(CLEAN[9].key));
+    for (const [flags, said] of [
+      [FEED_SUSPECT, "feed flags 2: suspect \\(bit 1\\) is set exactly when a reason is \\(bit 4 suspect-cert, bit 5 suspect-rdap\\)"],
+      [FEED_SUSPECT_CERT, "feed flags 16: suspect \\(bit 1\\) is set exactly when a reason is"],
+      [64 | FEED_SUSPECT | FEED_SUSPECT_CERT, "feed flags 82; the known bits are 0 to 5"],
+    ] as const) {
+      const r = await verify(await feedPack(at(flags), laxFeed(codec)));
+      failsAlone(r, "record", new RegExp(`^the record ${key} has ${said}`));
+      assert.equal(r.errors.length, 1, `${codec.name} ${flags}`);
+    }
+  }
 });
 
 function byKey(a: { key: string }, b: { key: string }): number {

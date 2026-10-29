@@ -1,0 +1,53 @@
+{
+  "schema": "domains.bench.feed-window.v1",
+  "entry": "DOM-022",
+  "started_at": "2026-10-29T09:05:25.041Z",
+  "finished_at": "2026-10-29T09:05:45.026Z",
+  "runtime": {
+    "writer": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "seed": 1,
+  "rows_of": "synthetic, from the seed: distinct registrable domains of 2026-10-26 under a weighted list of suffixes; 40% day-precision rows of a day source (bit 8) at the start of the day, 60% second-precision rows of a second source (bit 1) at a random second; no row suspect or provisional",
+  "read_of": "readFeed of packages/feed with its defaults (scanBlocks 8, block budget 2000) over the whole day, every read of a part, of the idx and of the tidx counted; read_ms is Node wall time in this process, not workerd CPU time",
+  "rows": 500000,
+  "day_precision_rows": 200374,
+  "records_per_block": 4096,
+  "blocks": 123,
+  "part_bytes": 4405063,
+  "idx_bytes": 5127,
+  "tidx_bytes": 4005900,
+  "tidx_bytes_per_row": 8.012,
+  "write_ms": 4414.367,
+  "window": {
+    "start": "2026-10-26T00:00:00Z",
+    "end": "2026-10-27T00:00:00Z",
+    "suffix": null,
+    "rows": 500000
+  },
+  "page": {
+    "order": "first_seen.desc",
+    "limit": 1000,
+    "rows": 1000,
+    "partial": false,
+    "blocks_read": 122,
+    "blocks_read_share": 0.992,
+    "block_bytes_read": 4402253,
+    "rows_decoded": 499712,
+    "tidx_pages_read": 2,
+    "tidx_reads": 3,
+    "tidx_bytes_read": 76032,
+    "idx_reads": 3,
+    "read_ms": 12761.347
+  },
+  "criteria": [
+    {
+      "name": "one-page-at-most-40-blocks",
+      "value": 122,
+      "limit": 40,
+      "pass": false
+    }
+  ],
+  "pass": false
+}

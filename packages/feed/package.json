@@ -1,0 +1,11 @@
+{
+  "name": "@domains/feed",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The new-domain feed: rows of the feed and new-name datasets built from the exact join and the hourly filter, their confidence and suspect rules, the optional time copy (the rows in first_seen order, docs/format.md section 14), the window planner over the live set, and the reader that pages rows in first_seen order from the time copy or the key copy. Runs in Node and in workerd alike.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
