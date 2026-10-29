@@ -73,7 +73,7 @@ is the only one.
   - DOM-020 also on `root-promote.yml` run 40905355025: `root:latest` holds `root_seq` 1 with no pack, and reads with no credential.
   - Ruling 18 is measured: two calls of `root-promote.yml` queue in its group `root-writer` (runs 40905625954 and 40905643334, the second promote job 2 s after the first ended). The caller that measured it is removed.
 - Asked the operator three design questions from wave 4's findings and recorded the answers as rulings 23 to 25: a quarantined day is served but never as new (DOM-029); a day no source covers is a hole named in `gaps`, not an empty pack (DOM-029); a rebuilt tier pack takes the suffix `-rN` on its tag (DOM-023).
-- Moved biome to 2.6.4 (Renovate #1); its new rule `useMathMinMax` flags four string reductions, each now carrying a `biome-ignore` with its reason.
+- Moved biome to 2.6.4 (Renovate #1); its new rule `useMathMinMax` flags four string reductions, each now carrying a `biome-ignore` with its reason. Moved Node to 26.13.0 and `@types/node` to 26.6.6 (#2); the local gate ran on Node 26.7.0, and `ci.yml` runs the new version. Closed #3 (`@cloudflare/workers-types` 5.20261029.1) under ruling 20 with its reason: the types stay at 5.20261013.1, the compatibility date the pinned workerd runs, and DOM-030 moves wrangler, the date and the types together.
 
 ## What is in progress
 
@@ -93,20 +93,19 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
 
 ## Start here next session
 
-1. Renovate's pull requests #1 (biome), #2 (node) and #3 (workers-types), each into the tree with a green gate (ruling 20).
-2. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
+1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-011 closes after its 24 hours, and DOM-012 after 7 days.
-3. DOM-003, once DOM-001 and DOM-002 have closed.
-4. Compaction: DOM-023, with its Decision of 2026-10-29T15:18Z (a rebuild suffix on tier tags) and the duties its Found of 2026-10-29T15:30Z lists.
-5. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
-6. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
-7. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
-8. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
-9. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
-10. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
-11. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
-12. The root documents and the consumer contract: DOM-059, DOM-060.
+2. DOM-003, once DOM-001 and DOM-002 have closed.
+3. Compaction: DOM-023, with its Decision of 2026-10-29T15:18Z (a rebuild suffix on tier tags) and the duties its Found of 2026-10-29T15:30Z lists.
+4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
+5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
+6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+7. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
+8. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
+9. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
+10. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
+11. The root documents and the consumer contract: DOM-059, DOM-060.
 
 `node scripts/todo/next.mjs` derives the same waves from the `Depends on` lines.
 
