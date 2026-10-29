@@ -28,6 +28,7 @@ const SAMPLES = {
   'slack-token': `${'xo' + 'xb-'}${'1234567890'}-${'1234567890'}-${fill(24, 'k')}`,
   'aws-access-key-id': `aws_access_key_id = ${'AK' + 'IA'}${fill(16, 'Q')}`,
   'generic-bearer': `Authorization: ${'Bear' + 'er '}${fill(40, 'g')}.${fill(8, 'h')}`,
+  'cloudflare-account-name': `names the account \`${'someone'}${'@'}${'example.org'}${"'s Acc"}ount\``,
 };
 
 test('every shape matches its sample, and every sample is named by its own shape', () => {
@@ -46,6 +47,8 @@ test('prose that mentions the shapes by name does not match', () => {
     'Slack tokens start with xoxb- or xoxp-, and an AWS key id starts with AKIA.',
     'The file hf_transfer is a tool, and npm_config_cache is a variable.',
     'The key AKIAXXXX is too short, and AKIA followed by lower case is prose.',
+    "wrangler whoami names the operator's account, and a user's Account page lists it.",
+    'Mail domains@pkgforge.dev about the account.',
   ].join('\n');
   assert.deepEqual(scanText('docs/x.md', prose).findings, []);
 });

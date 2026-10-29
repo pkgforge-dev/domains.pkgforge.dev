@@ -53,7 +53,7 @@ inline `-m` with backticks.
 
 ⛔ **Never run a destructive git command on the working tree**: no
 `git checkout <path>`, `git restore`, `git clean`, `git stash`, `git reset --hard`,
-no force-push, no amend of a pushed commit. They cannot be told apart from the
+no force-push (except under ruling 21), no amend of a pushed commit. They cannot be told apart from the
 same command run over someone else's uncommitted work. `git status` and
 `git diff` are for looking.
 
@@ -286,6 +286,28 @@ where this record holds none, it says so.
     its reason, and no evidence entry. The format stays version 1. Overturn:
     the operator's ruling; a signed time or an earlier epoch is DPK1 version 2
     (`docs/format.md` section 11).
+20. **The agent decides common-sense matters itself** (operator, 2026-10-29:
+    "never ask common sense trivial questions like these again, always do it
+    yourself", answering a question on Renovate's pull requests). A question
+    goes to the operator only when it needs a ruling on the design, the scope
+    or the cost, or an act only the operator can do. Everything else the
+    agent decides with the sensible default, does, and records with its
+    reason. Overturn: the operator's ruling.
+21. **A force-push is allowed, with the admin bypass of `main`'s protection,
+    when the operator asks for one or the need for one arises** (operator,
+    2026-10-29). It narrows `AGENTS.md` absolute 17 and
+    `docs/conventions/git.md` section 5. A rewrite changes the SHA of every
+    later commit, which the record, `docs/resources.md` and the immutable
+    annotations of GHCR artifacts cite, so the agent weighs that before it
+    rewrites, and records the rewrite, its reason and the map of old to new
+    SHAs in `TODO/PROGRESS.md`. Overturn: the operator's ruling.
+22. **The root names every PSL hash in use** (operator, 2026-10-29, choosing
+    the recommended option "Every hash in use"). `root.json` holds `psl`, the
+    list pinned at promotion, and `psl_live`, every hash its live packs were
+    built under; each pack keeps its own `dev.pkgforge.domains.psl`. A caller
+    sees which lists answered (absolute 11) while packs built under an older
+    list wait for compaction (DOM-020, DOM-023). Overturn: the operator's
+    ruling.
 
 Also settled, as a default and not as an operator ruling:
 

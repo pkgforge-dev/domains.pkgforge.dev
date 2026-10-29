@@ -7,7 +7,7 @@ is the only one.
 ## State
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it.
-- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 and 19 on 2026-10-29), then works the order unattended.
+- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 22 on 2026-10-29), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
@@ -28,6 +28,9 @@ is the only one.
 
 - Asked the operator the four questions the record left open and recorded the answers as rulings 14 to 17 (`TODO/RULES.md` section 5): the agent runs this project's Cloudflare and repository changes itself; the zone's rate-limit rules stay the operator's blocked decision (DOM-062, new); the `/v1/new` checkpoint is not a stop; the clock thresholds stay 15 and 60 minutes.
 - Asked the operator the two design questions wave 2 and wave 3 left open and recorded the answers as rulings 18 and 19: the group `root-writer` lives in `root-promote.yml` (DOM-020 changes rule 13 of the workflow check), and an RDAP creation date before 2026 sets `suspect` and is not evidence (DOM-050).
+- Asked the operator three more questions and recorded the answers as rulings 20 to 22: the agent decides common-sense matters itself; a force-push with the admin bypass is allowed when asked for or needed; the root names every PSL hash its live packs use (`psl_live`, DOM-020).
+- Under ruling 20, handled Renovate's pull requests: closed #4 (wrangler 4.155.0: the pin of 4.150.0 holds the compatibility date of the tests and the probe until DOM-030 moves both) and #5 (the runner image ubuntu v26: the clock and feed measurements run on ubuntu-24.04 until DOM-003), each with its reason as a comment. #1 (biome), #2 (node) and #3 (workers-types) go into the tree after wave 4's commit, each with a green gate; Renovate closes a pull request whose update is already on `main`.
+- Did not rewrite history to remove the account name that commit 1a5a972 and its descendants carry (ruling 21 allows it when needed). A rewrite would change the SHA of every commit from 1a5a972 on, which the record, `docs/resources.md` and the immutable annotations of the `probe` and `ref` packages cite. The old commits would stay reachable through the open Renovate branches based on them. The name derives the probe's URL, and the probe is deleted when its measurements close (DOM-056). The current tree holds it nowhere, and `node scripts/scan-secrets.mjs` now refuses the shape of a wrangler account name.
 - Set the repository's default workflow permission to `read` (former Operator action 3), under ruling 14.
 - Built the first wave, eight entries, now partial: the npm workspace with `packages/core` and the workerd harness `packages/testkit`, the type check as a gate step and `ci.yml` (DOM-013); the probe Worker `probes/worker` (DOM-061); and the measurement workflows and scripts of DOM-001, DOM-004, DOM-006, DOM-009, DOM-010 and DOM-012. Three review lenses ran on the wave (door sweep, guard mutation, claim audit); their findings are fixed in the same change, and each entry's Built and Correction bullets record what was measured and corrected.
 - Closed DOM-013 (CI run 40713652294 green on 5e7a646), DOM-004 (`measure-kafka.yml` run 40714194235: PASS, 10.7 GB a day on the wire for the four topics) and DOM-061 (the probe deployed by the agent under ruling 14, both crons writing). DOM-002's 48 hours started with the probe's first tick.
@@ -83,7 +86,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-011 closes after its 24 hours, and DOM-012 after 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. The root and the feed: DOM-020 (it changes rule 13 of the workflow check, ruling 18) and DOM-022. Then compaction: DOM-023.
+3. The root and the feed: DOM-020 (it changes rule 13 of the workflow check, ruling 18, and writes `psl_live`, ruling 22) and DOM-022. Then the three Renovate updates #1 to #3, each with a green gate (ruling 20). Then compaction: DOM-023.
 4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
 6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
@@ -104,11 +107,7 @@ Known limits, each from a measurement of 2026-10-27:
 
 **Operator actions**, each only the operator can do:
 
-- Renovate opens pull requests on this repository, five so far (READ 2026-10-29T06:50Z, `gh pr list --state open`): #1 `@biomejs/biome` 2.6.4, #2 node 26.13.0 (gate passed), #3 `@cloudflare/workers-types` 5.20261029.1, #4 wrangler 4.155.0 (gate failed), #5 the runner image ubuntu v26 in every workflow. No document of this repository says who merges them. Wrangler 4.150.0 is pinned on purpose: its workerd runs the compatibility date 2026-10-13 that the tests and the probe use (DOM-061). The runner image is what DOM-001, DOM-009 and DOM-011 measure on.
-  - (a) The agent takes them into the work order: merges a PR whose gate passes and that moves no measured pin (#1, #2, #3), and leaves wrangler and the runner image to the entries that re-measure them (DOM-030 for wrangler, DOM-003 for the runner).
-  - (b) The operator merges or closes them; the agent does not touch them.
-  - (c) Turn Renovate off for this repository.
-  - Recommendation: (a). The pins that matter stay where the measurements put them, and the rest stay current.
+None. The question on Renovate's pull requests was settled by ruling 20 on 2026-10-29: the agent decides such matters itself.
 
 DOM-062's zone rule is settled: the operator applied the exclusion of `domains.pkgforge.dev` from the rate-limit rule `200req/Second` at 2026-10-28T15:53:56Z, and the agent read version 22 back with the `cf` CLI. DOM-062 closes with its load test once DOM-030 is live.
 
@@ -116,7 +115,7 @@ Former Operator actions 1 (a wrangler login: present, on the operator's account 
 
 **Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence.
 
-**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the two design questions on 2026-10-29 (rulings 18 and 19).
+**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the questions of 2026-10-29 the same day (rulings 18 to 22).
 
 ## Settled
 

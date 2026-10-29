@@ -151,7 +151,9 @@ adapted.** An agent here never needs that repository, and never writes to it.
 17. ⛔ **No destructive git command on the working tree**: no
     `git checkout <path>`, `git restore`, `git clean`, `git stash`,
     `git reset --hard`, no force-push, no amend of a pushed commit.
-    `docs/conventions/git.md` has the reason.
+    `docs/conventions/git.md` has the reason. The one exception is a
+    force-push the operator asks for or the need for one calls for, with the
+    admin bypass (`TODO/RULES.md` §5, ruling 21).
 
 ## 3. Architecture contract
 

@@ -7,7 +7,8 @@
 // ones: GitHub tokens, PEM private keys, credentials in a URL, JWTs, Cloudflare
 // tokens of both forms and sign-in files, GitLab tokens, `sk-` style keys, Hugging
 // Face (`hf_`), npm (`npm_`), Slack (`xox[abpr]-`) and AWS access key ids
-// (`AKIA`), and any long bearer in an Authorization line. A source whose key has
+// (`AKIA`), any long bearer in an Authorization line, and a Cloudflare account
+// name as wrangler prints it, which carries the workers.dev subdomain. A source whose key has
 // a prefix adds its shape here in the same change as the code that reads the key.
 // Reviewed exceptions live in scripts/scan-secrets.allow.json, keyed by path and
 // shape name, each with a written reason.
@@ -56,6 +57,10 @@ export const SHAPES = [
   { name: 'slack-token', re: /\bxox[abpr]-[0-9A-Za-z-]{10,}/ },
   // An AWS access key id: `AKIA` and 16 upper-case letters and digits.
   { name: 'aws-access-key-id', re: /\bAKIA[0-9A-Z]{16}\b/ },
+  // A Cloudflare account name as `wrangler whoami` prints it, `<email>'s
+  // Account`: it carries the account's workers.dev subdomain, which this
+  // repository never records (ruling 21's note in TODO/PROGRESS.md).
+  { name: 'cloudflare-account-name', re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+'s Account\b/ },
   // Any long bearer credential in a header line, whatever issued it.
   { name: 'generic-bearer', re: /\bAuthorization["']?\s*[=:]\s*["']?Bearer\s+[A-Za-z0-9._~+/-]{32,}/i },
 ];

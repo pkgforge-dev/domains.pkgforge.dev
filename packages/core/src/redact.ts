@@ -32,6 +32,7 @@ export const REDACT_SHAPES: readonly Shape[] = Object.freeze([
   { name: "npm-token", re: /\bnpm_[A-Za-z0-9]{36,}/ },
   { name: "slack-token", re: /\bxox[abpr]-[0-9A-Za-z-]{10,}/ },
   { name: "aws-access-key-id", re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: "cloudflare-account-name", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+'s Account\b/ },
   { name: "generic-bearer", re: /\bAuthorization["']?\s*[=:]\s*["']?Bearer\s+[A-Za-z0-9._~+/-]{32,}/i },
 ]);
 

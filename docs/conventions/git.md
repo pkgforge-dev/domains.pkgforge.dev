@@ -191,7 +191,12 @@ git ls-files
 ## 5. History is not rewritten, and the working tree is not clobbered
 
 ⛔ **No force push. No rebase of anything published. No amend of a commit that
-has left the machine.**
+has left the machine.** The one exception is ruling 21 of `TODO/RULES.md`
+section 5: a force-push the operator asks for, or one a need calls for, with
+the admin bypass of `main`'s protection. A rewrite changes the SHA of every
+later commit, and the record, `docs/resources.md` and the immutable
+annotations of GHCR artifacts cite those SHAs, so the agent weighs that first
+and records the rewrite, its reason and the map of old to new SHAs.
 
 ⛔ **Never run a destructive git command on the working tree**: no
 `git checkout <path>`, `git restore`, `git clean`, `git stash`,

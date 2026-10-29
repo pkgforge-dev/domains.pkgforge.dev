@@ -25,6 +25,7 @@ const SECRETS: Record<string, string> = {
   "npm-token": `${"np"}${"m_"}${fill(36, "j")}`,
   "slack-token": `${"xo"}${"xb-"}${"1234567890"}-${fill(24, "k")}`,
   "aws-access-key-id": `${"AK"}${"IA"}${fill(16, "Q")}`,
+  "cloudflare-account-name": `${"someone"}${"@"}${"example.org"}${"'s Acc"}ount`,
   // 40 characters and a tail: the 40-character bearer shape matches a prefix of it.
   "generic-bearer": `Authorization: ${"Bear"}${"er "}${fill(40, "g")}.${fill(8, "h")}`,
 };
