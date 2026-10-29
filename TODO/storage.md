@@ -143,6 +143,29 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - Not yet measured:
     - whether workers.dev keeps Cache API entries, on which the warm Prove depends;
     - whether GitHub shows a `workflow_dispatch` input on the public run page.
+- **MEASURED 2026-10-28T23:42:57Z to 23:43:12Z (the deployed route, version 12cec14c, colo KTM, `--tag` the pinned digest):**
+  - `/range?offset=0&length=1024`: `ok`, 206, 3 subrequests in 2,005 ms (manifest 200 in 740 ms, blob 307 in 319 ms, range 206 in 946 ms). The signed host is `pkg-containers.githubusercontent.com`, with `se` 421 s ahead.
+  - workers.dev keeps Cache API entries: three reads of one block with `cache=block` at about 2 s intervals answered `block: miss` (3 subrequests, 1,172 ms), `miss` again (3, 2,202 ms), then `hit` with 0 subrequests in 5 ms. Each miss put the manifest (TTL 1 year), the signed URL (TTL 299 s) and the block (1 day). So a put is not readable at once: the first hit came on the third read.
+  - With `cache=signed`, a first read missed (3 subrequests, 1,426 ms), and a read of another block after it hit the manifest and the signed URL (1 subrequest, 418 ms).
+  - These are single reads from the operator's workstation, served by one colo; the loads measure the rest.
+- **MEASURED 2026-10-28T23:43:30Z (the public run page):** `curl -sS https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/40789306801` with no credential answered 200 with 165,479 B. The run was a `workflow_dispatch` of `measure-tiles.yml`, with the input `until=2026-10-29T23:43:25Z`. Neither that page nor `https://api.github.com/repos/pkgforge-dev/domains.pkgforge.dev/actions/runs/40789306801` contains the input's value. So an anonymous reader of a run does not see its dispatch input there, and `measure-range-load.yml`'s `url` input stays off the public page as well as masked in the log.
+- **MEASURED 2026-10-29T00:28Z to 00:32:45Z (single reads from the operator's workstation, colo KTM):** `node scripts/measure/range-load.mjs --url "$PROBE_URL/range" --tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c --mode single --place operator --out docs/research/measure/DOM-007/runs/operator-single.json` exits 1 (seed 14735217). It prints:
+
+        size_B     kind  n    ok   p50_ms  p95_ms  max_ms  worker_p50  block_hits
+        1024       cold  30   30   1798    2831    3616    1785        -
+        1024       warm  30   30   21      28      30      6           30
+        25600      cold  30   30   1785    2939    5339    1771        -
+        25600      warm  30   30   19      21      23      6           30
+        65536      cold  30   30   1699    3398    6661    1686        -
+        65536      warm  30   30   20      26      29      6           30
+        1048576    cold  30   28   1061    10661   10669   1040        -
+        1048576    warm  30   30   31      39      43      6           30
+        FAIL all-expected  238 of 240
+
+  - Every cold read made 3 subrequests, and every warm read was a block-cache hit that the Worker answered in a p50 of 6 ms.
+  - The two failures are both 1 MiB cold reads, at offsets 92,274,688 and 789,577,728. Each is `timeout@range`: the ranged GET from `pkg-containers.githubusercontent.com` passed the route's 10 s cap on one subrequest.
+  - So from this colo, 2 of 30 cold reads of 1 MiB took more than 10 s at the blob store, and a cold read of 64 KiB or less had a p95 of 2.8 s to 3.4 s.
+  - These are one place's reads, one at a time. The runner's reads and the loads measure the rest, and DOM-030 reads the 1 MiB tail when it sets the Worker's subrequest budget.
 
 ## DOM-008 — Measure deflate-raw decode CPU in workerd
 
@@ -230,10 +253,19 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
     - the selector's ceiling;
     - the writer's read-back CRC.
   - Gate part (c): the wave's three lenses. The claim audit removed a density figure that nothing in the tree backs.
+- **MEASURED 2026-10-28T23:41:46Z to 23:42:05Z (the sample in R2):**
+  - `npx wrangler@4.150.0 r2 object put domains-probe/sample/v1/per-P.pack --file .tmp/measure/DOM-008/sample/per-P.pack --content-type application/octet-stream --remote` exits 0 for P = 1024, 4096 and 16384.
+  - `r2 object get domains-probe/sample/v1/per-4096.pack --remote` reads back sha256 `b601f87dec6aecb81e86e1faa0967f7ec0d107de81c97da7c6227b9fd7a7cee8`, the manifest's.
+- **MEASURED 2026-10-28T23:42:42Z (the deployed route, version 12cec14c):**
+  - `/decode?blocks=1&per=4096` answers 4,096 names, CRC `98a46914`, 41,808 raw and 20,624 packed bytes.
+  - `/decode?blocks=16&per=16384` answers 262,144 names, CRC `ce181e2a`.
+  - `/decode?blocks=17` answers 400.
+  - `wall_ms.decode` reads 0 in both, and `wall_ms.r2` 377 and 715 ms. Deployed, the clock does not advance across the inflate, so CPU must come from Cloudflare.
 
 ## DOM-017 — The pack format: writer, reader, merge and sparse index
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends success on ubuntu with `node scripts/test.mjs packages/pack` passing there (its 3 workerd tests among them), and its log is searched for `compresses otherwise than the vector's writer` and the result recorded here; then close.
 - **Priority:** P1
 - **Effort:** L
 - **Source:** design A section 6.2 and design B section 6.2; both designs agree on immutable sorted packs, front coding, block compression and a sparse index. `docs/architecture.md` section 4.4 owns the contract.
@@ -266,10 +298,123 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - A planted defect that drops the `last` update in `mergePacks` makes the `max(last)` test fail.
   - `node scripts/test.mjs packages/pack --name "workerd"` runs the reader in Miniflare workerd on the vectors (uses DOM-013's testkit).
 - **Found 2026-10-28T15:54Z (DOM-008):** in workerd 1.20261006.1, a `deflate-raw` round trip through `DecompressionStream` and `CompressionStream` answers at every compatibility date tried from 2021-01-01 to 2026-10-13, under `no_nodejs_compat` and `no_nodejs_compat_v2`. No date and no flag gates it there. Cloudflare's own runtime was not tried at an older date. That is the line for `docs/format.md`.
+- **Built 2026-10-29T05:20Z:** the workspace package `@domains/pack` (`packages/pack/`, 0BSD). npm links it as `node_modules/@domains/pack`, and `package-lock.json` lists `packages/pack`.
+  - `src/` holds `bytes.ts`, `crc32.ts`, `sha256.ts`, `errors.ts`, `format.ts`, `source.ts`, `idx.ts`, `codec.ts`, `writer.ts`, `reader.ts` and `merge.ts`. It imports no `node:` module. `tsconfig.worker.json` checks it as Worker code through its pattern `packages/*/src`. `src/verify.ts` belongs to DOM-018.
+  - `src/index.ts` exports the writer (`PackWriter`, `writePack`, `MemorySink`, `packAnnotations`), the reader (`PackReader`, `PackIndex`, `readIdx`, `inflate`) and the merge (`mergeRecords`, `mergePacks`).
+  - It also exports the codecs of the datasets 1, 2, 3 and 5 (`NAMES_CODEC`, `DOMAINS_CODEC`, `FEED_CODEC`, `NEW_NAME_CODEC`), `strongerConfidence`, `crc32`, `Sha256`, and the bounds `packedLimit`, `checkPartSizes`, `NAME_KEY_BYTES`, `MAX_BLOCK_KEY_BYTES` and `MAX_RAW_BLOCK_BYTES`.
+  - Every refusal is a `PackError` with one of 16 codes (`src/errors.ts`).
+  - `PackReader.open(idx, source, codec?, options?)` takes two options. `partSizes` is the part sizes the store holds. `maxRawBlockBytes` is 1 to 16 MiB, 16 MiB by default.
+  - `node/index.ts` is the Node side, `@domains/pack/node`: `nodeCompress`, `writerId`, `DirSink`, `writePackFiles` and `openPackFiles`. `openPackFiles` returns the sizes of the part files as `partSizes`.
+  - Tests: 86 in 9 files. They are `bytes` 6, `checksums` 3, `codec` 12, `idx` 18, `merge` 7, `node` 4, `pack` 27, `vectors` 6 and `workerd` 3. Beside them: `test/helpers.ts`, `test/plant.ts`, `test/make-vectors.ts`, the test Worker `test/pack-worker.ts`, and three synthetic vectors in `test/vectors/`.
+  - `scripts/bench/pack.mjs` and its test, 7 tests. It caps the text of a sample at 512 MiB (`MAX_SAMPLE_TEXT_BYTES`, door #11).
+  - `docs/format.md` states every byte of DPK1: the part, the block, the record of each dataset, the merge rule, the index, the checks of a reader, identity, defaults, the runtime, versioning, a worked example and the measured cost.
+  - `docs/research/measure/DOM-017/` holds `names-1000000.json`, `cs2-first.json` and `result.json`. Each is the JSON of one bench run.
+- **Decision 2026-10-29T05:20Z (the compressor):** the writer takes `compress` from its caller. The production compressor is `nodeCompress` in `packages/pack/node/index.ts`, outside `src/`, so no Worker imports `node:zlib`.
+  - It runs `deflateRawSync` or `gzipSync` at level 9, with the default memory level, window and strategy of zlib.
+  - It decompresses each block it wrote, and refuses a block that does not give the raw block back.
+  - The reader decompresses with `DecompressionStream`, so one module runs in Node and in workerd.
+  - A writer in `src/` that imports `node:zlib` fails the Worker type check, so the Approach's "the writer may use `node:zlib`" moved to the caller.
+- **Correction 2026-10-29T05:20Z (Approach, the index layout):** the index carries more than the Approach lists, so that a page read by range from a signed URL is checked before any offset in it is used.
+  - The head is a 64-byte header, a parts table, the key bounds and the top level. The parts table gives the bytes, the first block and the blocks of each part. The key bounds are the `key_min` and `key_max` of the root.
+  - Each top-level entry holds the key, offset, byte length and CRC-32 of its page.
+  - The header holds its own CRC-32 at bytes 60 to 63, and an `entries a page` field (`u16`). The writer writes 64.
+  - The second-level entry is the Approach's, field for field (`docs/format.md` section 6.5).
+- **Correction 2026-10-29T05:20Z (Approach, the codec interface and the datasets):** a `DatasetCodec` holds `id`, `name`, `key`, `idxKey`, `encodeRecord`, `decodeRecord`, `merge` and `maxKeyBytes`. `writeKey` and `readKey` take `maxKeyBytes`.
+  - The claim audit found that `docs/format.md` gave `new-name` no dataset id, while `docs/architecture.md` section 3.3 lists it (claim #5).
+  - Dataset 5 is now `new-name`. It is the `feed` record under its own id, keyed by any reversed name that `packages/names` accepts, one record a key, with `first_seen` a field. `docs/format.md` section 5.4 covers datasets 3 and 5.
+  - The `min(first)` and `max(last)` rule is in `mergeSeen` of `src/codec.ts`. `mergePacks` calls it through `codec.merge`, so the planted defect of the Prove goes in `mergeSeen`.
+- **Correction 2026-10-29T05:20Z (Approach, the bounds of a decode):** the Approach states no bound on a decode. The door sweep found two missing bounds (door #1, door #7), and the fix added these.
+  - A key is 1 to 65,535 bytes in the format. A key of the datasets 1, 2, 3 and 5 is at most 253 bytes (`NAME_KEY_BYTES`). `readKey` refuses a longer key from its two lengths, before it reads a key byte.
+  - A raw block is at most 16 MiB. The keys it decodes to are at most 16 MiB too (`MAX_BLOCK_KEY_BYTES`). The reader refuses with `record`, and the writer with `span`.
+  - An index entry claims at most `raw + floor(raw / 8) + 1,024` compressed bytes (`packedLimit`). `parsePage` refuses more with `page`, before any read.
+  - A pack of zero records has exactly one part. `parseHead` refuses another count with `head` (claim #10).
+  - A time is unsigned from 2026-01-01T00:00:00Z. The first synthetic times of the bench reached day -18, and the writer refused them.
+  - Door #1: one block of 8,000 records, 129 KB raw in a part of 1,127 B, made `PackReader.get` hold 522 MB of heap (the reviewer's `amp.mjs`). The fix group built a block of the same shape: 137,040 raw bytes naming 8,000 keys of 65,002 bytes, which `deflateRawSync` at level 9 compressed to 1,034 B (MEASURED 2026-10-29T03:21:22Z, Node v26.7.0, zlib 1.3.2.1-motley-42c2f19). `NAMES_CODEC` refuses it at record 1, and a codec of 65,535-byte keys at record 259.
+  - Door #7: an index that claimed 2,000,000,000 compressed bytes made `PackReader.get` allocate about 2 GB for a part file of 34 B (the reviewer's `alloc.mjs`). Now `parsePage` refuses that entry, `openPackFiles` reads into a buffer no larger than the file, and `partSizes` holds the parts table to the sizes of the store.
+- **Correction 2026-10-29T05:20Z (the merge of a confidence):** the build kept `Math.max` of two confidences, for an evidence triple and for a `feed` or `new-name` row. That kept the weaker reading.
+  - READ design A section 3.1 (`docs/research/2026-10-27-design-a.md` line 145): OpenINTEL's level 1 is within 5 minutes of the RDAP date, and level 10 within 18 to 24 hours.
+  - `strongerConfidence` in `src/codec.ts` keeps the lowest value that is not 0. A 0 means that the source states none. `docs/format.md` section 5.6 states the rule.
+  - The DOM-021 build reported it, and the lead changed the merge at the wave 3 integration. DOM-022's Found of 2026-10-29T03:10Z carries it to the feed.
+- **Correction 2026-10-29T05:20Z (Approach, identity and integrity):** the writer does not set the annotations of a manifest (claim #11).
+  - `packAnnotations` builds the five `dev.pkgforge.domains.*` annotations, and `writePackFiles` returns them.
+  - `scripts/ghcr/push.mjs` sets only `org.opencontainers.image.source` and `org.opencontainers.image.created`. A caller passes each pack annotation with `--annotation`. The one caller, `ref-refresh.yml`, pushes reference files, so no caller passes them yet.
+  - The push tool treats a tag as present when its manifest is the same. It also treats a tag as present when its artifact type, its `dev.pkgforge.domains.sha256` annotation and its layers are the same: the title and media type of each layer, and for a ref the digest of each layer too.
+  - The compressed sizes and digests of a pack can differ between zlib builds, so the tool does not compare them (door #2, `docs/format.md` section 8).
+- **Correction 2026-10-29T05:20Z (Premise, a citation):** "a record stores no count" is `docs/architecture.md` section 3.3 (line 117), not section 2. Section 2 (line 64) holds the minimum of `t_first` and the maximum of `t_last` (claim #9).
+- **Correction 2026-10-29T05:20Z (the compatibility date Found):** the Found of 2026-10-28T15:54Z says "No date and no flag gates it there". That claims more than was tried (claim #8).
+  - The round trip worked at ten dates from 2021-01-01 to 2026-10-13, under `no_nodejs_compat` and `no_nodejs_compat_v2`, for `deflate-raw` only.
+  - `gzip`, which the reader also decodes, was tried at 2026-10-13 alone, by `packages/pack/test/workerd.test.ts`.
+  - `docs/format.md` section 10 lists the ten dates. The Found of DOM-008 (`TODO/storage.md` line 233) carries the same claim.
+- **Correction 2026-10-29T05:20Z (docs/format.md, the claim audit):** the audit found every byte table equal to the code, and recomputed the 36-byte worked example by hand. Three other claims changed.
+  - Section 11: a new codec byte, a new dataset id, or a new value of another `u8` that the reader refuses needs a new version, because a version 1 reader refuses it (claim #3).
+  - Section 13: the cs2 sample is one forward-name region of the dump, spread thin over the reversed keys. Its 10.950 B a name is not the figure of the day and not a bound on it. DOM-008's five slices, 3.01 to 5.74 B a name, are cited beside it (claim #6). The verification corrected "start with `000`" to add "after any `*.`".
+  - Section 13: the first cs2 run came before the last edits to the writer and the reader (claim #7). Its re-run is under the Prove below.
+- **Decision 2026-10-29T05:20Z (the memory bound of a reader):** a reader takes `maxRawBlockBytes`. It refuses with `page` a block whose index entry states a larger raw length, before the read.
+  - A valid block can decode to more heap than a 128 MB Worker holds. One `domains` record of 3,000,000 evidence entries, 15,000,021 raw bytes, decoded to about 235 MB of heap (MEASURED 2026-10-29 by the wave 3 fix verification, Node v26.7.0; its script is in that session's scratchpad, not in the tree).
+  - The default is 16 MiB, the bound of the format. A Worker sets it near the raw size of its blocks.
+  - The alternative, a refusal of an evidence tier or basis at decode, breaks section 11 of `docs/format.md`: a reader keeps a value it does not know.
+- **Found 2026-10-29T05:20Z (DOM-030 and DOM-032):** written in those entries at 2026-10-29T04:54Z. A Worker opens every pack with `partSizes` from the layer sizes of the manifest, and with `maxRawBlockBytes`. Without them a reader trusts the part lengths that the index claims (the Worker half of door #7).
+- **Found 2026-10-29T05:20Z (DOM-038):** the per-source fields are measured, with synthetic values.
+  - A day source with one value for every name costs 0.330 to 0.448 B a name. A second source with random seconds costs 5.690 to 6.267 B a name more. Both ranges are derived from the two tables of `docs/format.md` section 13.
+  - DOM-038's Premise carries design B's estimate of 3 to 5 B, and `docs/architecture.md` section 3.3 carries `10 B a name [E]`. Neither run is a whole day, so the `[E]` stays an estimate until DOM-038 measures a day pack.
+- **Found 2026-10-29T05:20Z (DOM-043):** a dataset 4 codec states its `maxKeyBytes`, 1 to 65,535.
+  - `get`, `scan` and `blockOf` compare index keys bytewise. That is exact only when the index key is the whole key of the first record of the block.
+  - A codec whose index key is a prefix searches with `PackIndex`, and calls `readBlock` and `decodeBlock` itself.
+- **Found 2026-10-29T05:20Z (DOM-008):** this reader builds a string and an object for each record. The `/decode` route of the probe builds keys in a byte buffer and makes no object, so its CPU figure is a lower bound for this reader. A local profile of 0.4 to 0.5 microseconds a name in Node is a reading, not a committed measurement.
+- **Found 2026-10-29T05:20Z (DOM-020, DOM-022 and DOM-023):** `writePackFiles` opens each `part.NNN` with the flag `wx` and writes `idx` last. So a directory that holds `idx` holds a whole pack. The push pushes the files in the order that `writePackFiles` returns them, and passes the annotations of `packAnnotations` with `--annotation`.
+- **Found 2026-10-29T05:20Z (DOM-021):** the codec does not require the `source` of an evidence entry to be a bit of the mask of its record. DOM-018's verifier holds that bit to the sources of the annotation only. DOM-021 decides whether the verifier also holds it to the mask.
+- **Found 2026-10-29T05:20Z (DOM-050):** a time is unsigned from 2026-01-01, so an RDAP date before 2026 cannot be an evidence `at`. `TODO/PROGRESS.md` holds the design question with its recommendation, and DOM-050 settles it.
+- **Prove as it stands 2026-10-29T05:20Z:** on the operator's Windows workstation, Node v26.7.0 (`.node-version` 26.7.0). Each exit code is read from the process, never through a pipe.
+  - `node scripts/test.mjs packages/pack` exits 0 (2026-10-29T05:00:59Z to 05:01:09Z) and prints `ℹ tests 134`, `ℹ pass 134`, `ℹ fail 0` and `test: 134 test(s) passed under packages/pack (10 file(s))`. 48 of the 134 are DOM-018's `verify.test.ts`. The 86 of this entry cover:
+    - the three vectors: the reader reads the stored bytes, the writer gives the raw blocks, block entries and SHA-256, and the index encodes back to its bytes. A zlib that compresses otherwise prints a diagnostic, and this run printed none;
+    - `merge(a, a)` equal to `a` byte for byte, `merge(a, b)` equal to `merge(b, a)`, associativity, and a random split into packs that merges back to one pack;
+    - determinism: the same input twice gives the same bytes;
+    - a changed byte in a stored block that fails `crc`, in Node and in workerd;
+    - a block no part can hold (`span`), and the part limit at its exact boundary, both writer guards (guard #9);
+    - the confidence order, dataset 5, and the bounds of a decode above.
+  - The index tests plant one fault each and recompute every CRC (guard #3). Planted:
+    - 8 header fields, the head CRC, a page CRC, a gap across pages, and a part that does not start at byte 16;
+    - a part longer than the end of its last block, a record count one above the header's, and a key below the key before it in its page;
+    - a raw length of 0 and of 16,777,217, and a part number past the parts table, which is a `PackError` and not a `TypeError`;
+    - a compressed length one past `packedLimit`, an index of no block with 3 parts, `partSizes` that differ in count or in size, and a block above `maxRawBlockBytes`.
+    - Not planted: trailing bytes after the last entry of a page, a page that ends above the key of the next page, the first-block and sum checks of the parts table, the offset and order checks of the top level, and `parts < 1`.
+  - `node scripts/test.mjs packages/pack --name "workerd"` exits 0 (05:01:14Z to 05:01:17Z) and prints `test: 3 test(s) passed matching workerd under packages/pack (10 file(s))`. In workerd 1.20261006.1 at the compatibility date 2026-10-13, with `no_nodejs_compat` and `no_nodejs_compat_v2`, they read the vectors, packs of 3,000 names over parts and pages in `deflate-raw` and in `gzip`, and refuse a changed block with `crc`.
+  - `node scripts/bench/pack.mjs --names 1000000` exits 0 (MEASURED 2026-10-29T05:01:26Z to 05:01:51Z) and prints `PASS one-source-at-most-12-bytes-a-name  5.114 (limit 12)` and `PASS lookup-at-most-2-range-reads  2 (limit 2)`.
+    - The four SHA-256 values, part bytes and index bytes equal those of `docs/research/measure/DOM-017/names-1000000.json`, the run of 00:21:11Z.
+    - Decode read 0.73 to 1.77 ms for 1,000 names, against 0.66 to 0.86 in that run. It is wall time, and it varies between runs.
+  - The planted defect: a copy of `packages/pack` under `.tmp/rec-w3/plant/`, with `last: Math.max(x.last, y.last)` of `mergeSeen` changed to `last: x.last`.
+    - `node --test --test-name-pattern="maximum last of each source" .tmp/rec-w3/plant/pack/test/merge.test.ts` exits 1 and prints `not ok 1 - pack merge: the merged record keeps the minimum first and the maximum last of each source`.
+    - The same command on the unchanged copy `.tmp/rec-w3/control/` exits 0 with `ok 1` (05:02:22Z to 05:02:23Z).
+  - The two changes of the lead, planted the same way at 05:04Z, each against the unchanged copy:
+    - `strongerConfidence` as `Math.max(a, b)` fails `pack codec: the stronger confidence is the lowest level that is not 0, in evidence and in feed rows` (exit 1; control exit 0).
+    - `readBlock` without its `maxRawBlockBytes` guard fails `pack idx: a reader given maxRawBlockBytes reads no block above it, and refuses a bound outside 1 to 16 MiB` (exit 1; control exit 0).
+  - `node scripts/test.mjs scripts/bench` exits 0 and prints `test: 7 test(s) passed under scripts/bench (1 file(s))`.
+  - The cs2 bench was not re-run in this session. The fix group ran `node scripts/bench/pack.mjs --sample cs2` from 2026-10-29T03:25:29Z to 03:27:07Z on the code after the review fixes: exit 0, ETag `"6adfea7c-13118d62"`. Its JSON is `docs/research/measure/DOM-017/result.json`.
+    - Its four SHA-256 values (`baddd6a0`, `e5f93e46`, `ed7a40e1`, `97bf384c`), records, blocks, raw bytes, part bytes and index bytes equal those of `cs2-first.json`, the run of 00:21:39Z, field by field (compared at 05:00Z).
+    - Decode read 2.70 to 6.04 ms for 1,000 names, against 1.00 to 1.69.
+  - `npm run gate` exits 0 at 2026-10-29T04:57:36Z (`.tmp/gate-w3.txt`): `ℹ tests 1162`, `ℹ pass 1158`, `ℹ fail 0`, `ℹ skipped 4`, `gate: all steps passed` and `gate: pass recorded for tree 92e8b625ba91 (HEAD ec0014f with the working files)`.
+    - `docs/format.md` and `docs/research/measure/DOM-017/` changed after it, at 04:59Z. `node scripts/text-check.mjs` and `node scripts/todo/check.mjs` exit 0 on the tree at 05:05Z. The gate runs again on the commit.
+  - Gate part (b): this entry has no deployed surface and pushes nothing to GHCR, so nothing is driven live.
+  - Gate part (c): the three lenses of wave 3 and the verification.
+    - Door sweep: door #1 (front coding let a part of 1,127 B hold 522 MB of heap), door #7 (an index's compressed length was allocated before any check), and the bench half of door #11 (a sample inflated with no cap). It found sound: inflate stops at the raw length, and the index sizes are tied to the real index size before allocation.
+    - Claim audit: the byte tables and the worked example match the code. Claims #3, #5, #6, #7, #8, #9, #10 and #11 are the Corrections above.
+    - Guard mutation: guard #3 (30 of 40 index guard removals survived the pack, verify, verify-pack and ledger suites; 4 were the only door, and a fifth turned a `PackError` into a `TypeError`) and guard #9 (the part limit took `>=`). It killed the version byte, the block CRC in Node and in workerd, and the key order of the writer.
+    - Guard #14 found that the build's mutation driver ran with the links of the real tree. The 32 mutants of this entry sit in files that the tests import by relative path, so the build's 32 of 32 killed (2026-10-29T00:28:30Z to 00:28:52Z) holds.
+    - The fix group planted 33 mutants and 1 in the bench, canary first, in an isolated copy, and all were killed.
+    - Verification: in two isolated copies, canary first, every pack-format mutant was killed: 7 of door #1, 9 of door #7, and 9 of guards #3 and #9 and claims #5 and #10. It measured the 235 MB block of the Decision above. It found the Worker half of door #7 and the door #2 line of `docs/format.md` untracked. Both are now done: the Found of DOM-030 and DOM-032, and `docs/format.md` section 8.
+  - Not run: the `ci.yml` run of the commit that carries this record, the first Linux run of these tests, and the search of its log for `compresses otherwise than the vector's writer`.
+- **Open 2026-10-29T05:20Z:**
+  - Whether the zlib of the Linux CI writes the vector bytes exactly: DOM-017 reads the `ci.yml` log of its commit.
+  - A Worker that opens every pack with `partSizes` and `maxRawBlockBytes`: DOM-030 and DOM-032.
+  - The decode CPU of this reader in workerd: DOM-008.
+  - The per-source cost of a whole day pack: DOM-038.
+  - An RDAP date before the epoch of 2026-01-01: ruling 19, written by DOM-050.
+- **Built 2026-10-29T06:30Z (the bench's byte count):** `scripts/bench/pack.mjs` reports `decompressed_bytes` as the byte length of the inflated buffer, not `text.length`. A test in `scripts/bench/pack.test.mjs` holds it, and the mutant back to `text.length` fails it. The three stored runs in `docs/research/measure/DOM-017/` keep the old value, 78,100,284 for cs2, a count of characters, as `docs/format.md` section 13 says.
 
 ## DOM-018 — Verify a pack before it counts
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T09:00:00Z; then the `ci.yml` run on the commit that carries this record ends success on ubuntu-24.04 with the 50 `verify:` and 19 `verify-pack:` tests passing; then close.
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design B section 5.5 ("Verification before publish, the mirror's verify step, adapted") and design A section 8.2 and section 9; `docs/architecture.md` section 5.8.
@@ -290,10 +435,133 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Prove:** `node scripts/test.mjs packages/pack --name "verify"` passes: all 11 planted defects fail and the clean pack passes.
   - `node scripts/verify-pack.mjs packages/pack/test/vectors/clean.part.000 packages/pack/test/vectors/clean.idx` exits 0. The same command on `truncated.part.000` exits 1 and prints `FAIL length`. Read each exit code unpiped.
   - `node scripts/verify-pack.mjs --expect-count 1` on a pack of 2 records exits 1.
+- **Built 2026-10-29T05:20Z:** the verifier, its CLI, their tests and the fixtures. Nothing is committed yet. The tree is HEAD ec0014f with the working files.
+  - `packages/pack/src/verify.ts` holds `verifyPack(idx, parts, expect, options)`, which answers `{ ok, verdict, errors, checks, unverified, stats, volume }`. Beside it are `expectFromAnnotations`, `quoteKey`, `CHECKS`, `VERIFY_ANNOTATIONS`, `KEY_SHOWN` (80), `DEFAULT_REFIND` (1,000), `DEFAULT_SEED` (1), `DEFAULT_MAX_FAILURES` (20) and the types. `packages/pack/src/index.ts` re-exports them.
+  - `CHECKS` lists 18 checks in the order they run: `idx`, `dataset`, `length`, `header`, `inflate`, `crc`, `record`, `count`, `order`, `unique`, `bounds`, `name`, `sha256`, `refind`, `psl`, `sources`, `precision`, `volume`.
+  - A check with nothing to compare against is SKIP, never PASS. `result.unverified` lists the checks that skipped.
+  - `options.require` names the checks that must not skip. If one of them skipped, the verdict is `unverified` and `ok` is false. The verdicts rank `fail`, `unverified`, the volume's `quarantine` or `hold`, then `ok`.
+  - A failure of `idx`, `dataset`, `length` or `header` ends the run. Every later check is then SKIP `not run: the X check failed`. Each check lists at most 20 failures, then one line with the count of the rest.
+  - The pass reads every block through `PackReader`'s own `readBlock` and `decodeBlock`. `refind` draws 1,000 keys with a seeded generator, adds the first and the last key, and finds each one with `PackReader.get` over the index read by range.
+  - `verify.ts` imports nothing from `node:`, so `tsconfig.worker.json` type-checks it as Worker code. No workerd test runs it. The reader it drives has DOM-017's 3 workerd tests.
+  - `scripts/verify-pack.mjs [flags] PATH...` takes part files (`part.NNN`), one index (`idx`) or a directory. It has 16 flags: `--annotations`, `--expect-count`, `--expect-bytes`, `--expect-sha256`, `--expect-dataset`, `--expect-psl`, `--source`, `--span`, `--psl`, `--sources`, `--history`, `--raw-bytes`, `--seed`, `--now`, `--require` and `--json`. The `--expect-*` flags override the annotations file.
+  - The CLI prints one `PASS` or `SKIP` line for each check that passed or skipped, one `FAIL` line for each failure of a check that failed, then `VERDICT <verdict> (N skipped)`. When a `--require` check skipped, the line adds `; required and skipped: ...`. Exit 0 means ok. Exit 1 means a check failed or a `--require` check skipped. Exit 2 means the run could not complete.
+  - Its `readAt` sizes each buffer by the file's size at open, never by the length the index claims. It asks again after a short read.
+  - The default `--psl` is `packages/names/test/fixtures/psl-2026-10-27.dat`. The default `--sources` is `config/sources.json`, validated against `config/source-bits.json`. `--history` runs `checkBand` of `@domains/adapter` with the band and precision of the one named source.
+  - Tests: `packages/pack/test/verify.test.ts` has 48 tests and `scripts/verify-pack.test.mjs` has 17.
+  - The fixtures are in `packages/pack/test/verify/`. All are synthetic: `synthetic.ts` defines them and `make-fixtures.ts` writes them.
+    - `clean.part.000` (6,619 B) and `clean.idx` (672 B): 600 names in 10 blocks, raw sha256 `cfe1880a88101daae1e3e4f7c80aa8b2855fa8f53cc150126c58a0b8ee223f59`, with `clean.annotations.json`;
+    - `truncated.part.000` (3,309 B, the first half of the clean part);
+    - `pair.part.000` and `pair.idx`: 2 names, 272 B;
+    - `registry.json`: two rows that carry the real ids and bits of `thc-ct` (bit 0, `day`) and `ct-le` (bit 5, `second`). No other field is the real source's.
+  - `.gitattributes` lines 83 and 84 mark the `*.idx` and `*.part.*` fixtures binary. At 2026-10-29T05:10:01Z, `git check-attr binary` reads `binary: set` for all five.
+- **Correction 2026-10-29T05:20Z (Prove, the fixture paths):** the fixtures are in `packages/pack/test/verify/`. `packages/pack/test/vectors/` belongs to DOM-017 and holds only the three `names-*.json` vectors.
+  - MEASURED 2026-10-29T05:01:07Z: the Prove's literal command exits 2 and prints `verify-pack: cannot read packages/pack/test/vectors/clean.part.000: ENOENT: no such file or directory`.
+  - Prove as it stands runs the same commands on the `verify/` paths.
+- **Correction 2026-10-29T05:20Z (Approach, Module):** the signature is `verifyPack(idx, parts, expect, options)`, not `verifyPack(idx, source, expect)`.
+  - `parts` is a `PartSource`: a `RangeSource` plus the stored size of each part.
+  - `expect` holds the annotations only. `options` holds the loaded list (`psl`), the registry rows, the volume rule, the clock, the seed, the re-find count, the failure cap and `require`.
+  - The result adds `verdict`, `checks`, `unverified` and `volume` to `{ ok, errors, stats }`.
+  - Four checks run beyond the nine of the Approach:
+    - `idx`: the whole index parses, with every page CRC and the tiling;
+    - `dataset`: the annotation matches, and the dataset is one that the verifier checks;
+    - `header`: each part header names the index's dataset, records a block, codec and its own number;
+    - `bounds`: the head's key bounds are the first and the last key. The root copies them as `key_min` and `key_max`.
+  - Check (1) is `length`. Each part holds the bytes that the index's parts table gives it, and the parts plus the index make the `bytes` annotation. `readIdx` tiles the blocks over that table, so every block lies inside its part.
+- **Correction 2026-10-29T05:20Z (Approach, check (8) precision):** the format stores a time in its source's unit (`docs/format.md` section 1). So `last - first` of a `day` source is a whole number of days by construction, and a test of it cannot fail.
+  - The check that can fail has two parts. First, each named source's precision equals its registry row, and equals the precision annotation when one is given.
+  - Second, every time of a record, read in its source's unit, lies inside the pack's span `[start, end)`. With no span, it lies between 2026-01-01 and the clock (`options.now`).
+  - A `day` source written in seconds holds a value of 86,400 times its day number or more. The planted record holds `first = last = 25,750,800` (01:00 on day 298, in seconds) under a span of day 298.
+  - `first_seen` of a feed or new-name record is checked in seconds. The `at` of a domains evidence entry is checked in its source's unit.
+- **Correction 2026-10-29T05:20Z (Approach, check (9) volume):** a band of `checkBand` measures `count` or `bytes`. The CLI judges the decoded count. For a band of bytes, it needs `--raw-bytes` and judges that value. A test shows that 1,000 B against a median of 1,539 is ok, where the count of 600 would be quarantined.
+- **Correction 2026-10-29T05:20Z (Approach, two planted defects read literally):**
+  - "A pack cut at a block boundary (the count check catches it)": the plant is the first 3 blocks (192 records), whole and consistent in itself. Its `bytes` and `sha256` annotations are its own, and its `count` annotation is the source's 600. The count check catches it only when the `count` annotation comes from what the adapter read. With the full pack's `bytes` annotation, the `length` check catches it first.
+  - "A wildcard-only name": `*.co.uk` is the key `uk.co` with the wildcard flag, and `normalise` refuses `co.uk` as `public-suffix`. The name check reads the key, never the flags.
+  - The guard lens (guard #12) found that the old test title promised a wildcard rule. The test is renamed. It plants the wildcard flag, the exact flag and both, and each fails `name` alone.
+- **Correction 2026-10-29T05:20Z (Approach, CLI, what exit 0 means; door #4):** as built, a run with no annotation printed PASS for `dataset`, `length` and `count`, though there was nothing to compare, then `VERDICT ok` and exit 0. A job that passed no annotation got the same green as a pack checked against every annotation.
+  - Now those three checks print SKIP. `precision` prints SKIP when no span, no clock and no precision annotation bound the times. The default run prints `VERDICT ok (8 skipped)`.
+  - `--require CHECKS` names the checks that must not skip. If one of them skipped, the run prints `VERDICT unverified` and exits 1. A name outside `CHECKS` exits 2.
+  - Exit 1 also covers a `hold` or a `quarantine` of the volume check.
+- **Correction 2026-10-29T05:20Z (the time of the 1,000,000-name run; claim #15):** the build's "6,715 ms wall time" is in no file. `.tmp/DOM-018/big-verify.txt` holds the check lines and no time. MEASURED again 2026-10-29T05:03:05Z to 05:03:15Z on this machine (Windows 11, Node v26.7.0, files on local disk), one run:
+  - `node .tmp/rec-w3/dom018-big.ts` wrote the build's pack again: 1,000,000 synthetic names (seed 18), 245 blocks, 5,852,149 B, raw sha256 `f6310fe67bb8de205bd3b3e8a6f17b1a8ba70381419bd66c9e09f20ced160ef8`.
+  - `node scripts/verify-pack.mjs --expect-count 1000000 --expect-sha256 f6310fe67bb8de205bd3b3e8a6f17b1a8ba70381419bd66c9e09f20ced160ef8 --source thc-ct,ct-le --sources packages/pack/test/verify/registry.json --span 2026-10-26T00:00:00Z,2026-10-27T00:00:00Z --require count,sha256,sources,precision .tmp/rec-w3/big` exits 0 in 10,404 ms. It prints `PASS refind 1002 key(s), the first and the last among them, found by get through the index read by range (seed 1)` and `VERDICT ok (4 skipped)`.
+  - The wall time depends on the machine's load: 6,715 ms in the build's run and 10,404 ms in this one. Neither is a CI figure. `.tmp/rec-w3/dom018-big-verify.txt` holds the output, and `.tmp/` is gitignored.
+- **Decision 2026-10-29T05:20Z (the volume rule is passed in):** `verifyPack` takes the rule as `options.volume = { source, value?, judge(value) }`. A `BandResult` of `checkBand` is a `VolumeVerdict`. The CLI passes `checkBand` with the band and precision of the source's registry row. The tests run the real `checkBand`.
+  - The alternative imports `@domains/adapter` into `@domains/pack`. The Worker imports `@domains/pack` for its reader, so the Worker would also carry the adapter package.
+- **Decision 2026-10-29T05:20Z (hold and quarantine exit 1):** both fail the `volume` check, so `ok` is false and the CLI exits 1, as it does for any failed check. The entry keeps its three exit codes.
+  - A caller tells a quarantine from a broken pack by `VERDICT quarantine`, or by `.verdict` of `--json`. In that case every other check passed.
+  - The entry's Decision pushes a quarantined segment, so a job that reads the exit code alone drops that segment.
+- **Decision 2026-10-29T05:20Z (the datasets it checks):** the verifier decodes the datasets 1, 2, 3 and 5 (`NAME_DATASETS` in `verify.ts`), whose keys are reversed names. It checks dataset 5 (`new-name`) as a feed pack.
+  - Any other dataset fails `dataset` with `this verifier checks the datasets 1, 2, 3 and 5, whose keys are reversed names`.
+  - The set is named in `verify.ts` and is not read from `BUILTIN_CODECS`. So a codec that DOM-043 registers for dataset 4, whose keys are binary, cannot reach the name check. A test registers a synthetic codec for dataset 4, and the pack still fails `dataset` alone.
+- **Decision 2026-10-29T05:20Z (keys in output):** every key in a detail goes through `quoteKey`. It shows at most 80 bytes, then `(the first 80 of N bytes)`. It writes every byte outside printable ASCII as `\\xHH`, and also `"` and `\\`. The CLI also writes any control byte of a detail as an escape.
+- **Found 2026-10-29T05:20Z (for DOM-020, DOM-022 and DOM-023):** the lead wrote this note into each of them at 2026-10-29T04:54Z. A job that promotes a pack must name, with `--require`, every check it needs compared. Without that flag, a pack given no annotation exits 0. `docs/architecture.md` section 5.8 step 1 says so.
+  - `scripts/verify-pack.mjs` reads local files only. MEASURED 2026-10-29T05:09:56Z: `--repo obs --tag x` exits 2 with `verify-pack: unknown flag --repo`. `--ref` exits 2 in the same way.
+- **Found 2026-10-29T05:20Z (for DOM-019 and DOM-024, the annotations a segment carries):** beside the five annotations of `format.ts`, the verifier reads `dev.pkgforge.domains.psl`, `.source`, `.precision`, `.span.start` and `.span.end` (`VERIFY_ANNOTATIONS`).
+  - `source` is one id, or several ids separated by commas.
+  - `precision` is `day` or `second`, and needs `source` to name exactly one id.
+  - `span.start` and `span.end` are ISO 8601 UTC to the second, and come together.
+  - `docs/architecture.md` section 4.2 lists all of them except `precision`.
+  - The `count` annotation must come from what the adapter read, not from the writer's `PackSummary`. If it is copied from the summary, a pack whose input was cut at a block boundary carries matching `count`, `bytes` and `sha256`, and only the volume check can catch it.
+- **Found 2026-10-29T05:20Z (for DOM-043):** `verifyPack` refuses a pack of dataset 4 with FAIL `dataset`. DOM-043's stage C verifies a rev pack with this entry, and its Counts bullet says that the verifier recounts records from the packs. So DOM-043 adds a dataset 4 path to `verify.ts`, with its own key rule in place of the name check.
+- **Found 2026-10-29T05:20Z (the registry):** `config/sources.json` holds no source yet. `node scripts/sources/build.mjs --check` exits 0 and prints `sources 0 adapters 0`. So `sources`, `precision` and `volume` can pass on a real segment only after the adapters fill the registry.
+  - With the default `--sources`, a pack that names a source fails `sources`. The test "a source the registry does not hold is a FAIL sources, read from config/sources.json by default" holds this. The other tests use `packages/pack/test/verify/registry.json`.
+- **Prove as it stands 2026-10-29T05:20Z:** each exit code is read from the process, never through a pipe. The outputs are under `.tmp/rec-w3/`.
+  - `node scripts/test.mjs packages/pack --name "verify"` exits 0 (2026-10-29T05:00:48Z to 05:00:57Z) and prints `test: 48 test(s) passed matching verify under packages/pack (10 file(s))`. Each of the 11 planted defects fails exactly its own check, and `failsAlone` holds that:
+    - two keys out of order across a block boundary: `order`;
+    - a key repeated across a block boundary: `unique`;
+    - an upper-case byte: `name`;
+    - `uk.co` with the wildcard flag, the exact flag or both: `name`;
+    - the part cut to half its bytes: `length`, and every later check is SKIP;
+    - the first 3 blocks under the source's count of 600: `count`;
+    - a flipped byte in a stored block: `crc`;
+    - the `count` annotation off by one: `count`;
+    - a wrong PSL hash: `psl`;
+    - a `day` source with a time of day, written in seconds: `precision`;
+    - 39% of the median volume: `volume`, with the verdict `quarantine`.
+  - In the same run, the clean pack passes all 18 checks and 60% of the median is ok.
+  - The other 35 tests plant these defects: the part header fields, a page byte, the dataset annotation and dataset 4, an inflate length, the sha256 annotation, both key bounds, a short part read, a block's record count, stale parts (refind, with the 20-failure cap), unlisted source bits in names, domains, feed and new-name records and in domains evidence, a registry row with no bit, a precision annotation, and evidence times outside the span. They also cover the clock bound, `hold`, a band of bytes, SKIP and `require`, a source that throws, `quoteKey`, a hostile key, `expectFromAnnotations` and the committed fixtures.
+  - `node scripts/verify-pack.mjs packages/pack/test/verify/clean.part.000 packages/pack/test/verify/clean.idx` exits 0 at 05:01:11Z. It prints 10 PASS lines and 8 SKIP lines, in the order of `CHECKS`, then `VERDICT ok (8 skipped)`. The SKIP lines are `dataset`, `length`, `count`, `sha256`, `psl`, `sources`, `precision` and `volume`.
+  - `node scripts/verify-pack.mjs packages/pack/test/verify/truncated.part.000 packages/pack/test/verify/clean.idx` exits 1 at 05:01:16Z. It prints `FAIL length part.000 holds 3309 B, the index says 6619 B`, 15 lines that end `not run: the length check failed`, and `VERDICT fail (16 skipped)`.
+  - `node scripts/verify-pack.mjs --expect-count 1 packages/pack/test/verify/pair.part.000 packages/pack/test/verify/pair.idx` exits 1 at 05:01:17Z. It prints `FAIL count the pack holds 2 records, the count annotation says 1` and `VERDICT fail (8 skipped)`.
+  - The clean command with `--require count,sha256` exits 1 at 05:01:19Z and prints `VERDICT unverified (8 skipped; required and skipped: count, sha256)`. With `--require count,nope`, it exits 2 at 05:08:13Z.
+  - The clean command with `--annotations packages/pack/test/verify/clean.annotations.json --sources packages/pack/test/verify/registry.json --require dataset,length,count,sha256,psl,sources,precision` exits 0 at 05:01:21Z. It prints 17 PASS lines, `SKIP volume no volume rule given` and `VERDICT ok (1 skipped)`.
+  - The same command with the `count` annotation removed exits 1 at 05:01:29Z and prints `VERDICT unverified (2 skipped; required and skipped: count)`.
+  - `node scripts/test.mjs scripts --name "verify-pack"` exits 0 (05:01:34Z to 05:01:56Z) and prints `test: 17 test(s) passed matching verify-pack under scripts (69 file(s))`.
+  - `node scripts/test.mjs packages/pack` exits 0 (05:02:00Z to 05:02:11Z) and prints `test: 134 test(s) passed under packages/pack (10 file(s))`. The 3 `pack workerd` tests are among them.
+  - `npm run gate` exited 0 at 2026-10-29T04:57:36Z on tree 92e8b625ba91 (HEAD ec0014f with the working files). It printed `ℹ tests 1162`, `ℹ pass 1158`, `ℹ fail 0`, `ℹ skipped 4` and `gate: all steps passed` (`.tmp/gate-w3.txt`). The 48 `verify:` tests and the 17 `verify-pack:` tests pass in that run. None of the 4 skipped tests belongs to this entry.
+  - Planted defects:
+    - the build's driver ran 2026-10-29T01:04:20Z to 01:05:07Z. The control passes 44 selections, and 44 of 44 mutants are killed (`.tmp/DOM-018/mutate2.txt`). The guard lens (guard #14) found that the wave's drivers copied no `node_modules`. This driver's mutants are in files that its tests import by relative path, so its kills stand.
+    - the pack-verifier fix group ran 04:07:38Z to 04:08:34Z, in an isolated copy with its own `node_modules` and `@domains` links. A canary fails both suites first, then 34 of 34 mutants are killed.
+  - Gate part (b): this entry has no deployed surface and pushes nothing to GHCR. Its part (b) is the `ci.yml` run of the commit that carries this record. That run has not happened, because the commit does not exist yet.
+  - Gate part (c), the wave's three lenses and the independent verification:
+    - Door sweep. Door #4: the default run exited 0 with `VERDICT ok` when nothing was compared. It is fixed, as the Correction above records. Door #7: `readAt` sized a buffer by the length that the index claims. The verifier half is fixed, and the test "a read is never sized past the end of its file" holds it. The pack half belongs to DOM-017.
+    - Claim audit. Claim #15: the 6,715 ms time is in no file (see the Correction above). The lens re-ran the three Prove lines (exit 0, 1 and 1), read `.tmp/DOM-018/mutants.json`, and found nothing else for this entry.
+    - Guard mutation. It made 76 guard removals in `verify.ts` and `verify-pack.mjs`, and each of the 11 planted-defect guards was killed.
+      - Guard #4: the head's largest key, the domains evidence bit and time, the feed source bits, and a registry row with no bit had no planted defect. Each now has one.
+      - Guard #12: the wildcard test title (see the Correction above).
+      - Guard #13: guards in the CLI and the library survived. They are the `--expect-*` override, the two `--history` guards, the early `checkBand` call, `validateRegistry`, the `readAt` loop, the short-read and count mappings, and the `not run` text. Each now has a test.
+    - Verification (independent, two isolated copies). It planted the door #4, door #7, guard #4, guard #13 and dataset 5 guards again, and all were killed. One `readAt` plant first made a SyntaxError. It was redone as a single-pass loop and then killed. It held the rejection of a wildcard rule (guard #12).
+      - Its one problem for this entry was that no later entry told its job to pass `--require`. The Found notes in DOM-020, DOM-022 and DOM-023, and section 5.8 step 1, now tell those jobs.
+- **Open 2026-10-29T05:20Z:**
+  - DOM-020: `scripts/verify-pack.mjs` has a `readAt` that repeats the private one of `packages/pack/node/index.ts`, because `openPackFiles` opens a directory of files named `idx` and `part.NNN`, and the CLI takes any paths. The GHCR form shares one reader.
+  - DOM-024, DOM-029 and DOM-057 call the verifier (`TODO/ingest.md` lines 460, 582 and 878) and have no `--require` note.
+  - DOM-026: its Prove (`TODO/ingest.md` line 502) runs `node scripts/verify-pack.mjs --repo obs --tag <TAG>`, which exits 2 with `unknown flag --repo`.
+  - DOM-043: the dataset 4 path of the Found above is not yet written into DOM-043.
+  - DOM-024: the quarantine annotation has three spellings, and no code writes it yet. This entry's Decision says `dev.pkgforge.domains.quarantine=1`, DOM-029 says `quarantine: true`, and `docs/architecture.md` section 5.8 says "a `quarantine` annotation". The recommendation is the first spelling, because it uses the prefix of every other annotation.
+  - DOM-024: no entry names the writer of the history file that `--history` reads, the `{ day, count, quarantined }` list of a source's days.
+- **Built 2026-10-29T06:30Z (the four DOM-018 items of the Open field):**
+  - `refind` on a pack of no record is SKIP, "the pack holds no record to find". A `--require` that names `refind` then gives `unverified`.
+  - `inflate`, `crc`, `record`, `order`, `unique` and `name` are SKIP with the reason when they ran on no block ("the pack holds no block", or "not run: none of the N block(s) ..."). `record` counts only the blocks whose decode ended, so a block refused for its count does not make `record` pass. A check that ran on some blocks keeps its PASS.
+  - On a pack of no record, `sources` and `precision` pass on the registry half alone, and their detail says so ("the pack holds no record to check", "the pack holds no time to bound").
+  - The re-find reader opens with `partSizes` inside a catch. An index that changed between the pass and the re-find fails `refind` with the reader's code, and `verifyPack` no longer rejects.
+  - `scripts/verify-pack.mjs` imports `@domains/adapter` by its package name.
+  - Each change has a test in `packages/pack/test/verify.test.ts` or `scripts/verify-pack.test.mjs`, and each planted mutant failed it. One mutant, `crc` counted over `checked`, is equivalent and survives.
+  - `node scripts/test.mjs packages/pack --name verify` passes 50 tests, and `node scripts/test.mjs scripts --name verify-pack` 19.
 
 ## DOM-019 — GHCR packages, tags, the push tool and the anonymous-read check
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T09:00:00Z; then close when the `ci.yml` run on the commit that carries this record ends success on ubuntu-24.04, one dispatch of `ref-refresh.yml` ends success, `node scripts/ghcr/tags.mjs ref --prefix psl- --min 1` and the same with `ctlogs-` and `sources-` and `node scripts/ghcr/check-public.mjs ref` each exit 0 from a machine with no credential, and the two `ref` rows of `docs/resources.md` name that run
 - **Priority:** P1
 - **Effort:** M
 - **Source:** `docs/architecture.md` section 4.1 to section 4.3 and section 4.7; mirror-archlinux `docs/design.md` and `docs/worker.md`. The operator's ruling 6: Actions writes with its own `GITHUB_TOKEN` and keeps the anonymous-read check as the safety net.
@@ -321,6 +589,117 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `gh workflow run ref-refresh.yml` then `node scripts/ghcr/tags.mjs ref --prefix psl- --min 1`, `node scripts/ghcr/tags.mjs ref --prefix ctlogs- --min 1` and `node scripts/ghcr/tags.mjs ref --prefix sources- --min 1` each exit 0.
   - `node scripts/ghcr/check-public.mjs ref` exits 0 from a machine with no GitHub login. Read the exit code unpiped.
   - `node scripts/test.mjs scripts --name "workflow policy"` still passes with `ref-refresh.yml` in the tree.
+- **Built 2026-10-29T05:20Z:** the workspace package `@domains/ghcr` (`packages/ghcr/`, 0BSD, Worker code with no `node:` import), the scripts of `scripts/ghcr/` and the workflow `.github/workflows/ref-refresh.yml`. Nothing is committed or pushed yet: HEAD is ec0014f, and these paths are untracked.
+  - `packages/ghcr/src/reader.ts` holds `ghcrReader(options)`. `userAgent` is required. The other options are `fetcher`, `cache`, `timeoutMs`, `maxRangeBytes`, `namespace` and `allowBlobHosts`.
+  - The reader offers `getManifest`, `headManifest`, `listTags` and `readRange`. Its errors are `GhcrError`, with one of 11 codes and the HTTP status.
+  - `getManifest` caps a manifest at 64 KiB (`MANIFEST_MAX_BYTES`). A caller may raise the cap per call to 4 MiB (`MANIFEST_LIMIT_BYTES`). `listTags` follows `Link`, 1,000 tags a page. `readRange` takes an exclusive end and reads at most 32 MiB (`RANGE_MAX_BYTES`).
+  - `memoryCache` and the `GhcrCache` interface keep signed URLs and manifests. The reader hashes a kept manifest again, and a cache failure counts as a miss.
+  - `packages/ghcr/src/layout.ts` holds the namespace, the eight packages, `artifactType` for 7 kinds, and the tag builders `segTag`, `rawTag`, `fileTag`, `tierTag`, `rootTag`, `stateTag` and `refTag`. Every tag is lowercase.
+  - `packages/ghcr/src/index.ts` exports the reader, its constants, its error and the layout. It does not export the seven low-level parts `send`, `ghcr`, `tokenNew`, `tokenKept`, `resetTokens`, `dialer` and `readCapped`.
+  - `packages/ghcr/test/` holds 50 tests in 4 files: layout 8, reader 40, surface 1, workerd 1. `tsconfig.worker.json` checks the workerd entry `packages/ghcr/test/ghcr-worker.ts` through its pattern `packages/*/test/*-worker.ts`.
+  - `scripts/ghcr/push.mjs` is the one GHCR writer. It runs the pinned oras with four verbs: login, `push --oci-layout`, `manifest fetch` and `copy`. Exit 0 pushed or present, 1 a fault, 2 could not run, 3 the tag holds another manifest, 4 PRIVATE PACKAGE.
+  - `scripts/ghcr/tags.mjs` and `scripts/ghcr/check-public.mjs` read with no credential. Each exits 4 with `PRIVATE PACKAGE` for a private or an absent package, and 70 for an internal error.
+  - `scripts/ghcr/rate.mjs` holds the 429 pauses and the attempt limit. `scripts/ghcr/ref-inputs.mjs` reads and checks the three `ref` files.
+  - `scripts/ghcr/` holds 66 tests in 5 files: push 28, tags and check-public 15, ref-inputs 13, rate 5, ref-refresh 5. `scripts/ghcr/fixtures/fake-oras.mjs` is synthetic. `scripts/ghcr/fixtures/log_list-95.15.json` is the live CT log list as read at 2026-10-29T00:38:50Z.
+  - `ref-refresh.yml` runs at cron `13 5 * * *` and on dispatch, in the group `ref-refresh` with no cancel. Its one job `ref` runs on main only, with `contents: read` and `packages: write`. Only the push step holds the token.
+  - `docs/resources.md` holds the row of the `ref` package (line 65) and the row of `ref-refresh.yml` (line 94). Both read pending, because nothing is pushed.
+- **Correction 2026-10-29T05:20Z (Approach, the grants of job `ref`):** the job holds `contents: read` and `packages: write` only. `scripts/track-issue` does not exist yet, so an `issues: write` grant would have no user. DOM-006 made the same correction.
+  - The step "Raise visibility-ref (a no-op until DOM-034)" fails the job and opens nothing.
+  - The step `public` writes the exit code of `check-public.mjs ref` to its output `rc`. The visibility step runs only on `rc == '4'`.
+  - Exit 1 (no tag), 2 (a GHCR error) and 70 (a defect) fail the job with their own message. `scripts/ghcr/ref-refresh.test.mjs` holds the output and the condition.
+  - Before this change the step ran on any failure of the read. The door sweep (door #12) and the verification found it.
+- **Correction 2026-10-29T05:20Z (Approach, the pins of the reader):** the door sweep (door #3, door #8) found the old pins too loose. The reader now pins these.
+  - A realm must be exactly `https://ghcr.io/token`. Another port or path is refused, and `:443` is accepted.
+  - A blob 307 to a host outside `*.githubusercontent.com` is refused with code `redirect`. The Approach said such a host is read and reported. Now the reader reads it, and reports it `unexpected`, only when the caller names it in `allowBlobHosts`.
+  - A signed URL is kept at most 15 minutes less 60 s (`SIGNED_MAX_S`, `SIGNED_MARGIN_S`), whatever its `se`. A kept URL that is not https, or not on an allowed host, is a miss.
+  - A repository outside the reader's `namespace` is refused before any request. The default is `pkgforge-dev/domains.pkgforge.dev`, and `probe` is inside it. `ghcr()` refuses a URL that is not on `https://ghcr.io`.
+  - A next `Link` outside the repository's own tag list, or one to a page already read, is an error. The reference returned null there, which ended the list early with no error.
+- **Correction 2026-10-29T05:20Z (Approach, the manifest cap):** 64 KiB stays the default, and a caller may raise it per call to 4 MiB. `check-public.mjs` and the read-back of `push.mjs` use 4 MiB.
+  - MEASURED 2026-10-29T00:50:51Z: `node scripts/ghcr/check-public.mjs probe` exited 2. The manifest of the newest tag `layers-1000` is over 64 KiB.
+  - MEASURED 2026-10-29T05:01:39Z with the 4 MiB cap: exit 0, `public ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe:layers-1000 sha256:dbcb9d727f30966206b0d32dcd617b072e71fb79d3fcfcc87b04ad3dde6a3f1e via dummy token`.
+- **Correction 2026-10-29T05:20Z (Approach, the rule for `present`):** a tag is present when it holds the same manifest digest. It is also present when it holds the same `dev.pkgforge.domains.sha256`, the same artifact type and the same layers.
+  - The layers are compared by count and order, then by title and media type. For a ref the layer digest is compared too.
+  - A ref holds exactly one layer, whose digest is `sha256:` and its annotation. Any other layout is exit 1 before the tag is read.
+  - Before this change the annotation and the type were enough, over any layer (door #2). `docs/format.md` section 8 now states the rule.
+  - After a failed copy, `push.mjs` reads the tag again. Another writer's manifest there is exit 3, and the copy is not tried again (guard #2).
+- **Correction 2026-10-29T05:20Z (Approach, the token):** the token reaches oras on the login's stdin. No oras process holds `REGISTRY_TOKEN` in its environment. Before this change every oras child inherited it (door #9). `orasEnv` drops the name without regard to case.
+- **Correction 2026-10-29T05:20Z (Approach, exit codes):** an anonymous reader cannot tell a private package from an absent one. So `tags.mjs` and `check-public.mjs` exit 4 for both.
+  - MEASURED 2026-10-29T00:38:16Z, before `ref` existed: `Bearer QQ==` got 404 `NAME_UNKNOWN` for its tag list, and the token endpoint answered 403.
+  - An error that neither script knows is exit 70, never 1 or 4 (door #12). Before this change Node ended it with exit 1, which both scripts use for a verdict.
+- **Correction 2026-10-29T05:20Z (Premise, the life of a token):** GHCR's anonymous token answer holds one key, `token`, and no `expires_in` (MEASURED 2026-10-29T00:40:25Z). The reader applies the Docker token specification's default of 60 s, which is read and not measured. It keeps the token 30 s.
+- **Correction 2026-10-29T05:20Z (Approach, the `ref` files):** `docs/architecture.md` section 4.2 names no kind for `ref`. This entry uses `application/vnd.pkgforge.domains.ref.v1`, with one layer titled by its file: `public_suffix_list.dat`, `log_list.json` or `sources.json`.
+  - The annotations are `org.opencontainers.image.source`, `org.opencontainers.image.created`, and `dev.pkgforge.domains.sha256`, `.bytes`, `.url` and `.run`. `dev.pkgforge.domains.url` is new. It names where the bytes came from.
+  - The workflow calls `push.mjs` for each file on every run. A content that `ref` already holds is `present`, so a tag is added only for a new hash.
+  - `scripts/ref/fetch-psl.mjs` refuses a redirect, so the `url` annotation is the URL the bytes came from (door #11). MEASURED 2026-10-29T03:11:13Z with curl: neither list redirects.
+  - `ref-inputs.mjs --url` must be an https URL on the kind's own origin, unless `--allow-other-url` is given.
+  - `ref-inputs.mjs sources` runs `validateRegistry` of `packages/adapter` against `config/source-bits.json` before it writes the file (door #5). A credential in a source URL then fails before a public push.
+- **Correction 2026-10-29T05:20Z (Premise, the CT log list):** the Approach gives 62,375 B at `log_list_timestamp` 2026-10-26T13:45:16Z. MEASURED 2026-10-29T05:01:54Z: 62,375 B, version 95.15, timestamp 2026-10-28T13:37:58Z, 11 operators, 26 logs, 59 tiled logs, tag `ctlogs-29e361747007`. The same file was read at 2026-10-29T00:38:50Z.
+- **Correction 2026-10-29T05:20Z (Prove):**
+  - The planted rewrite is a test of `scripts/ghcr/push.test.mjs`, beside `push.mjs`, not of `packages/ghcr`. `node scripts/test.mjs scripts/ghcr --name "planted rewrite"` runs it.
+  - Before the first push, each `tags.mjs ref` line exits 4 with `PRIVATE PACKAGE`, not 1.
+- **Correction 2026-10-29T05:20Z (the claim audit):**
+  - claim #1: `docs/resources.md` gave 214 B for `config/sources.json` "at ec0014f". That file is not in ec0014f. The row now reads "as the wave 3 tree holds it, before its first commit". The first dispatch after the commit stamps `created` from that commit.
+  - claim #11: `docs/format.md` section 8 said the push tool sets the pack annotations. A caller passes them with `--annotation`, and no caller passes them yet.
+  - claim #13: "the newest tag is the last one GHCR lists" was stated as a rule. The order was seen on `probe` only. `check-public.mjs` and `ref-refresh.yml` now say so, and say that the read after the push proves `ref` public.
+  - claim #14: `packages/ghcr/test/workerd.test.ts` said its stand-in follows measured answers. Its 401 to the dummy token follows what mirror-archlinux documents for a private repository, and the comment now says so.
+- **Decision 2026-10-29T05:20Z (`created` of a `ref` object):** `org.opencontainers.image.created` is the source's own time, never the fetch or push time.
+  - For the PSL it is the `// VERSION:` line. For the CT log list it is `log_list_timestamp`, cut to the second.
+  - `sources.json` carries no time. Its `created` is the time of the commit the workflow reads it from.
+  - The `run` annotation differs between runs, so a re-run gives another manifest digest. The tag is still `present`, through the same sha256, type and layer digest.
+- **Decision 2026-10-29T05:20Z (`push.mjs`):**
+  - It writes only to the eight packages. A typo would create a package that can never be deleted (ruling 5).
+  - It reads the tag with the job's token, so a private package counts too. Only oras's "not found", "manifest unknown" or "name unknown" mean absent.
+  - It refuses more than 256 layers (`MAX_LAYERS`), the count both DOM-006 runs accepted. Every FILE sits in one directory, and its name is the layer title.
+- **Decision 2026-10-29T05:20Z (two parts of the door sweep not taken):** the verification checked both and found each holds.
+  - door #2, packs: `present` does not compare a pack's layer sizes or digests. `docs/format.md` section 8 says another zlib build gives other compressed bytes for one SHA-256. A size match would make that case exit 3. Titles and media types are compared.
+  - door #3, part 3: the token map stays one per isolate. Every key is a repository inside the reader's namespace, and every token is an anonymous pull token.
+- **Found 2026-10-29T05:20Z (DOM-034):** the visibility step of `ref-refresh.yml` waits for `scripts/track-issue`, which does not exist yet.
+  - DOM-034 replaces the step with the call and keeps the condition `steps.public.outputs.rc == '4'`.
+  - In the same commit it adds `issues: write` to job `ref`, and updates the row of `ref-refresh.yml` in `docs/resources.md`.
+  - `scripts/ghcr/ref-refresh.test.mjs` asserts that no `issues: write` is in the file. That assertion changes in the same commit.
+- **Found 2026-10-29T05:20Z (DOM-040):** DOM-040's blob route says the Worker logs a host outside `*.githubusercontent.com` and adds `x-domains-blob-host: unexpected`.
+  - `readRange` now refuses such a host with `GhcrError` `redirect`, unless the Worker names it in `allowBlobHosts`. DOM-040 states which it does.
+  - A redirect route that does not go through `readRange` applies its own host check.
+- **Found 2026-10-29T05:20Z (DOM-030):** `ghcrReader` requires `userAgent` and keeps no copy of the string. `USER_AGENT` lives in `scripts/lib/user-agent.mjs`, which Worker code cannot import. The recommendation: move the constant into `@domains/core`, re-export it from `scripts/lib/user-agent.mjs`, and pass it from the Worker.
+- **Found 2026-10-29T05:20Z (DOM-020 and DOM-023, the PSL hash):** a new PSL hash can carry no change of rule.
+  - MEASURED 2026-10-29T05:01:54Z (`node scripts/ghcr/ref-inputs.mjs psl`, exit 0): 338,012 B, `// VERSION: 2026-10-28_13-15-55_UTC`, 6,949 ICANN and 3,448 private rules, sha256 `1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9`, tag `psl-1f96bae40adf`.
+  - `diff` against `packages/names/test/fixtures/psl-2026-10-27.dat` (sha256 `0232f4df...`, the live list at 2026-10-29T00:38:49Z) shows only lines 8 and 9, the `VERSION` and `COMMIT` lines.
+  - So the first dispatch pushes `psl-1f96bae40adf`, not `psl-0232f4df0831`, if the list holds still. A recompute of `suffix`, `reg` and `site` on each new hash also runs for a list whose rules are the same.
+- **Found 2026-10-29T05:20Z (DOM-011):** two readers of the CT log list exist: `logRows` in `scripts/measure/ct-logs.mjs`, a measurement, and `checkLogList` in `scripts/ghcr/ref-inputs.mjs`, the check of the daily job. The daily job imports no measurement script. When DOM-011 closes, `ct-logs.mjs` calls `checkLogList`, or it is removed.
+- **Prove as it stands 2026-10-29T05:20Z:** each command ran alone on the operator's Windows workstation with Node v26.7.0. Each exit code was read from the process, with the output in a file under `.tmp/rec-w3/`.
+  - `node scripts/test.mjs packages/ghcr` exits 0 at 2026-10-29T05:00:42Z: `test: 50 test(s) passed under packages/ghcr (4 file(s))`.
+  - `node scripts/test.mjs scripts/ghcr` exits 0 at 05:00:57Z: `test: 66 test(s) passed under scripts/ghcr (5 file(s))`.
+  - `node scripts/test.mjs scripts/ghcr --name "planted rewrite"` exits 0 at 05:01:11Z: `✔ push: a planted rewrite of an existing tag is refused with exit 3 and nothing is written`.
+  - `node scripts/test.mjs packages/ghcr --name workerd` exits 0: `✔ ghcr workerd: the reader's global-fetch dial runs the token flow, pages the tag list and reads a range through the 307 in workerd`. It pages 1,500 tags over 2 pages.
+  - `node scripts/test.mjs scripts --name "workflow policy"` exits 0 with `ref-refresh.yml` in the tree: `test: 50 test(s) passed matching workflow policy under scripts (69 file(s))`.
+  - `node scripts/check-workflows.mjs .github/workflows/ref-refresh.yml` exits 0: `check-workflows: 1 workflow file(s) keep the 15 rules`.
+  - `node scripts/test.mjs scripts/ref` exits 0: `test: 8 test(s) passed under scripts/ref (1 file(s))`.
+  - Not run: `gh workflow run ref-refresh.yml`. The workflow and the scripts it runs are not committed.
+  - At 2026-10-29T05:01:30Z, `node scripts/ghcr/tags.mjs ref --prefix psl- --min 1` exits 4. So do the same command with `ctlogs-` and with `sources-`, and `node scripts/ghcr/check-public.mjs ref`. Each prints `PRIVATE PACKAGE`, and stderr reads `GHCR holds no tag list of pkgforge-dev/domains.pkgforge.dev/ref`. The package is absent until the first dispatch.
+  - The live reader works on `probe`. At 05:01:39Z `node scripts/ghcr/tags.mjs probe` exits 0 with 6 tags: `size-1536m`, `size-4096m`, `retag`, `layers-100`, `layers-256`, `layers-1000`. `node scripts/ghcr/check-public.mjs probe` exits 0 with the line quoted in the manifest-cap Correction.
+  - At 05:01:54Z, `node scripts/ghcr/ref-inputs.mjs psl`, `ctlogs` and `sources`, each with `--out` under `.tmp/rec-w3/ref/`, exit 0. The tags are `psl-1f96bae40adf`, `ctlogs-29e361747007` and `sources-d33793f12605`. `sources.json` is 214 B with 0 sources as the working tree holds it, and it passes `validateRegistry`.
+  - The full gate: `npm run gate` exits 0 at 2026-10-29T04:57:36Z on tree `92e8b625ba91`, HEAD ec0014f with the working files (`.tmp/gate-w3.txt`). It reads `ℹ tests 1162`, `ℹ pass 1158`, `ℹ fail 0`, `ℹ skipped 4` and `gate: all steps passed`. Its rule 10 line reads `249 script and package file(s) delete nothing from GHCR`.
+  - Planted defects:
+    - The build, 2026-10-29T01:06:08Z to 01:06:31Z (`.tmp/DOM-019/mutate.txt`): the control passes 30 selections, and 42 of 42 mutants are killed. Guard #14 found that these mutants sit in files the tests import by relative path, so the record holds without an isolated `node_modules`.
+    - The ghcr-reader fixes, 2026-10-29T03:20:31Z: in an isolated copy, canary first, 26 of 26 plants in `reader.ts` are killed, each by a named reader test.
+    - The ghcr-scripts fixes, 2026-10-29T03:25:02Z: 39 of 39 plants in `push.mjs`, `check-public.mjs`, `tags.mjs`, `ref-inputs.mjs` and `fetch-psl.mjs` are killed, the canary included. Each was planted in place and restored, and `cmp` held the files equal afterwards.
+    - Rule 10, 2026-10-29T03:28:19Z (`.tmp/door10/mutate.log`, door #10): 16 of 16 killed. `scripts/check-workflows.test.mjs` holds the oras verbs of `push.mjs` to login, `push --oci-layout`, `manifest fetch` and `copy`.
+    - This record, 2026-10-29T05:03:38Z and 05:04:02Z, in copies under `.tmp/rec-w3/m/`: the canaries on `check-public.mjs` and `index.ts` failed first, and the controls passed. `isNotPublic` without 403 fails 1 of 15 tags tests. The seven low-level names re-exported from `index.ts` fail the surface test. The visibility step on `steps.public.outcome == 'failure'`, and the `rc` output removed, each fail 1 of 5 ref-refresh tests. `cmp` held the real files equal afterwards.
+  - Gate part (c), the wave's three lenses and the verification:
+    - Door sweep: door #2, #3, #5, #8, #9, #10, #11 and #12 concern this entry. Each is fixed, except the two parts the Decision above records. The lens found the surface of `ref-refresh.yml` clean: triggers, permissions, token scope, outbound hosts and the main-only gate.
+    - Claim audit: claim #1, #11, #13 and #14, each corrected above.
+    - Guard mutation: guard #1, #2, #6, #7 and #8. The exit codes are now asserted as numbers, and one spawned process per CLI reaches its non-zero code with no network. Each other finding got a planted test.
+    - Verification (`.tmp/w3fix-8.json`): every ghcr plant was killed except two survivors, `isNotPublic` without 403 and a re-export from `index.ts`. It also found the visibility step still ran on any failure. The tests named above now close all three.
+  - Gate part (b) is not met: nothing is pushed to `ref`.
+- **Open 2026-10-29T05:20Z:**
+  - DOM-019: the oras flags `push --oci-layout`, `copy --from-oci-layout --to-registry-config` and `manifest fetch --registry-config` come from a reading of oras's option code, not a run, and `fake-oras.mjs` encodes the same reading. The first dispatch proves them.
+  - DOM-019: the process test that loads `fake-oras.mjs` through `NODE_OPTIONS=--import` passed on Windows only. The `ci.yml` run on the commit proves it on ubuntu-24.04.
+  - DOM-019: the `ref` package is not yet proven public, and both `ref` rows of `docs/resources.md` read pending.
+  - DOM-034: `issues: write` and the call to `scripts/track-issue` for job `ref` are not yet in the tree.
+- **Built 2026-10-29T06:30Z (two items of the Open field):**
+  - `docs/architecture.md` section 4.2 has a `ref` row (one layer, the file as fetched or committed) and lists the seven kinds of `ARTIFACT_KINDS`.
+  - `push.mjs` and `ref-inputs.mjs` end an error they do not know with exit 70 and its stack, as `tags.mjs` and `check-public.mjs` do. Each header names 70, and so does the push step of `ref-refresh.yml`.
+  - Two raw reads of `push.mjs` that a fault could break are wrapped as faults, exit 1: the manifest blob of the OCI layout, and the file a `manifest fetch` writes. Tests in `scripts/ghcr/push.test.mjs` and `scripts/ghcr/ref-inputs.test.mjs` hold each change, and the planted mutants failed them.
 
 ## DOM-020 — The root manifest and its forward-only promotion
 
@@ -350,10 +729,21 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - After the first run of `root-promote.yml`: `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root/manifests/latest | jq -r .artifactType` prints `application/vnd.pkgforge.domains.root.v1`.
   - `node scripts/root/show.mjs --ref latest` prints `root_seq`, `as_of` and the live packs.
 - **Found 2026-10-28T23:38Z (DOM-014):** rule 13 of `scripts/check-workflows.mjs`, read literally, puts the group `root-writer` on a workflow whose job calls `root-promote.yml`. This entry puts the group in `root-promote.yml` itself, and a caller and a called workflow in one group would wait on each other (read, not measured). The check implements the literal rule. This entry settles the rule with a measured run when it writes `root-promote.yml`. The recommendation is to exempt a caller of `root-promote.yml` and require the group in the called file. `TODO/PROGRESS.md` "Open questions" carries it.
+- **Found 2026-10-29T03:10Z (DOM-019, wave 3 integration):**
+  - Every tag is lowercase in `packages/ghcr/src/layout.ts`, and `rootTag("2026-10-29T05:13:00Z")` answers `r-20261029t051300z`. So the dated tag of the Approach is written `r-YYYYMMDDtHHMMSSz`; push it with `rootTag()`, never by hand.
+  - The registry that DOM-016 builds, `config/sources.json`, holds the static fields of each `source.json`: no `fetched`, `status` or `through`. `docs/architecture.md` section 3.5 puts `through` in the promotion job's hands and derives `status` at read time. So the `sources.json` layer of the root is the registry plus each source's `through` and `fetched`, written by this entry's `buildRoot`, and `validateSource` refuses those fields in a `source.json`.
+- **Found 2026-10-29T04:54Z (DOM-018, wave 3 verification):** the verifier prints SKIP for a check with nothing to compare, and with no annotation its default run exits 0 with `VERDICT ok (8 skipped)`. So the promote job names every check it needs compared: `node scripts/verify-pack.mjs <parts and idx> --annotations <the manifest's annotations as JSON> --psl <the pinned PSL> --sources config/sources.json --require dataset,length,count,sha256,psl,sources,precision`, adding `volume` with `--history`. A check of `--require` that skips exits 1 with `VERDICT unverified`, and the Prove adds a pack whose `count` annotation is removed, which must exit 1 that way. `scripts/verify-pack.mjs` reads local files only: a GHCR form (`--ref`, `--repo` and `--tag`) does not exist, so this entry adds one through `packages/ghcr`, or its job pulls the pack with oras first.
+- **Decision 2026-10-29T05:34Z (ruling 18):** the operator chose the group in the called file. `root-promote.yml` carries `concurrency: root-writer` with `queue: single`, and a workflow that only calls it carries none. This entry changes rule 13 of `scripts/check-workflows.mjs` to exempt such a caller and to require the group in `root-promote.yml`, with tests for both, in the same commit as the workflow. The Prove adds a measured run: two dispatches of a caller one second apart, and the second promotion starts only after the first ends.
+- **Found 2026-10-29T06:00Z (DOM-016 and DOM-019, the PSL hash of a root):** the root names the sha256 of the PSL its packs were built under, in the field `psl` of `root.json` (this entry's Premise, `docs/architecture.md` sections 3.1 and 4.6). `config/sources.json` holds no PSL field, so the `sources.json` layer does not carry it.
+  - The pinned list is the `ref` object `psl-<sha12>` (DOM-019, `refTag` of `packages/ghcr/src/layout.ts`). Its `dev.pkgforge.domains.sha256` annotation holds the whole hash (the push step of `.github/workflows/ref-refresh.yml`).
+  - The Approach's `buildRoot({ live, add, replace, sources, coverage, now })` takes no PSL. This entry adds that hash to its inputs, and `buildRoot` writes it as `psl`.
+  - A new list is recomputed at the next compaction (`docs/architecture.md` section 5.4). Until then the live set holds packs built under the older list, each with its own `dev.pkgforge.domains.psl`. This entry states which hash the root names then. DOM-019's Found of 2026-10-29T05:20Z (the PSL hash) shows that a new hash can carry no change of rule.
+- **Found 2026-10-29T06:00Z (DOM-018, two copies of `readAt`):** the exported `readAt` of `scripts/verify-pack.mjs` repeats the private `readAt` of `packages/pack/node/index.ts`. `openPackFiles` of that file opens a directory whose files are named exactly `idx` and `part.NNN`. The CLI takes any paths, such as `clean.part.000`, so it cannot call `openPackFiles`. The GHCR form of this entry's Found of 2026-10-29T04:54Z reads through one reader that the local form shares, not a third copy.
 
 ## DOM-021 — The domain table: exact first and last seen, and the provisional filter
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends `success` on ubuntu, and its log shows the 45 `packages/ledger` tests passing, `ledger workerd` and `filter: the false-positive rate on 1,000,000 absent keys` among them; then close.
 - **Priority:** P1
 - **Effort:** L
 - **Source:** design A section 4.2 (registrable-domain record, evidence) and design B section 5.2 ("Domain ledger") and section 9; `docs/architecture.md` section 2, section 3.3 and section 5.8.
@@ -376,10 +766,109 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Decision:** Bloom first, with the filter behind an interface. A binary fuse filter gives about 9 bits a key at 0.4% false positives and is immutable, so it needs the delta anyway. A Bloom filter is 40 lines, builds in one pass, and its 1% false positives only delay a "new" label by hours. Replace it only if the download size matters. The exact table decides every answer a caller keeps.
 - **Depends on:** DOM-009, DOM-015, DOM-017
 - **Prove:** `node scripts/test.mjs packages/ledger` passes.
-  - `node scripts/bench/ledger-filter.mjs --keys 10000000` prints the false-positive rate (expect 0.8% to 1.2%) and the size (expect about 12 MB for 10 million keys), and exits 0.
+  - `node packages/ledger/bench/ledger-filter.mjs --keys 10000000` prints the false-positive rate (expect 0.8% to 1.2%) and the size (expect about 12 MB for 10 million keys), and exits 0.
   - `node scripts/test.mjs packages/ledger --name "reconcile"` shows a false positive repaired.
   - A planted defect that drops the delta from `has` makes the `delta` test fail.
 - **Found 2026-10-28T14:24Z (DOM-009):** the Tests line plans a replay that builds the ledger from DOM-009's per-day files, and those files cannot carry it. Each leg of `.github/workflows/measure-thc-day.yml` uploads its day as the artifact `thc-day-DAY`, with `retention-days: 1` (lines 137 to 145). It holds `DAY.stat.json` and two files of h53 hashes, one of the names and one of the registrable domains. Each file keeps 1 hash in 16: the default `--sample-bits 4` of `scripts/measure/thc-day.mjs` line 256, which the workflow does not change (`.github/workflows/measure-thc-day.yml` line 136). A hash does not give back its name, and 15 names in 16 are not in the files at all. The artifact expires after 1 day, so no test can read it. The merged artifact `thc-result` holds counts, estimates and per-day summaries only (`scripts/measure/thc-union.mjs` lines 264 to 280). A ledger needs every registrable domain with its first and last seen, and a check of 10 known domains needs their names. So the replay test must take another input, and the Tests line must name it. One input that needs no new dependency is a small fixture of name lines from the start of several THC day files. A Range read of such a file from offset 0 answers 206, and it decodes up to the cut (DOM-008's premise).
+- **Built 2026-10-29T05:20Z:** the workspace package `@domains/ledger` (`packages/ledger/`, 0BSD). `src/` imports nothing from `node:`, and `tsconfig.worker.json` checks it against the Workers types.
+  - `src/errors.ts` holds `LedgerError`, with the codes `usage`, `order`, `precision`, `time`, `format`, `crc` and `pair`.
+  - `src/hash.ts` holds `murmur3x86x128`, `hashKey`, `hashHex`, `compareHash` and `HASH_ID`.
+  - `src/time.ts` holds `precisionsOf`, `firstSeen`, `lastSeen`, `secondsOf`, `isoOf`, `corpusState`, `WARMING_DAYS`, `DAY_SECONDS` and `EPOCH_MS`.
+  - `src/aggregate.ts` holds `aggregateToDomains`, `releaseKey` and `newCounts`. `src/exact.ts` holds `exactNew` and `newExactStats`.
+  - `src/filter.ts` holds `MembershipFilter`, `BloomFilter`, `HashDelta`, `ProvisionalFilter` and `buildFilter`. Its header gives the byte layouts of the filter (`DLBF`) and the delta (`DLBD`).
+  - `src/reconcile.ts` holds `provisionalNew` and `reconcile`. `src/index.ts` exports them all.
+  - `bench/ledger-filter.mjs` is the bench of the Prove. It exports `parseFlags`, `syntheticKey`, `judge`, `bench`, `SCHEMA`, `RATE_MIN`, `RATE_MAX`, `SIZE_SLACK` and `UsageError`. `docs/research/measure/DOM-021/bench-10M.json` is its result of 2026-10-29T01:01:23Z.
+  - `test/` holds 9 test files with 45 tests: aggregate 9, bench 3, exact 5, filter 9, hash 4, reconcile 3, replay 5, time 6, workerd 1. Beside them: `helpers.ts`, the test Worker `ledger-worker.ts`, the fixture maker `make-thc-slice.ts` and the measured fixture `fixtures/thc-slice.json` (206,752 B).
+  - The package imports `@domains/pack` and `@domains/names` by name. `tsconfig.worker.json` takes `ledger-worker.ts` through its pattern `packages/*/test/*-worker.ts`.
+- **Correction 2026-10-29T05:20Z (Prove, the bench path):** the bench is `packages/ledger/bench/ledger-filter.mjs`. The build could write only under `packages/ledger/`, and nobody moved the file.
+  - `node scripts/bench/ledger-filter.mjs --keys 10` exits 1 at 05:01Z with `Error: Cannot find module`. The Prove line named that path until 2026-10-29T06:00Z and now names `packages/ledger/bench/ledger-filter.mjs`.
+- **Correction 2026-10-29T05:20Z (Approach, the false-positive rate):** 10 bits a key and 7 hashes give 0.82% by the formula (1 - e^(-7/10))^7, not 1%. Both measurements below land in the Prove's band of 0.8% to 1.2%.
+  - The test keys are fixed, not random: `domainKey` 0 to 999,999 go in, and 1,000,000 to 1,999,999 are asked. The hash has seed 0. So every run gives the same count.
+  - MEASURED 2026-10-29T03:11:00Z, 03:11:02Z, 03:31:18Z and 05:00:31Z: 8,185 false positives in 1,000,000 each time (0.8185%, formula 0.8193%).
+  - The build report said a run can fall below 0.8% about 2% of the time. The integrator rejected that: no input of the test changes between runs. The result is 185 hits above the floor, so a change of the keys or of the hash can move it below.
+- **Correction 2026-10-29T05:20Z (Approach, API shapes):**
+  - `aggregateToDomains(names, psl, counts?)` takes the list and returns an async generator. Names must ascend by key, or it throws `LedgerError` `order`.
+  - `exactNew(day, base, options)` takes a list of earlier packs, not one reader. The options are `since`, `precision` (required with `since`) and `stats`.
+  - `firstSeen(record, precision)` and `lastSeen(record, precision)` take a precision table. `precisionsOf(rows)` builds it from rows of `config/sources.json`.
+  - `MembershipFilter` takes a `Hash64` `{ hi, lo }`, not a key.
+  - `reconcile(provisional, exact)` returns sorted, distinct `{ confirmed, repaired, retracted }`. `retracted` is a provisional "new" that the exact join shows old.
+- **Correction 2026-10-29T05:20Z (Premise, the streaming aggregation):** name records in key order do not give domains in key order.
+  - `-` (0x2D) sorts below `.`, so `com.my-site` arrives before `com.my.www`, whose domain `com.my` sorts lower.
+  - A deeper list rule does the same. With a rule `deep.zone.com` and no rule `zone.com`, a name of `zone.com` can arrive after the domain `a.deep.zone.com`, which sorts above it.
+  - `aggregateToDomains` holds each domain until the input passes `releaseKey(domain)`. An order check on its own output throws `LedgerError` `order` if that rule is wrong.
+  - The fuzz test over 12,000 synthetic names held at most 328 of 2,465 domains. No real day measured this bound.
+- **Correction 2026-10-29T05:20Z (Approach, exact newness):** absence from every earlier pack is not enough. `docs/architecture.md` section 2 also asks that the corpus show no earlier observation from any source.
+  - With `since`, `exactNew` drops a record whose own `firstSeen` is before `since`, and counts it in `stats.early`. A test plants a day source that dates a domain to day 120 of a window that starts on day 298.
+  - `exactNew` refuses a `since` below 0 or not whole seconds.
+- **Correction 2026-10-29T05:20Z (Approach, the daily rebuild):** the Approach pairs a new filter with an empty delta. That loses the domains first seen between the new table's `as_of` and the build, and the next hourly runs judge them new again.
+  - `HashDelta.rebase(newFilter)` keeps only the hashes the newer filter lacks. The daily job pushes that delta, not an empty one.
+  - Test: `delta: a delta of another filter is refused, and rebase moves it to the newer one`.
+- **Correction 2026-10-29T05:20Z (Approach, the replay input; resolves the Found of DOM-009):** the replay reads `packages/ledger/test/fixtures/thc-slice.json`. It is measured, not synthetic.
+  - It holds the first 1,000 complete lines, verbatim, of THC's dumps of 2026-09-15, 10-24, 10-25, 10-26 and 10-27.
+  - Each day is the first 65,536 B of the gzip file, read by Range (206) with the contact User-Agent and decompressed up to the cut.
+  - The reads: `https://cs2.ip.thc.org/DATE.txt.gz` at 2026-10-29T00:40:16Z (10-24), 00:40:17Z (10-25), 00:40:19Z (10-27) and 00:41:08Z (10-26). The Hugging Face bucket path `2026/9/2026-09-15.txt.gz` at 00:48:32Z.
+  - The fixture records each URL, Content-Range, Last-Modified, ETag and the SHA-256 of the bytes. The 10-26 and 09-15 bytes equal the first 64 KiB of DOM-009's local copies (`cmp` exit 0).
+  - The slice gives 832 registrable domains, and 0 lines are refused. `replay.test.ts` asserts the 832.
+  - Ten known domains were read off the fixture by plain string matching. The ledger gives each its first and last day, and every domain the day a plain count gives.
+- **Decision 2026-10-29T05:20Z (the key hash):** MurmurHash3_x86_128 with seed 0. The 64-bit hash is the first 8 output bytes, read as a little-endian u64.
+  - The code is 32-bit `Math.imul`, with no BigInt. `hash.test.ts` holds it to SMHasher's verification value `0xB3ECE62A`.
+  - The filter and the delta name the hash in their headers (hash id 1), and a reader refuses another id.
+  - The alternative was the tree's pure-TS SHA-256 of `packages/pack`. MEASURED 2026-10-29T05:03:40Z to 05:03:53Z, Node v26.7.0, win32, three runs over 1,000,000 short keys: SHA-256 took 8.9, 10.2 and 8.9 times as long as `hashKey`.
+  - The build's run at 01:03Z gave 7.9 times, and the claim audit's run gave 9.1 times. Absolute times change with the machine's load, so they are not quoted. Output: `.tmp/rec-w3/dom021-hash-speed.txt` (gitignored).
+- **Decision 2026-10-29T05:20Z (the filter layout):** a partitioned Bloom filter. Hash i sets one bit in partition i of P bits, at (lo + i * hi) mod P.
+  - The false-positive formula stays (1 - e^(-n/P))^k. P may reach 2^32 - 64 bits, so the bound is k * (2^32 - 64) bits, not 2^32.
+  - By arithmetic and not measured: at 10 bits a key and 7 hashes that is about 3 billion keys.
+- **Decision 2026-10-29T05:20Z (the byte formats):**
+  - `DLBF` version 1: a 36 B header (magic, version, hash id, k, P, keys, `as_of`, the CRC-32 of the bits, the CRC-32 of the header), then k * P / 8 B of bits.
+  - `DLBD` version 1: a 32 B header (n, the `as_of` and the bits CRC-32 of the filter it pairs with, the CRC-32 of the hashes, the CRC-32 of the header), then n ascending u64 hashes.
+  - `ProvisionalFilter` refuses a delta built against another filter, with `LedgerError` `pair`.
+  - Each decode compares the length in the header with the buffer before it allocates.
+- **Decision 2026-10-29T05:20Z (domain flags and evidence):** the wildcard flag is dropped. The exact flag (bit 0) stays only when the registrable domain itself was seen as an exact name.
+  - A domain record made from names carries no evidence entry. `ct-first` is the basis the registry gives a CT source, and an entry would repeat the source's first time.
+  - Domain-level adapters write their evidence themselves.
+- **Decision 2026-10-29T05:20Z (precision):** `firstSeen` counts a day value as the start of its day, as the Approach says.
+  - `lastSeen` compares a day value as the end of its day. It answers the start of that day with precision `day`, so a day never reads as a time of day.
+  - On a tie the second-precision source wins, because it states the instant.
+  - Units: days since 2026-01-01, and seconds since 2026-01-01T00:00:00Z. `precisionsOf` refuses an unknown bit, a bit with two precisions and an unknown precision.
+- **Found 2026-10-29T05:20Z (DOM-023 and DOM-024):** the daily job inherits three duties. DOM-023's Approach does not carry them yet, and it says the job "empties the delta".
+  - Push the new filter with `delta.rebase(newFilter)`, under the `state` guard of DOM-024.
+  - Call `exactNew` with `since` set to the window start and with the precision table. A domain that its own source dates before the window is then not new.
+  - Record the `held` count of `aggregateToDomains` on a full THC day. The bound of 328 comes from synthetic names only.
+- **Found 2026-10-29T05:20Z (DOM-029 and the later adapters):** `config/sources.json` holds no source row yet (`"sources": []`). So `precisionsOf` has no production rows until the adapters fill it. `thc-ct` is bit 0 (`config/source-bits.json`) with precision `day` (`docs/sources.md`).
+- **Found 2026-10-29T05:20Z (DOM-017 and DOM-022, settled):** the build found that the DPK1 merge kept the highest `confidence` of an evidence triple. On OpenINTEL's scale, level 1 is the closest to the RDAP date, so that was the weaker reading.
+  - DOM-017 now keeps the lowest level that is not 0: `strongerConfidence` in `packages/pack/src/codec.ts`, `docs/format.md` section 5.6.
+  - Test `the stronger confidence is the lowest level that is not 0`. The mutant `Math.max(a, b)` fails it (DOM-017's Prove, 2026-10-29T05:04Z). DOM-022 carries the Found.
+- **Prove as it stands 2026-10-29T05:20Z:** each command ran alone on the working tree, Node v26.7.0, win32 x64. Each exit code was read from the node process.
+  - `node scripts/test.mjs packages/ledger` exits 0 (05:00:31Z to 05:00:33Z) and prints `test: 45 test(s) passed under packages/ledger (9 file(s))`. Its diagnostics:
+    - `122 day keys, 157 blocks, 5 read (blocks 15, 31, 78, 79, 156), 9 index page reads`;
+    - `keys 1000000, absent 1000000, false positives 8185, rate 0.8185%, theory 0.8193%, bits 1250032 B`;
+    - `names 12000, domains 2465, suffixes 9, held at most 328`.
+    - `ledger workerd` passes. It runs `src/` in workerd 1.20261006.1 under `no_nodejs_compat` and `no_nodejs_compat_v2`, and workerd answers as Node.
+  - `node packages/ledger/bench/ledger-filter.mjs --keys 10000000 --out .tmp/rec-w3/dom021-bench-10M.json` exits 0 (05:00:59Z to 05:01:15Z, seed 1). It prints:
+    - `keys 10000000, 10 bits a key, 7 hashes: filter 12500076 B (1.250008 B a key), partitions of 14285760 bits`;
+    - `absent 1000000: false positives 8279, rate 0.8279% (theory 0.8194%, sigma 0.0090%)`;
+    - `delta of 800000 hashes: 6400032 B`;
+    - four `PASS` lines: the rate band, the size, no missed key, and the round trip.
+    - The rate and the sizes equal `docs/research/measure/DOM-021/bench-10M.json`. In both runs, encode and decode of the filter each took under 1% of the build's wall time.
+  - `node scripts/test.mjs packages/ledger --name "reconcile"` exits 0 (05:00:47Z). It prints `test: 3 test(s) passed matching reconcile` and `false positive uk.co.syn256b: judged old by the hourly filter, repaired by the exact join`.
+  - `node scripts/test.mjs packages/ledger --name "delta"` exits 0 (05:00:50Z): the three `delta:` tests and `ledger workerd` pass.
+  - The planted defects: `node .tmp/DOM-021/mutate-iso.mjs` exits 0 (05:01:29Z to 05:03:00Z). It ran in an isolated copy under `.tmp/rec-w3/`, with a real `node_modules` whose `@domains` links point at the copy's own packages. Log: `.tmp/rec-w3/dom021-mutate-iso.log`.
+    - Three canaries (pack `codec.ts`, names `index.ts`, ledger `index.ts`) each failed all 28 named tests. The control passed before and after.
+    - `mutant delta-dropped-from-has: killed by "delta: a domain added to the delta by one hourly job is found by the next" (status 1, fail 1)`.
+    - `canaries all failed every named test; control passes; 42 of 42 mutants killed`. That is the 40 of `mutate.mjs`, `replay-last-not-max` and `replay-first-not-min` among them, plus `exact-since-negative` and `exact-extra-index-read`. It repeats the fix group's run of 03:24:16Z to 03:26:45Z.
+  - `node scripts/check-workflows.mjs` exits 0 (05:03:59Z) and prints `249 script and package file(s) delete nothing from GHCR (rule 10)`. The 21 `.ts` and `.mjs` files of `packages/ledger` are among them.
+  - Gate part (a): `npm run gate` exits 0, and its pass is recorded at 2026-10-29T04:57:36Z for tree 92e8b625ba91 (HEAD ec0014f with the working files). Output: `ℹ tests 1162`, `ℹ pass 1158`, `ℹ fail 0`, `ℹ skipped 4` and `gate: all steps passed`. No skipped test is a ledger test.
+  - Gate part (b): this entry has no deployed surface. It pushes nothing to GHCR and writes no workflow, so nothing is driven live.
+  - Gate part (c), the wave's three lenses and the verification:
+    - Door sweep: it swept the filter and delta codecs, `ProvisionalFilter`, `aggregateToDomains`, `exactNew`, `reconcile` and the hash. It found no door in the ledger. door #10 (rule 10 read workflows only) is fixed, and the rule now reads this package.
+    - Claim audit: claim #4 (the build said 7 of 157 blocks; the true figure is 5, now pinned), claim #12 (9 test files, not 10) and claim #15 (the hash timings were in no file; now a ratio with its output kept). It confirmed the fixture, the ten known domains and the bench result.
+    - Guard mutation: 36 ledger mutants, 34 killed. guard #15 (`since < 0` survived) is fixed by the test `exact: a since below 0 or not whole seconds is refused, and 0 is the epoch itself`. guard #14 (the driver's copy had no `node_modules`, so two codec mutants ran the real codec) is fixed by the isolated driver above.
+    - Verification: the ledger suite exits 0 with 45 tests. Its own isolated plants of `since < 0` and of the safe-integer check were killed, and it read the isolated log at 42 of 42 with canaries first. It raised no problem on this entry.
+  - Not yet seen: the `ci.yml` run of the commit that carries this record, the first Linux run of these 45 tests.
+- **Open 2026-10-29T05:20Z:** each item has a Found note in the entry that takes it.
+  - DOM-023's Approach says "empties the delta". DOM-023 takes the rebase, the `since` and precision arguments, and the `held` count of the Found above.
+  - The `DLBF` and `DLBD` layouts live only in `packages/ledger/src/filter.ts`. `docs/format.md` has no section for them, and `docs/architecture.md` section 4 names neither tag `ledger-filter-DATE` nor `ledger-delta`. DOM-023 takes it with the first push of both tags.
+  - `precisionsOf` has no production rows until an adapter fills `config/sources.json`. DOM-029 takes it with the THC adapter.
 
 ## DOM-022 — The new-domain feed packs
 
@@ -389,7 +878,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Source:** design A section 6.3 (`new-reg` day and hour files) and design B section 4 and section 6.3; `docs/architecture.md` section 3.3, section 7.3 and section 9. The operator's ruling 2 asks for windows of 1 h, 6 h, 12 h, 1 d and N days, on any suffix or parent.
 - **Problem:** the feed answers "new domains in a window, under a suffix or a parent, with basis and confidence". The `domains` table is sorted by key, not by time, and has no confidence rules. A window query must read only the packs that overlap the window, scan only the key range, and sort by time without reading a whole day.
 - **Premise:**
-  - READ `docs/architecture.md` section 3.3: the `feed` dataset is keyed by reversed registrable domain and then `first_seen`. A record holds `first_seen`, the source mask, the basis bits, the confidence and the flags. About 15 to 30 MB a day [E] (0.3 to 0.7 million rows a day, design B section 6.3).
+  - READ `docs/architecture.md` section 3.3: the `feed` dataset is keyed by reversed registrable domain, one record a key, with `first_seen` a field (settled 2026-10-29 by the wave 3 claim audit: DOM-017's codec keys by the domain alone). A record holds `first_seen`, the source mask, the basis bits, the confidence and the flags. About 15 to 30 MB a day [E] (0.3 to 0.7 million rows a day, design B section 6.3).
   - READ design B section 4 ("Confidence on domain rows"): `registered-confirmed` is an `oi-confirmed` confidence of at most 5, or a zone add, or an RDAP creation date in the window. `corroborated` is two different families within 48 h. `single` is one family. `suspect` is an `oi-nrd` event whose certificate is older than 7 days, excluded from the default feed.
   - MEASURED 2026-10-27 (design B M3, M5): `timestamp` is the emission time (receive minus timestamp at most 1 s) and `submission_timestamp` is the SCT time. 61.6% of events carried a certificate under 6 h old. 38% carried one older than 30 days, p90 at 144 days. Against Verisign RDAP, 25 of 25 `.com` and `.net` events with a fresh certificate were registered within 1 day (median 0.1 d). Of 25 with a certificate older than 30 days, 14 were not found and 11 were registered 35 to 5,157 days earlier. None was new.
   - READ design A section 3.1: the `confirmed_newly_registered_domain` topic adds `confidence` 1 to 10 (level 1 within 5 minutes of the RDAP date, level 10 within 18 to 24 hours). It mixes in zone rows (`ct_name: "zone_data"`, `cert_index: -1`, 9% of a sample).
@@ -407,6 +896,10 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Prove:** `node scripts/test.mjs packages/feed` passes: every confidence rule, the planner windows, the `suffix` and `under` ranges (`np.com`, `co.uk`, `com`), and the time order with `tidx`.
   - `node scripts/bench/feed-window.mjs --rows 500000 --order first_seen.desc --limit 1000` prints the blocks read and exits 0 when it reads at most 40 blocks for one page.
   - A planted defect that treats a day row as a time of day makes the `precision` test fail.
+- **Found 2026-10-29T03:10Z (DOM-017, wave 3 integration):** the merge of DPK1 keeps the higher `confidence`: for an evidence triple that two packs both carry (`docs/format.md` section 5.6, `packages/pack/src/codec.ts`), and for a `feed` row. OpenINTEL's scale runs the other way: level 1 is within 5 minutes of the RDAP date and level 10 within 18 to 24 hours (design A section 3.1), and it passes through unchanged. So the merge kept the weaker reading. Wave 3 changes both merges to keep the lowest non-zero value, where 0 means the source states none. This entry's `confidenceOf` reads the stored level with that order.
+  - The feed's key is the reversed registrable domain, one record a key, with `first_seen` a field (`docs/architecture.md` section 3.3 as amended 2026-10-29). Dataset 5 is `new-name`, with the same record keyed by a reversed name (`docs/format.md` section 5.4).
+- **Found 2026-10-29T04:54Z (DOM-018, wave 3 verification):** the verifier prints SKIP for a check with nothing to compare, and with no annotation its default run exits 0 with `VERDICT ok (8 skipped)`. So the feed job names every check it needs compared: `node scripts/verify-pack.mjs <parts and idx> --annotations <the manifest's annotations as JSON> --psl <the pinned PSL> --sources config/sources.json --require dataset,length,count,sha256,psl,sources,precision`, adding `volume` with `--history`. A check of `--require` that skips exits 1 with `VERDICT unverified`, and the Prove adds a pack whose `count` annotation is removed, which must exit 1 that way. `scripts/verify-pack.mjs` reads local files only: a GHCR form (`--ref`, `--repo` and `--tag`) does not exist, so this entry adds one through `packages/ghcr`, or its job pulls the pack with oras first.
+- **Decision 2026-10-29T05:34Z (ruling 19):** an RDAP creation date before 2026 is not evidence. It sets `suspect`, so `confidenceOf` treats it as a refutation and the default feed hides the row (DOM-050 writes it).
 
 ## DOM-023 — Compaction: hour, day, week, month and year
 
@@ -427,7 +920,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - **Package.** `packages/compact`. `planTier(live, tier, span)` lists the input packs of a span and refuses one that is not whole (a week with a missing day pack waits). `mergeSpan(inputs, codec)` uses `mergePacks` of DOM-017 and streams: it holds one block of each input and one output block in memory. `liveSet(root)` and `replaceInLiveSet(live, inputs, output)` keep the rule of section 4.5 and throw on a hole or an overlap.
   - **Large merges.** `scripts/compact/plan.mjs` cuts the key space into N ranges at index page boundaries so the byte sizes are equal, and writes the matrix `{ "include": [{ "range": I }] }`. `scripts/compact/range.mjs --tier m --span 202610 --range I --of N` merges one range, uploads its parts with `oras blob push` (blobs only), and writes their digests as an artifact (`actions/upload-artifact`, `overwrite: true`). The job that runs it is named `compact` (a matrix job; `contents: read`, `packages: write`, `issues: write`). A final job `assemble` (`needs: compact`, the same three permissions) builds the manifest JSON with all parts as layers, pushes it with `oras manifest push` under the write-once tag, runs the verifier (DOM-018), and then a job `promote` calls `root-promote.yml` (DOM-020; the calling job holds `packages: write` and `contents: read`). The compaction workflows `compact-daily.yml`, `compact-weekly.yml`, `compact-monthly.yml` and `compact-yearly.yml` each have `workflow_dispatch:` beside their cron, `permissions: {}` at the top and `defaults.run.shell: bash`. Each job uses `max-parallel` of at most 6 (the organisation shares 20 jobs), `timeout-minutes` set, and `scripts/debloat-runner` copied from mirror-archlinux when the plan says the inputs do not fit.
   - **Hourly.** `scripts/compact/hour.mjs --hour YYYYMMDDHH` builds `feed-h-` and the domain delta from the segments of the hour (DOM-021, DOM-022). The first live run after an hour closes calls it (DOM-024).
-  - **Daily.** `compact-daily.yml` merges the hour packs and the THC day into `d` for the `domains` dataset, runs the exact join (`exactNew`), builds `feed-d-DAY` with `tidx` and with the layer `summary.json` (new registrable domains per suffix and source, read by `/v1/suffixes` in DOM-033), rebuilds the Bloom filter (`ledger-filter-DATE`), empties the delta, verifies, and promotes. DOM-038 adds the `names` dataset to the same job. DOM-035 adds the coverage table. DOM-040 adds dumps.
+  - **Daily.** `compact-daily.yml` merges the hour packs and the THC day into `d` for the `domains` dataset, runs the exact join (`exactNew` with `since` and the precision table), builds `feed-d-DAY` with `tidx` and with the layer `summary.json` (new registrable domains per suffix and source, read by `/v1/suffixes` in DOM-033), rebuilds the Bloom filter (`ledger-filter-DATE`), pushes `delta.rebase(newFilter)` as `ledger-delta`, verifies, and promotes. DOM-038 adds the `names` dataset to the same job. DOM-035 adds the coverage table. DOM-040 adds dumps.
   - **Idempotence.** Tags are write-once (DOM-019). A re-run finds the tag present and skips. A merge never removes a record: the verifier checks the output count equals the number of distinct keys across the inputs, counted by a second pass.
   - **Measure.** `docs/research/measure/DOM-023/result.json`: runtime and peak memory of one range merge on a 4 vCPU runner; bytes added to GHCR a day; the number of live packs by tier after 7 days. They replace the [E] sizes in `docs/architecture.md` section 4.8.
 - **Decision:** merge by key range in a matrix and assemble the manifest from blobs already uploaded, not one job that writes a 100 GB year pack. One job would take about 3 hours of upload alone at 34 MB/s and would fail the 6-hour limit on a slow day. A matrix also keeps each job inside the 14 GB guaranteed disk.
@@ -436,6 +929,12 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `gh workflow run compact-daily.yml -f day=2026-10-26` ends `completed success`, then `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/feed/manifests/feed-d-20261026 | jq -r .artifactType` prints `application/vnd.pkgforge.domains.pack.v1`.
   - `node scripts/verify-pack.mjs --ref feed:feed-d-20261026` exits 0. Read each exit code unpiped.
   - A planted defect that drops one input key makes the count check exit 1.
+- **Found 2026-10-29T04:54Z (DOM-018, wave 3 verification):** the verifier prints SKIP for a check with nothing to compare, and with no annotation its default run exits 0 with `VERDICT ok (8 skipped)`. So the assemble job names every check it needs compared: `node scripts/verify-pack.mjs <parts and idx> --annotations <the manifest's annotations as JSON> --psl <the pinned PSL> --sources config/sources.json --require dataset,length,count,sha256,psl,sources,precision`, adding `volume` with `--history`. A check of `--require` that skips exits 1 with `VERDICT unverified`, and the Prove adds a pack whose `count` annotation is removed, which must exit 1 that way. `scripts/verify-pack.mjs` reads local files only: the Prove's `--ref feed:feed-d-20261026` does not exist yet, so this entry adds a GHCR form through `packages/ghcr`, or its job pulls the pack with oras first.
+- **Found 2026-10-29T06:00Z (DOM-021, the daily job's duties):** DOM-021's Found and Open of 2026-10-29T05:20Z give this job four duties. The Daily bullet said the job "empties the delta", and now says the first two.
+  - Push `delta.rebase(newFilter)` as `ledger-delta`, under the `state` guard of DOM-024. An emptied delta loses the domains first seen between the new table's `as_of` and the build, and the next hourly runs judge them new again. `HashDelta.rebase` keeps only the hashes the newer filter lacks (`packages/ledger/src/filter.ts`).
+  - Call `exactNew` with `since` set to the window start, in seconds, and with `precision`, the table of `precisionsOf` (`ExactOptions` of `packages/ledger/src/exact.ts`). A domain that its own source dates before the window is then not new. `exactNew` refuses `since` without `precision`.
+  - Record the `held` count of `aggregateToDomains` on a full THC day. The bound of 328 comes from 12,000 synthetic names only.
+  - The `DLBF` and `DLBD` layouts live only in the header comment of `packages/ledger/src/filter.ts`. This entry writes their section in `docs/format.md`. It names the tags `ledger-filter-DATE` and `ledger-delta` in `docs/architecture.md` section 4, in the commit of their first push.
 
 ## DOM-031 — The R2 cache with a 5 GB guard
 
@@ -505,7 +1004,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - MEASURED 2026-10-27 (design B M2): THC's 2026-10-26 names that also appeared in earlier files: 6.84% in the 2026-10-25 file, 6.67% in 2026-10-19, 2.15% in 2026-10-12, 1.04% in 2026-10-05. 86.6% of 2026-10-26's names were absent from the union of four earlier days (133.6 million distinct names). 85.9% of its registrable domains were absent from 2026-10-25.
   - READ design B section 2.4 item 2 and section 9: a rolling names corpus needs about one certificate validity period, about 200 days under current rules [I], before subdomain coverage is good. Domain-level newness from feeds with their own history is not censored this way.
   - READ design A section 6.3 [E]: about 28 million names a day are first seen that day at about 9 B each, 250 MB a day. Design A kept 30 days (7.5 GB). The operator ruled that nothing is deleted, so all days stay.
-  - READ `docs/architecture.md` section 3.3: dataset `new-name` in package `feed`, keyed by reversed name and `first_seen`, tag `newname-d-YYYYMMDD`.
+  - READ `docs/architecture.md` section 3.3: dataset `new-name` in package `feed`, keyed by reversed name, one record a key (DPK1 dataset 5, `docs/format.md`), tag `newname-d-YYYYMMDD`.
   - READ `docs/architecture.md` section 2: `new` for a name is "censored until the corpus holds one renewal cycle". The constant is an estimate.
 - **Approach:**
   - **Join.** `packages/feed/src/newnames.ts`: `exactNewNames(daySortedNames, baseReaders)` merge-joins the day's names with all earlier names tiers by key (idx skipping) and keeps the names absent from every earlier tier. It runs in the daily compaction matrix of DOM-023, by key range, so each job reads only its range of the base. A base of one year is about 100 GB. At 100 MB/s across 16 jobs that is about 1 minute of transfer each plus decode CPU.
@@ -550,6 +1049,9 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - After the September run: `node scripts/rev/lookup.mjs --month 2026-09 --verify-total` prints `OK records N dropped D scan S` where N plus D equals S from DOM-010's result, and exits 0. Read the exit code unpiped.
   - `curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/rev/manifests/rev-m-202609 | jq -r .artifactType` prints `application/vnd.pkgforge.domains.pack.v1`.
 - **Found 2026-10-28T21:46Z (DOM-010):** the whole September file streams through gzip and mawk in 1,969.89 s on one runner, 18.8 MB/s compressed and 131 MB/s uncompressed, 3.23 million records a second. awk used 1,936.73 s of CPU and gzip 890.17 s, so a single awk is the bound and a pack builder that splits the parse over cores is faster. The file's addresses come in 93,473 runs of one family, 6,339,801,095 IPv4 and 24,310,628 IPv6 records, and it is not sorted by address (run 40714223764, `docs/research/measure/DOM-010/result.json`).
+- **Found 2026-10-29T06:00Z (DOM-017 and DOM-018, the codec of dataset 4):** `packages/pack` ships no codec for dataset 4 (`DATASET_REV` of `packages/pack/src/format.ts`). `BUILTIN_CODECS` of `packages/pack/src/codec.ts` holds 1, 2, 3 and 5, and its comment leaves the codec of dataset 4 to this entry.
+  - The codec states `maxKeyBytes` (`DatasetCodec` of `codec.ts`). The writer refuses a value outside 1 to 65,535: `MAX_KEY_BYTES` of `packages/pack/src/bytes.ts`, checked in the constructor of `packages/pack/src/writer.ts`. `NAME_KEY_BYTES` of `format.ts`, 253, is the bound of the name datasets only, so this codec states the longest key its own records reach.
+  - `PackReader.open` reads dataset 4 only when the caller passes that codec (`packages/pack/src/reader.ts`). `verifyPack` takes no codec in its `VerifyOptions` (`packages/pack/src/verify.ts`), and fails `dataset` for any dataset outside `NAME_DATASETS`. So stage C verifies a rev pack only after this entry adds a codec option to `verifyPack`. The dataset 4 path of DOM-018's Found of 2026-10-29T05:20Z reads dataset 4 only when given that codec, and puts its own key rule in place of the name check.
 
 ## DOM-053 — Rebuild R2 from GHCR and serve with R2 empty
 

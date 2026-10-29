@@ -1,0 +1,81 @@
+{
+  "format": "domains.pack.vector.v1",
+  "title": "the flags: exact, wildcard and both; two blocks of two, so front coding starts again in the second",
+  "synthetic": "The names and times are synthetic, chosen for the cases this vector holds; no source observed them.",
+  "dataset": 1,
+  "codec": 1,
+  "records_per_block": 2,
+  "page_entries": 64,
+  "records": [
+    {
+      "key": "net.example",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 297,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "net.example.cdn",
+      "flags": 2,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "net.example.mail",
+      "flags": 3,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "org.example",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    }
+  ],
+  "raw_blocks": [
+    "002d6e65742e6578616d706c6501a902010b122e63646e01aa0200",
+    "00436e65742e6578616d706c652e6d61696c01aa0200002d6f72672e6578616d706c6501aa0200"
+  ],
+  "blocks": [
+    {
+      "key": "net.example",
+      "part": 0,
+      "raw": 27,
+      "records": 2,
+      "crc32": "48e7c843"
+    },
+    {
+      "key": "net.example.mail",
+      "part": 0,
+      "raw": 39,
+      "records": 2,
+      "crc32": "bfe5f83e"
+    }
+  ],
+  "sha256": "bf78980a47e17fa72e331df74ace7d5038742ddf38786b2bb57636f0aaefd35d",
+  "written_by": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+  "parts": [
+    "44504b3101010200000001000000000063d0cd4b2dd14bad48cc2dc849655cc9c4c82da4979c92c7b88a8901006370ce4b2dd14bad48cc2dc849d5cb4dcccc615cc5c4c0a09b5f940e1305090000"
+  ],
+  "idx": "44504b490101020001000100400000000400000000000000020000000100000087000000000000004f0000000000000000000000000000000000000024d244984e0000000000000000000000020000000b006e65742e6578616d706c650b006f72672e6578616d706c650b006e65742e6578616d706c6500000000000000004f00000069eaed2a0b006e65742e6578616d706c65000010000000000000001d0000001b000000020043c8e74810006e65742e6578616d706c652e6d61696c00002d00000000000000210000002700000002003ef8e5bf"
+}

@@ -32,6 +32,7 @@ import {
   JsonStream,
   joinTail,
   measure,
+  readyLabel,
   parseFlags,
   readResult,
   SCHEMA,
@@ -69,6 +70,16 @@ const nodeConnect = ({ hostname, port }) => {
 // The synthetic CPU of an invocation: 0.1 ms, and 0.004 ms a message.
 const syntheticCpu = (messages) => 0.1 + messages * 0.004;
 
+// The real tail showed a full UUID in a query value as REDACTED (MEASURED
+// 2026-10-29T00:17Z); the stand-in does the same, so a label of that shape
+// cannot be joined here either.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function redacted(url) {
+  const out = new URL(url.href);
+  for (const [k, v] of url.searchParams) if (UUID.test(v)) out.searchParams.set(k, 'REDACTED');
+  return out.href;
+}
+
 // A stand-in for the probe: GET / lists the routes, GET /kafka runs the real
 // route. Each answered request is pushed to `tail` as wrangler prints an event.
 async function probe({ routes = ['/', '/kafka'], version = null, tail = null, cpu = syntheticCpu } = {}) {
@@ -100,7 +111,7 @@ async function probe({ routes = ['/', '/kafka'], version = null, tail = null, cp
       exceptions: [],
       logs: [],
       eventTimestamp: Date.now(),
-      event: { request: { url: url.href, method: 'GET', headers: {} }, response: { status } },
+      event: { request: { url: redacted(url), method: 'GET', headers: {} }, response: { status } },
       cpuTime: cpu(body?.messages ?? 0),
       wallTime: 40,
     });
@@ -548,4 +559,11 @@ test('kafka worker: the flags have the Prove defaults and refuse what they canno
       args.join(' '),
     );
   }
+});
+
+test('kafka worker: the ready marker has the shape of a call label, which the tail shows whole, not a UUID, which it redacts', () => {
+  assert.equal(readyLabel('0a1b2c3d'), '0a1b2c3d-ready');
+  assert.doesNotMatch(readyLabel('0a1b2c3d'), UUID);
+  assert.equal(redacted(new URL('https://probe.test/?tail_ready=0a1b2c3d-ready')), 'https://probe.test/?tail_ready=0a1b2c3d-ready');
+  assert.match(redacted(new URL('https://probe.test/?tail_ready=1b4e28ba-2fa1-41d2-883f-0016d3cca427')), /tail_ready=REDACTED$/);
 });

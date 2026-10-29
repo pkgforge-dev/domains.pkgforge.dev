@@ -35,9 +35,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The whole history: the bits test reads every committed version of
+      # config/source-bits.json (DOM-016), and a depth of one holds only this one.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       # package.json names npm in packageManager, which turns setup-node's
       # cache on by default. It is off: each run installs from the registry
       # against the lockfile's integrity hashes and writes no cache.

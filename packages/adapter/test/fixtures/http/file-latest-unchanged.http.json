@@ -1,0 +1,18 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://feed.example.test/latest.txt",
+    "headers": {
+      "if-none-match": "\"v1\""
+    }
+  },
+  "response": {
+    "status": 304,
+    "headers": {
+      "etag": "\"v1\""
+    },
+    "body_base64": ""
+  }
+}

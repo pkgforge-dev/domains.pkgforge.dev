@@ -1,0 +1,12 @@
+{
+  "name": "@domains/pack",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The pack format DPK1 (docs/format.md): sorted records in compressed blocks with a two-level index, its writer, its reader for Node and workerd, and the k-way merge. ./node is the Node-only side: the node:zlib compressor and the file sink and sources.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./node/index.ts"
+  }
+}

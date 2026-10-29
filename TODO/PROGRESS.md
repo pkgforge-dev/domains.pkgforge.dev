@@ -7,8 +7,8 @@ is the only one.
 ## State
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it.
-- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5), then works the order unattended.
-- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z; first tick 15:23:24Z), and the public GHCR package `probe` (DOM-006). No serving Worker, no custom domain and no cache bucket yet.
+- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 and 19 on 2026-10-29), then works the order unattended.
+- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR package `probe` (DOM-006). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
 ## Baseline
@@ -22,11 +22,12 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 47 open, 9 partial, 0 blocked, 6 done.**
+**62 items. 42 open, 12 partial, 0 blocked, 8 done.**
 
 ## What this session did
 
 - Asked the operator the four questions the record left open and recorded the answers as rulings 14 to 17 (`TODO/RULES.md` section 5): the agent runs this project's Cloudflare and repository changes itself; the zone's rate-limit rules stay the operator's blocked decision (DOM-062, new); the `/v1/new` checkpoint is not a stop; the clock thresholds stay 15 and 60 minutes.
+- Asked the operator the two design questions wave 2 and wave 3 left open and recorded the answers as rulings 18 and 19: the group `root-writer` lives in `root-promote.yml` (DOM-020 changes rule 13 of the workflow check), and an RDAP creation date before 2026 sets `suspect` and is not evidence (DOM-050).
 - Set the repository's default workflow permission to `read` (former Operator action 3), under ruling 14.
 - Built the first wave, eight entries, now partial: the npm workspace with `packages/core` and the workerd harness `packages/testkit`, the type check as a gate step and `ci.yml` (DOM-013); the probe Worker `probes/worker` (DOM-061); and the measurement workflows and scripts of DOM-001, DOM-004, DOM-006, DOM-009, DOM-010 and DOM-012. Three review lenses ran on the wave (door sweep, guard mutation, claim audit); their findings are fixed in the same change, and each entry's Built and Correction bullets record what was measured and corrected.
 - Closed DOM-013 (CI run 40713652294 green on 5e7a646), DOM-004 (`measure-kafka.yml` run 40714194235: PASS, 10.7 GB a day on the wire for the four topics) and DOM-061 (the probe deployed by the agent under ruling 14, both crons writing). DOM-002's 48 hours started with the probe's first tick.
@@ -39,13 +40,29 @@ is the only one.
   - DOM-015: the names package with the Public Suffix List and reversed keys. Address literals are refused as `numeric-tld`, and architecture section 3.1 says so.
   - DOM-011: the names-tile chain.
   - The probe routes `/kafka`, `/range` and `/decode` (DOM-005, DOM-007, DOM-008), with their measurement scripts.
+- Closed DOM-014 and DOM-015 on `ci.yml` run 40789086109: 749 of 749 tests passed on Linux, with the workflow policy as the gate's third step.
+- Redeployed the probe with the routes `/kafka`, `/range` and `/decode` at 23:42:35Z. It used `versions deploy`, so the cron triggers stayed as they were (DOM-002).
+  - The Worker opens TCP sockets to the Zonestream broker and decodes its batches.
+  - workers.dev keeps Cache API entries.
+  - The sample packs are in R2 and decode to their manifest's CRC.
+  - DOM-011's 24-hour tiles chain started at 23:43:26Z.
 - Read the account's plan with the `cf` CLI: Workers Paid, so the 10 ms CPU limit of Workers Free does not bind the probe (DOM-002).
 - Ruling 11: the THC readers of DOM-009 and DOM-010 sent no User-Agent. The constant now lives in `scripts/lib/user-agent.mjs`, and every reader sends it, with tests that hold it.
 - Set the probe's compatibility date to 2026-10-13, the newest date the workerd that wrangler 4.150.0 pins runs, so the probe deploys with the date its tests run with (DOM-061 and DOM-030 Corrections).
+- Built the third wave, five entries, now partial, each waiting for CI on the commit that carries it:
+  - DOM-016: the source registry and the adapter contract (`packages/adapter`, `config/source-bits.json`, `config/sources.json`, `scripts/sources/build.mjs`, now a gate step).
+  - DOM-017: the pack format DPK1, its writer, reader and merge (`packages/pack`, `docs/format.md`).
+  - DOM-018: the verifier (`scripts/verify-pack.mjs`).
+  - DOM-019: GHCR's layout, the anonymous reader, the push tool and `ref-refresh.yml` (`packages/ghcr`, `scripts/ghcr`).
+  - DOM-021: the exact ledger and the provisional filter (`packages/ledger`).
+- Ran the three lenses on wave 3 (door sweep 12, claim audit 16, guard mutation 15 findings), fixed them in six groups of disjoint files, and had a separate verification plant about 120 mutants against the fixes. Its 11 problems are fixed or recorded in the entries that inherit them (DOM-020, DOM-022, DOM-023, DOM-026, DOM-030, DOM-032, DOM-050).
+  - The merge of a confidence kept the weaker OpenINTEL level; it now keeps the lowest level that is not 0.
+  - A reader can refuse a valid block too large for a Worker before reading it (`maxRawBlockBytes`), and can hold the parts table to the store's sizes (`partSizes`).
+  - Settled in `docs/architecture.md` section 3.3: a feed pack holds one record a domain, with `first_seen` a field, and `new-name` is DPK1 dataset 5.
 
 ## What is in progress
 
-Nine entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Twelve entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
@@ -56,20 +73,22 @@ Nine entries are partial. Each one's Waiting line names the instant its result i
 | DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
 | DOM-011 | 24 hours of the `measure-tiles.yml` chain |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
-| DOM-014 | the `ci.yml` run of the commit that carries it |
-| DOM-015 | the `ci.yml` run of the commit that carries it |
+| DOM-016 | the `ci.yml` run on the commit that carries wave 3, with the bits git-history test run, not skipped |
+| DOM-017 | the same run, with the pack vectors on Linux's zlib |
+| DOM-018 | the same run |
+| DOM-019 | the same run, then one dispatch of `ref-refresh.yml` and the anonymous reads of the `ref` package |
+| DOM-021 | the same run |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
 
 ## Start here next session
 
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
-   - DOM-014 and DOM-015 close on the `ci.yml` run of their commit.
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-011 closes after its 24 hours, and DOM-012 after 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. Foundation and the format: DOM-016, DOM-017 (the pack format waits for no measurement: its header names its codec and block size).
-4. The verifier, the GHCR tool, the ledger, the root and the feed: DOM-018, DOM-019, DOM-021, DOM-020, DOM-022. Then compaction: DOM-023.
+3. Close the wave 3 entries on CI: DOM-016, DOM-017, DOM-018 and DOM-021 on the `ci.yml` run of their commit; DOM-019 after that run and one dispatch of `ref-refresh.yml`.
+4. The root and the feed: DOM-020 (it changes rule 13 of the workflow check, ruling 18) and DOM-022. Then compaction: DOM-023.
 5. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 6. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
 7. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
@@ -92,16 +111,11 @@ Known limits, each from a measurement of 2026-10-27:
 
 None. DOM-062's zone rule is settled: the operator applied the exclusion of `domains.pkgforge.dev` from the rate-limit rule `200req/Second` at 2026-10-28T15:53:56Z, and the agent read version 22 back with the `cf` CLI. DOM-062 closes with its load test once DOM-030 is live.
 
-Former Operator actions 1 (a wrangler login: present, account `Ajamx101@gmail.com's Account`, R2 enabled, MEASURED 2026-10-28T10:19:05Z) and 3 (the default workflow permission: `read` since 2026-10-28T10:18:52Z) are settled. The deletion of the probe Worker and its bucket is the agent's under ruling 14 (DOM-056).
+Former Operator actions 1 (a wrangler login: present, account the operator's account (its name is not recorded: it carries the workers.dev subdomain), R2 enabled, MEASURED 2026-10-28T10:19:05Z) and 3 (the default workflow permission: `read` since 2026-10-28T10:18:52Z) are settled. The deletion of the probe Worker and its bucket is the agent's under ruling 14 (DOM-056).
 
-**Design questions**, each settled by the entry named, with a recommendation:
+**Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence.
 
-- Rule 13 of `scripts/check-workflows.mjs` (DOM-014), read literally, puts the group `root-writer` on a workflow that calls `root-promote.yml`. DOM-020 and DOM-050 put it in `root-promote.yml` itself, and a caller and its called workflow in one group would wait on each other.
-  - (a) Keep the literal rule, and DOM-020 keeps the group in the caller only.
-  - (b) Exempt a caller of `root-promote.yml`, and require the group in the called file.
-  - Recommendation: (b). DOM-020 decides it with a measured run when it writes `root-promote.yml`, in the same change as the check.
-
-**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17).
+**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the two design questions on 2026-10-29 (rulings 18 and 19).
 
 ## Settled
 

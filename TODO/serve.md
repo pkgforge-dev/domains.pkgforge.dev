@@ -47,6 +47,10 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   So the Worker deploys with `compatibility_date = "2026-10-13"`, the date its harness tests run with. The Approach's `wrangler.toml` line now carries that date, and its 2026-10-27 is superseded. The Approach's Tests line adds a test that holds the date of `apps/api/wrangler.toml` equal to `COMPATIBILITY_DATE`, and the Prove runs it with `--name "compatibility"`.
   `@cloudflare/workers-types` 5.20261013.1 in `package.json` matches that date. `tsconfig.worker.json` includes `apps/*/src`, so `npm run typecheck` checks the Worker's source against those types.
 - **Resources:** Worker `domains-pkgforge-dev` and the custom domain `domains.pkgforge.dev` on the `pkgforge.dev` zone. Undo: remove the custom domain in the dashboard (Workers and Pages, the Worker, Settings, Domains and Routes), then `cd apps/api && npx wrangler@4.150.0 delete`. Add both rows to `docs/resources.md` in the same change.
+- **Found 2026-10-29T04:54Z (DOM-017 and DOM-019, wave 3 verification):** two reader options of `packages/pack` exist for this Worker, and a pack opened without them trusts the index.
+  - `partSizes`: the sizes of the manifest's part layers, in part order. `PackReader.open` holds the index's parts table to them before any block is read and refuses another count or size with `PackError` `tiling`.
+  - `maxRawBlockBytes`: the largest raw block the reader reads, 16 MiB by default. A valid 16 MiB block can decode to more heap than a 128 MB isolate holds: one `domains` record of 3,000,000 evidence entries is 15,000,021 raw bytes and decodes to about 235 MB (MEASURED 2026-10-29 by the wave 3 fix verification, Node v26.7.0). The Worker sets it near its blocks' raw size, and a block above it is refused with `page` before the read.
+  - So the Worker opens every pack with both, and the Prove adds a manifest whose layer size differs from the index (refused `tiling` at open) and a block above the bound (refused `page`, no part read). Reads go through `ghcrReader` of `packages/ghcr`, which exports none of the reader's low-level parts (`packages/ghcr/test/surface.test.ts`).
 
 ## DOM-032 — GET /v1/new for registrable domains
 
@@ -83,6 +87,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `curl -sS 'https://domains.pkgforge.dev/v1/new?since=1d&suffix=com.np&format=csv&limit=3'` prints three CSV rows with a header line.
   - `node scripts/test.mjs apps/api --name "new"` passes.
 - **Found 2026-10-28T23:38Z (DOM-015):** `isPublicSuffix` of `packages/names` follows the list's algorithm, so under the implicit rule `*` any single label is a public suffix, `zz` included. For `suffix=zz` to answer 400 `unknown-suffix`, this entry checks the list's explicit rules as well, a check the package does not offer yet.
+- **Found 2026-10-29T04:54Z (DOM-017, wave 3 verification):** every pack this route reads is opened as DOM-030's Found note of the same time says, with `partSizes` and `maxRawBlockBytes`.
 
 ## DOM-033 — /v1/domain, /v1/sources, /v1/status and /v1/coverage
 
@@ -308,7 +313,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
 - **Source:** the operator's rulings 12 (2026-10-27) and 15 (2026-10-28) of `TODO/RULES.md` section 5. Split out of DOM-030's Operator line, so the deploys of ruling 14 go ahead while the check stays the operator's.
 - **Problem:** a rate-limit rule of the `pkgforge.dev` zone that covers `domains.pkgforge.dev` would refuse callers at the edge before the Worker runs. That gates consumers, which AGENTS.md absolute 8 and architecture section 7.6 forbid, and no test of this repository can see it.
 - **Premise:**
-  - MEASURED 2026-10-28T10:19:05Z, `npx wrangler whoami`: the login on the operator's machine names the account `Ajamx101@gmail.com's Account`, whose id equals the `account_id` of mirror-archlinux's `worker/wrangler.toml` at commit 669ac725f8081445c164113f2ed092533de112e2, and its scopes include `zone (read)` and no WAF or firewall scope. So the agent cannot list the zone's rate-limiting rules.
+  - MEASURED 2026-10-28T10:19:05Z, `npx wrangler whoami`: the login on the operator's machine names the account the operator's account (its name is not recorded: it carries the workers.dev subdomain), whose id equals the `account_id` of mirror-archlinux's `worker/wrangler.toml` at commit 669ac725f8081445c164113f2ed092533de112e2, and its scopes include `zone (read)` and no WAF or firewall scope. So the agent cannot list the zone's rate-limiting rules.
   - The operator ruled on 2026-10-28 that the check is the operator's final decision, kept blocked, and named loudly at every session end (ruling 15).
 - **Approach:** the operator opens the dashboard (`pkgforge.dev`, Security, WAF, Rate limiting rules) and either confirms that no rule matches the host `domains.pkgforge.dev`, or adds the host to an exclusion of each rule that would. The session records the answer here, with the date, and closes the entry. A burst of the deployed Worker that gets no 429 is supporting evidence only: a rule with a higher threshold would not fire on it.
 - **Decision:** a separate blocked entry, not a blocked DOM-030. DOM-030 and every route behind it are built, deployed and driven under ruling 14; only the zone's rules wait for the operator.

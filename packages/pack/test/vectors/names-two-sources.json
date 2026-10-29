@@ -1,0 +1,110 @@
+{
+  "format": "domains.pack.vector.v1",
+  "title": "two sources, bit 0 by day and bit 9 by second; three blocks of two on two index pages of two",
+  "synthetic": "The names and times are synthetic, chosen for the cases this vector holds; no source observed them.",
+  "dataset": 1,
+  "codec": 1,
+  "records_per_block": 2,
+  "page_entries": 2,
+  "records": [
+    {
+      "key": "de.example",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 295,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "de.example.shop",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 9,
+          "first": 25750861,
+          "last": 25750861
+        }
+      ]
+    },
+    {
+      "key": "de.example.www",
+      "flags": 3,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        },
+        {
+          "bit": 9,
+          "first": 25747320,
+          "last": 25833599
+        }
+      ]
+    },
+    {
+      "key": "np.com.example",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 9,
+          "first": 25747200,
+          "last": 25747201
+        }
+      ]
+    },
+    {
+      "key": "np.com.example.api",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 268,
+          "last": 296
+        },
+        {
+          "bit": 9,
+          "first": 23155200,
+          "last": 25574400
+        }
+      ]
+    }
+  ],
+  "raw_blocks": [
+    "002964652e6578616d706c6501a702030a152e73686f708004cddaa30c00",
+    "003b64652e6578616d706c652e7777778104aa0200f8bea30c87a20500396e702e636f6d2e6578616d706c65800480bea30c01",
+    "00496e702e636f6d2e6578616d706c652e61706981048c021c80a4850b80d49301"
+  ],
+  "blocks": [
+    {
+      "key": "de.example",
+      "part": 0,
+      "raw": 30,
+      "records": 2,
+      "crc32": "ce5df1b9"
+    },
+    {
+      "key": "de.example.www",
+      "part": 0,
+      "raw": 51,
+      "records": 2,
+      "crc32": "dd8af6fb"
+    },
+    {
+      "key": "np.com.example.api",
+      "part": 0,
+      "raw": 33,
+      "records": 1,
+      "crc32": "ba15f3f3"
+    }
+  ],
+  "sha256": "b2ed96e303556f93ad89bc2797f4ecaaaea2b4501a096b4b541121c373f0d541",
+  "written_by": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+  "parts": [
+    "44504b3101010200000001000000000063d04c49d54bad48cc2dc849655ccec4cc25aa579c915fd0c072f6d6621e060063b04e49d54bad48cc2dc849d52b2f2f6f6459c5c4f063df629ef645ac0c9679057ac9f9b930f90696867d8b79180163f0cc2bd04bcecfd54bad48cc2dc849d54b2cc86c64e961926958d2cadd7065322300"
+  ],
+  "idx": "44504b4901010200010001000200000005000000000000000300000002000000b000000000000000780000000000000000000000000000000000000039e410ef820000000000000000000000030000000a0064652e6578616d706c6512006e702e636f6d2e6578616d706c652e6170690a0064652e6578616d706c6500000000000000004c0000001f2db1fd12006e702e636f6d2e6578616d706c652e6170694c000000000000002c00000071b767310a0064652e6578616d706c6500001000000000000000200000001e0000000200b9f15dce0e0064652e6578616d706c652e777777000030000000000000002f000000330000000200fbf68add12006e702e636f6d2e6578616d706c652e61706900005f0000000000000023000000210000000100f3f315ba"
+}

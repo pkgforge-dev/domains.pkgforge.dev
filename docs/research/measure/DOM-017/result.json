@@ -1,0 +1,135 @@
+{
+  "schema": "domains.bench.pack.v1",
+  "entry": "DOM-017",
+  "started_at": "2026-10-29T03:25:29.019Z",
+  "finished_at": "2026-10-29T03:27:06.934Z",
+  "runtime": {
+    "writer": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "codec": "deflate-raw",
+  "level": 9,
+  "records_per_block": 4096,
+  "names": {
+    "mode": "cs2",
+    "fetched": {
+      "url": "https://cs2.ip.thc.org/2026-10-26.txt.gz",
+      "range": "bytes=0-19999999",
+      "status": 206,
+      "content_range": "bytes 0-19999999/319917410",
+      "total": 319917410,
+      "last_modified": "Tue, 27 Oct 2026 00:04:12 GMT",
+      "etag": "\"6adfea7c-13118d62\"",
+      "bytes": 20000000,
+      "user_agent": "domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)"
+    },
+    "decompressed_bytes": 78100284,
+    "whole_lines": 1627369,
+    "refused": {
+      "numeric-tld": 1173
+    },
+    "distinct_keys": 1415107,
+    "kept": 1415107,
+    "psl": "packages/names/test/fixtures/psl-2026-10-27.dat"
+  },
+  "fields": "synthetic, from the seed: bit 0 a day source at day 298 for every name; bit 1 a second source at a random second of day 298, last equal to first for half the names and later in the day for the rest; bit 2 a day source first seen 0 to 298 days before day 298, last day 298",
+  "bytes_per_name_of": "the bytes of the parts (headers included) divided by the names; with_idx adds the index",
+  "decode_of": "Node wall time of readBlock (range read from memory, inflate, CRC-32) and decodeBlock for every block, in this process; not workerd CPU time",
+  "variants": [
+    {
+      "name": "keys",
+      "sources": 0,
+      "records": 1415107,
+      "blocks": 346,
+      "parts": 1,
+      "raw_bytes": 28014849,
+      "part_bytes": 15468641,
+      "idx_bytes": 26405,
+      "front_bytes_per_name": 19.797,
+      "bytes_per_name": 10.931,
+      "bytes_per_name_with_idx": 10.95,
+      "sha256": "baddd6a0c01dd2357a919397b621a90a614518c604dba436e0dc8283347cf7bf",
+      "write_ms": 5741.307,
+      "decode_ms": 5018.762,
+      "decode_ms_per_1000_names": 3.5466,
+      "field_bytes_per_name": 0
+    },
+    {
+      "name": "1-source",
+      "sources": 1,
+      "records": 1415107,
+      "blocks": 346,
+      "parts": 1,
+      "raw_bytes": 33675277,
+      "part_bytes": 15935717,
+      "idx_bytes": 26405,
+      "front_bytes_per_name": 23.797,
+      "bytes_per_name": 11.261,
+      "bytes_per_name_with_idx": 11.28,
+      "sha256": "e5f93e466238d0e7f33c4f8c401e0bd8273f5eb4a4d698196fba4c22890c3858",
+      "write_ms": 11363.372,
+      "decode_ms": 8543.075,
+      "decode_ms_per_1000_names": 6.0371,
+      "field_bytes_per_name": 0.33
+    },
+    {
+      "name": "2-sources",
+      "sources": 2,
+      "records": 1415107,
+      "blocks": 346,
+      "parts": 1,
+      "raw_bytes": 41801928,
+      "part_bytes": 24803856,
+      "idx_bytes": 26405,
+      "front_bytes_per_name": 29.54,
+      "bytes_per_name": 17.528,
+      "bytes_per_name_with_idx": 17.547,
+      "sha256": "ed7a40e15cc00a0a14b65e349c2b20e6467d6113e6f8c00bd8735d0281dafaf2",
+      "write_ms": 11104.406,
+      "decode_ms": 6260.532,
+      "decode_ms_per_1000_names": 4.4241,
+      "field_bytes_per_name": 6.597
+    },
+    {
+      "name": "3-sources",
+      "sources": 3,
+      "records": 1415107,
+      "blocks": 346,
+      "parts": 1,
+      "raw_bytes": 46250925,
+      "part_bytes": 28331298,
+      "idx_bytes": 26405,
+      "front_bytes_per_name": 32.684,
+      "bytes_per_name": 20.021,
+      "bytes_per_name_with_idx": 20.039,
+      "sha256": "97bf384c00e0fd8950e94ffab8b55a7141bfff7780e7f4ba6ff8187426637262",
+      "write_ms": 10602.537,
+      "decode_ms": 3823.309,
+      "decode_ms_per_1000_names": 2.7018,
+      "field_bytes_per_name": 9.09
+    }
+  ],
+  "lookups": {
+    "count": 1000,
+    "head_reads": 1,
+    "reads_max": 2,
+    "reads_mean": 2,
+    "ms_per_lookup": 14.3574
+  },
+  "criteria": [
+    {
+      "name": "one-source-at-most-12-bytes-a-name",
+      "value": 11.28,
+      "limit": 12,
+      "pass": true
+    },
+    {
+      "name": "lookup-at-most-2-range-reads",
+      "value": 2,
+      "limit": 2,
+      "pass": true
+    }
+  ],
+  "pass": true
+}

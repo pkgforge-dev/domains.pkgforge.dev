@@ -1,0 +1,11 @@
+{
+  "name": "@domains/ghcr",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "GHCR for every reader and writer of this project: the anonymous reader (manifests, tag lists, byte ranges through the signed URL) that runs in Node and in workerd alike, and the layout of docs/architecture.md section 4.1 (the namespace, the eight packages, the artifact types and the tag builders).",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

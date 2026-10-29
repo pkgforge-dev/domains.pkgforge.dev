@@ -45,7 +45,9 @@
 //       `/blobs/`; `oras manifest|blob|repo delete`; `crane delete`; `skopeo
 //       delete`; `regctl ... rm|delete`; `docker rmi` of a registry
 //       reference; actions/delete-package-versions; a `deletePackage...` REST
-//       call. Flags may sit between the words.
+//       call. Flags may sit between the words. The scripts a workflow runs
+//       and the packages they import are read for the same (checkScript): an
+//       argument array such as `['manifest', 'delete', ref]` too.
 //   11  runner `ubuntu-24.04` only, with no job `container:` or `services:`
 //   12  a workflow with `schedule:` has `workflow_dispatch:` too
 //   13  a concurrency `queue` is `single` or `max`, and `max` never with a
@@ -57,8 +59,10 @@
 //   15  no unquoted `if: !` (YAML reads it as a tag, not as a negation)
 //
 // Usage:
-//   node scripts/check-workflows.mjs            every *.yml and *.yaml of .github/workflows/
-//   node scripts/check-workflows.mjs FILE...    those files alone (the fixtures, a draft)
+//   node scripts/check-workflows.mjs            every *.yml and *.yaml of .github/workflows/,
+//                                               then rule 10 over the scripts and packages (scriptFiles)
+//   node scripts/check-workflows.mjs FILE...    those files alone (the fixtures, a draft): a
+//                                               .yml or .yaml as a workflow, any other as a script
 //
 // Prints `FILE:LINE: rule N: what` on stderr for each finding.
 // Exit codes: 0 every file keeps every rule, 1 a finding, 2 a file could not be
@@ -171,6 +175,19 @@ const DELETERS = [
   /actions\/delete-package-versions/i,
   /\bdeletePackage/i,
 ];
+// Rule 10 in a script: an oras or regctl argument array whose verbs delete,
+// flags and their values allowed between them:
+// `['manifest', '--registry-config', config, 'delete', ref]`.
+const ARGV_DELETE = /(['"`])(?:manifest|blob|repo|tag)\1\s*,\s*(?:(?:(['"`])-[^'"`\n]*\2|[A-Za-z_$][\w$.]*)\s*,\s*)*(['"`])(?:delete|rm)\3/i;
+// Rule 10 beyond the workflow files: a workflow runs scripts, and they import
+// the packages, so a deletion written there reaches GHCR with the job's token
+// as surely as one in a `run:`. Read: every file under scripts/ and packages/
+// with one of these extensions, or with none and a `#!` first line
+// (scripts/install-oras). check-workflows.test.mjs plants every deleter as test
+// data and is the one file left out.
+const SCRIPT_DIRS = ['scripts', 'packages'];
+const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|mts|cts|sh)$/;
+const SCRIPT_EXEMPT = new Set(['scripts/check-workflows.test.mjs']);
 // Rule 13: a step that moves a tag of the root or of state.
 const ROOT_MOVE = [/\boras\s+tag\b/, /scripts\/ghcr\/push\.mjs\b[^\n]*\b(?:state|root)\b/];
 const PINNED = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[^@\s]+)?@[0-9a-f]{40}$/;
@@ -464,6 +481,54 @@ export function checkText(text) {
   return done();
 }
 
+// Rule 10 over one script or package file: [{ line, rule, what }], by line.
+// Its comment lines are blanked first (a comment does not run, and this file's
+// own header names every deleter): `//` lines in JavaScript and TypeScript, `#`
+// lines in a shell script. A DELETE method is judged against the registry words
+// of what is left of the file, as a workflow's is against its job.
+export function checkScript(text, shell = false) {
+  const comment = shell ? /^\s*#/ : /^\s*\/\//;
+  const code = text
+    .split('\n')
+    .map((l) => (comment.test(l) ? '' : l))
+    .join('\n');
+  const lines = new Set();
+  const lineOf = (m) => code.slice(0, m.index + m[0].length - m[0].trimStart().length).split('\n').length;
+  const all = (re) => code.matchAll(new RegExp(re.source, `${re.flags}g`));
+  for (const re of [...DELETERS, ARGV_DELETE]) for (const m of all(re)) lines.add(lineOf(m));
+  if (REGISTRY_PATH.test(code)) for (const m of all(DELETE_METHOD)) lines.add(lineOf(m));
+  return [...lines].sort((a, b) => a - b).map((line) => ({ line, rule: 10, what: 'a deletion of GHCR content in a script a workflow can run; raw data is kept always' }));
+}
+
+// Whether checkScript reads the file `name` holding `text` as a shell script.
+export const isShell = (name, text) => name.endsWith('.sh') || (!SCRIPT_EXT.test(name) && text.startsWith('#!') && !/^#![^\n]*\bnode\b/.test(text));
+
+// Every file of SCRIPT_DIRS under root that checkScript reads; node_modules and
+// dot-directories skipped.
+export function scriptFiles(root) {
+  const out = [];
+  const visit = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(join(root, dir), { withFileTypes: true });
+    } catch (e) {
+      if (e.code === 'ENOENT') return;
+      throw e;
+    }
+    for (const e of entries) {
+      const shown = `${dir}/${e.name}`;
+      if (e.isDirectory()) {
+        if (e.name !== 'node_modules' && !e.name.startsWith('.')) visit(shown);
+      } else if (e.isFile() && !SCRIPT_EXEMPT.has(shown)) {
+        const path = join(root, shown);
+        if (SCRIPT_EXT.test(e.name) || (!e.name.includes('.') && readFileSync(path, 'latin1').startsWith('#!'))) out.push({ shown, path });
+      }
+    }
+  };
+  for (const dir of SCRIPT_DIRS) visit(dir);
+  return out.sort((a, b) => a.shown.localeCompare(b.shown));
+}
+
 export const format = (file, f) => `${file}:${f.line}: rule ${f.rule}: ${f.what}`;
 
 // Every *.yml and *.yaml directly under ROOT/.github/workflows/, the files
@@ -479,8 +544,11 @@ export function defaultFiles(root) {
 function main() {
   const named = process.argv.slice(2);
   let files;
+  let scripts = [];
   if (named.length > 0) {
-    files = named.map((p) => ({ shown: p.replaceAll('\\', '/'), path: p }));
+    const shown = (p) => ({ shown: p.replaceAll('\\', '/'), path: p });
+    files = named.filter((p) => /\.ya?ml$/.test(p)).map(shown);
+    scripts = named.filter((p) => !/\.ya?ml$/.test(p)).map(shown);
   } else {
     try {
       files = defaultFiles(ROOT);
@@ -492,29 +560,39 @@ function main() {
       console.error(`check-workflows: ${WORKFLOWS} holds no *.yml or *.yaml file; nothing was examined`);
       process.exit(2);
     }
+    try {
+      scripts = scriptFiles(ROOT);
+    } catch (e) {
+      console.error(`check-workflows: could not list ${SCRIPT_DIRS.join(' and ')}: ${e.code ?? e.message}`);
+      process.exit(2);
+    }
   }
   let unreadable = 0;
   let count = 0;
-  for (const f of files) {
-    let text;
-    try {
-      text = readFileSync(f.path, 'utf8');
-    } catch (e) {
-      console.error(`${f.shown}: could not read: ${e.code ?? e.message}`);
-      unreadable += 1;
-      continue;
+  const check = (list, findingsOf) => {
+    for (const f of list) {
+      let text;
+      try {
+        text = readFileSync(f.path, 'utf8');
+      } catch (e) {
+        console.error(`${f.shown}: could not read: ${e.code ?? e.message}`);
+        unreadable += 1;
+        continue;
+      }
+      for (const finding of findingsOf(text, f)) {
+        console.error(format(f.shown, finding));
+        count += 1;
+      }
     }
-    for (const finding of checkText(text)) {
-      console.error(format(f.shown, finding));
-      count += 1;
-    }
-  }
+  };
+  check(files, (text) => checkText(text));
+  check(scripts, (text, f) => checkScript(text, isShell(f.shown, text)));
   if (unreadable > 0) process.exit(2);
   if (count > 0) {
-    console.error(`check-workflows: ${count} finding(s) in ${files.length} file(s)`);
+    console.error(`check-workflows: ${count} finding(s) in ${files.length + scripts.length} file(s)`);
     process.exit(1);
   }
-  console.log(`check-workflows: ${files.length} workflow file(s) keep the 15 rules`);
+  console.log(`check-workflows: ${files.length} workflow file(s) keep the 15 rules; ${scripts.length} script and package file(s) delete nothing from GHCR (rule 10)`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

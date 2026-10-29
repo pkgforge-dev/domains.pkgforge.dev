@@ -51,7 +51,7 @@ with their Workers.
 
 | bucket | bound by | created | rules | delete |
 | --- | --- | --- | --- | --- |
-| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe` |
+| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay. DOM-008's sample packs `sample/v1/per-1024.pack`, `per-4096.pack` and `per-16384.pack` (put 2026-10-28T23:41:46Z to 23:42:05Z with `r2 object put --remote`) have no rule and go with the bucket | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe` |
 
 ## GHCR packages
 
@@ -62,6 +62,7 @@ workflow makes it public (`TODO/RULES.md` §5). No token is created for it.
 | package | linked repository | visibility | pushed by | created | delete |
 | --- | --- | --- | --- | --- | --- |
 | `ghcr.io/pkgforge-dev/domains.pkgforge.dev/probe` | `pkgforge-dev/domains.pkgforge.dev`, proven by the second run of DOM-006 | public, proven by the anonymous read of DOM-006 | `measure-push.yml` (DOM-006), tags `size-<MiB>m`, `layers-<N>` and `retag` | 2026-10-28, by `measure-push.yml` run 40714201294 (DOM-006): it did not exist before the run, and the package record reads `public` | none by an agent or a workflow |
+| `ghcr.io/pkgforge-dev/domains.pkgforge.dev/ref` | `pkgforge-dev/domains.pkgforge.dev`, through the first push of `ref-refresh.yml` with its own `GITHUB_TOKEN` (ruling 6) | public, to be proven by `node scripts/ghcr/check-public.mjs ref`, which the workflow runs after each push | `ref-refresh.yml` (DOM-019), daily at 05:13 UTC: tags `psl-<sha12>`, `ctlogs-<sha12>` and `sources-<sha12>`, each written once. A new content adds one tag: 338,012 B for the PSL and 62,375 B for the CT log list as read 2026-10-29T00:38:49Z, 214 B for `config/sources.json` as the wave 3 tree holds it, before its first commit; an unchanged file adds nothing. `gh workflow disable ref-refresh.yml` stops new tags | pending: absent at 2026-10-29T00:38:16Z (`Bearer QQ==` answered 404 `NAME_UNKNOWN` for its tag list, and the anonymous token endpoint 403) | none by an agent or a workflow (absolute 13): the tags stay, like every package |
 
 The probe package grows with every dispatch of `measure-push.yml`: about 5.5 GiB
 at the default inputs (a push of 1,536 MiB and one of 4,096 MiB), so about 11 GiB
@@ -88,6 +89,9 @@ writes to GHCR.
 | Measure a GHCR push | `measure-push.yml` | dispatch only | `measure-push`: `contents: read`, `packages: write` | 2026-10-28, commit 5e7a646 (DOM-006) | remove the file; the package it pushed stays |
 | Measure THC day | `measure-thc-day.yml` | dispatch only | `plan`, `measure` and `merge`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-009) | remove the file |
 | measure-thc-monthly | `measure-thc-monthly.yml` | dispatch only | `measure`: `contents: read` | 2026-10-28, commit 5e7a646 (DOM-010) | remove the file |
+| Measure tiles | `measure-tiles.yml` | dispatch only; a chain of jobs, each dispatching the next until the dispatch input `until` | `measure-chain`: `actions: write`, `contents: read`; `rounds`: `contents: read` | 2026-10-28, commit ec0014f (DOM-011); the chain dispatched at 2026-10-28T23:43:26Z with `until=2026-10-29T23:43:25Z` | the chain ends by itself after `until`; `gh workflow disable measure-tiles.yml`, then remove the file |
+| Measure Range reads through the probe Worker | `measure-range-load.yml` | dispatch only | `measure`: `contents: read` | 2026-10-28, commit ec0014f (DOM-007) | remove the file with the probe (DOM-056) |
+| Refresh the ref package | `ref-refresh.yml` | cron `13 5 * * *`, dispatch | `ref`: `contents: read`, `packages: write` (`issues: write` joins with DOM-034) | pending: the first run after the push of DOM-019 | `gh workflow disable ref-refresh.yml`, then remove the file; the ref package and its tags stay |
 
 The delete column is removing the file in a commit, or `gh workflow disable <workflow>` to stop it without a commit.
 

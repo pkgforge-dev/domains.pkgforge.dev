@@ -1,0 +1,62 @@
+{
+  "format": "domains.pack.vector.v1",
+  "title": "three names, one day source; one block (the worked example of docs/format.md section 12)",
+  "synthetic": "The names and times are synthetic, chosen for the cases this vector holds; no source observed them.",
+  "dataset": 1,
+  "codec": 1,
+  "records_per_block": 4096,
+  "page_entries": 64,
+  "records": [
+    {
+      "key": "com.example",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "com.example.api",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    },
+    {
+      "key": "com.example.www",
+      "flags": 1,
+      "sources": [
+        {
+          "bit": 0,
+          "first": 298,
+          "last": 298
+        }
+      ]
+    }
+  ],
+  "raw_blocks": [
+    "002d636f6d2e6578616d706c6501aa02000b112e61706901aa02000c0d77777701aa0200"
+  ],
+  "blocks": [
+    {
+      "key": "com.example",
+      "part": 0,
+      "raw": 36,
+      "records": 3,
+      "crc32": "0782e83d"
+    }
+  ],
+  "sha256": "09a1a58987fda8c98135a3726e0fe83004c8fd1314ab79cb2fa7cb61a7c3038a",
+  "written_by": "node v26.7.0, zlib 1.3.2.1-motley-42c2f19",
+  "parts": [
+    "44504b3101010010000001000000000063d04dcecfd54bad48cc2dc849655cc5c4c02da89758900962f1f0969797831800"
+  ],
+  "idx": "44504b49010100100100010040000000030000000000000001000000010000008b00000000000000250000000000000000000000000000000000000092da2643310000000000000000000000010000000b00636f6d2e6578616d706c650f00636f6d2e6578616d706c652e7777770b00636f6d2e6578616d706c650000000000000000250000009f4abe130b00636f6d2e6578616d706c6500001000000000000000210000002400000003003de88207"
+}

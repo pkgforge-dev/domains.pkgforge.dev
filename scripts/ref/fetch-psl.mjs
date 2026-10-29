@@ -10,17 +10,22 @@
 //
 // The hash is of the body as the server sends it with no content coding (the
 // request asks for `identity`), the bytes `sha256sum` of a plain download gives.
-// With --out, the file is written only after every check passed, through a
-// temporary file in the same directory and a rename, so a failed run never
-// leaves a partial list at FILE. DOM-019's ref-refresh.yml, not yet written,
-// is to run it.
+// A redirect is refused, so the bytes come from the URL asked for and a caller
+// that records that URL records where they came from: neither list this
+// project reads redirects (curl at 2026-10-29T03:11:13Z: 200 with no redirect
+// from publicsuffix.org and from www.gstatic.com). With --out, the file is
+// written only after every check passed, through a temporary file in the same
+// directory and a rename, so a failed run never leaves a partial list at FILE.
+// scripts/ghcr/ref-inputs.mjs, which .github/workflows/ref-refresh.yml runs,
+// downloads through download() and checks through checkList().
 //
 // Usage:
 //   node scripts/ref/fetch-psl.mjs [--url URL] [--out FILE]
 // Prints one line: `sha256 HEX rules N`.
 // Exit codes: 0 fetched and checked (and written with --out) · 1 the list
-// failed a check · 2 could not run (bad arguments, the request failed or did
-// not answer 200, the body is over MAX_BYTES, FILE cannot be written).
+// failed a check · 2 could not run (bad arguments, the request failed,
+// redirected or did not answer 200, the body is over MAX_BYTES, FILE cannot be
+// written).
 import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { loadPsl, PslError } from '../../packages/names/src/psl.ts';
@@ -42,11 +47,13 @@ export class FetchError extends Error {
   }
 }
 
-// The body of url as bytes, refused past MAX_BYTES while it streams.
+// The body of url as bytes, refused past MAX_BYTES while it streams. A
+// redirect is a FetchError: the body comes from url itself, never from where
+// an answer points.
 export async function download(url, { maxBytes = MAX_BYTES } = {}) {
   let res;
   try {
-    res = await fetch(url, { headers: { 'user-agent': USER_AGENT, 'accept-encoding': 'identity' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    res = await fetch(url, { headers: { 'user-agent': USER_AGENT, 'accept-encoding': 'identity' }, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (err) {
     throw new FetchError(`request failed: ${err.cause?.message ?? err.message}`);
   }

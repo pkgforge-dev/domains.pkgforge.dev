@@ -1,8 +1,9 @@
 // scripts/ref/fetch-psl.mjs, offline: a server on 127.0.0.1 serves the pinned
 // list (packages/names/test/fixtures/psl-2026-10-27.dat) and planted faults of
 // it. Each refusal is planted alone: a list cut short, a list of too few rules,
-// a list with an empty private section, a 404, a body over the cap, a body that
-// breaks off, a refused connection, and an --out path that cannot be written.
+// a list with an empty private section, a 404, a redirect to the good list, a
+// body over the cap, a body that breaks off, a refused connection, and an --out
+// path that cannot be written.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -41,7 +42,10 @@ before(async () => {
       res.writeHead(status, { 'content-length': String(Buffer.byteLength(body)) });
       res.end(body);
     };
-    if (req.url === '/list') send(200, LIST);
+    if (req.url === '/moved') {
+      res.writeHead(302, { location: '/list', 'content-length': '0' });
+      res.end();
+    } else if (req.url === '/list') send(200, LIST);
     else if (req.url === '/cut') send(200, TEXT.slice(0, TEXT.indexOf(MARKS[2])));
     else if (req.url === '/few') send(200, FEW);
     else if (req.url === '/no-private') send(200, NO_PRIVATE);
@@ -135,6 +139,22 @@ test('fetch-psl: a 404, a body over the cap, a body that breaks off and a refuse
   const refused = await run('--url', `http://127.0.0.1:${port}/list`);
   assert.equal(refused.status, 2);
   assert.match(refused.stderr, /request failed/);
+});
+
+test('fetch-psl: a redirect is refused with exit 2 and nothing is written, though its target is the good list', async () => {
+  const out = join(scratch(), 'psl.dat');
+  seen.length = 0;
+  const r = await run('--url', `${base}/moved`, '--out', out);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /request failed: unexpected redirect/);
+  assert.equal(r.stdout, '');
+  assert.equal(existsSync(out), false);
+  // The redirect was not followed: /list was never asked for.
+  assert.deepEqual(
+    seen.map((s) => s.url),
+    ['/moved'],
+  );
+  await assert.rejects(download(`${base}/moved`), /unexpected redirect/);
 });
 
 test('fetch-psl: the cap is 4 MiB, a body of exactly the cap is read and one byte more is not, and the request has 60 s', async () => {

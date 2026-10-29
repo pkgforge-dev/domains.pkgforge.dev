@@ -1,0 +1,5 @@
+{
+  "format": "domains.sources.v1",
+  "comment": "Written by node scripts/sources/build.mjs from adapters/*/source.json; never edited by hand. Sorted by bit, then the sources with no bit by id.",
+  "sources": []
+}

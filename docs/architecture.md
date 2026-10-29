@@ -60,7 +60,7 @@ R2 is a cache. A reader that does not trust the Worker reads GHCR directly.
 | site | The registrable domain computed with the PSL private section too. `x.github.io` has the site `x.github.io`. |
 | key | The labels of a name in reverse order, joined with dots. `api.example.com.np` has the key `np.com.example.api`. Keys compare bytewise. |
 | source | One producer of observations, with an id, a bit number (0 to 63), a family and a precision (§3.5). |
-| family | What a source derives from: `ct`, `isc`, `whoisds`, `stamus`, `registry`, `dns`. Two sources of one family are not independent evidence. |
+| family | What a source derives from: `ct`, `registry+ct`, `isc`, `whoisds`, `stamus`, `registry`, `nsec-walk`, `dns` (`FAMILIES` of `packages/adapter/src/types.ts`). `registry+ct` is a CT event that its publisher matched to a registry date (`oi-nrd-confirmed`). `nsec-walk` is a walk of a zone's NSEC records (`zone-walks`). Two sources of one family are not independent evidence. |
 | observation | `(name, source, t_first, t_last)` with the source's precision. A merge takes the minimum of `t_first` and the maximum of `t_last`, so a merge is idempotent. |
 | precision | `second` or `day`. It belongs to the source id. A day value is never shown as a time of day. |
 | `seen` | The earliest evidence a source shows for a name or domain. CT sources use the certificate log time. A dump uses its UTC date. A list uses its own date, never the file date. |
@@ -71,7 +71,7 @@ R2 is a cache. A reader that does not trust the Worker reads GHCR directly.
 | `new` (name) | The same rule for a name. It is censored until the corpus holds one certificate renewal cycle (§9). |
 | `corpus_since` | The first day the corpus covers, per dataset. Every answer states it. |
 | `confidence` | `warming` while the corpus is younger than 90 days, else `full`. |
-| `suspect` | An `oi-nrd` event whose certificate is older than 7 days. The default feed hides suspect events. |
+| `suspect` | An `oi-nrd` event whose certificate is older than 7 days, or a domain whose RDAP creation date is before 2026-01-01 (ruling 19). The default feed hides suspect events. |
 | `provisional` | A newness verdict made by the hourly filter. The daily job makes it exact (§5.8). |
 | `corroborated` | Two sources of different families saw the domain within 48 h of each other. |
 | segment | The pack one adapter writes for one window. A segment is immutable. |
@@ -91,7 +91,7 @@ Every adapter runs the same function of the names package (entry DOM-015).
 2. Remove one trailing dot. Remove a leading `*.` and set `wild`.
 3. Refuse a name with a byte outside `[a-z0-9_.-]`, a label over 63 bytes, a name over 253 bytes, an empty label, no dot, or a top-level label of digits only (`numeric-tld`: an address literal such as `192.0.2.1`; RFC 1123 section 2.1 makes the highest-level label alphabetic).
 4. Refuse a name that is itself a public suffix.
-5. Compute `suffix`, `reg` and `site` from the pinned PSL. The PSL's sha256 is in `sources.json` and in every root.
+5. Compute `suffix`, `reg` and `site` from the pinned PSL. The `ref` package holds the pinned list under the tag `psl-<sha12>`, the first 12 hex digits of its sha256 (DOM-019, `refTag` of `packages/ghcr/src/layout.ts`). That manifest's `dev.pkgforge.domains.sha256` annotation holds the whole sha256. A root names it in its `psl` field (§4.6), and a pack in its `dev.pkgforge.domains.psl` annotation (§4.2). `sources.json` holds no PSL field.
 
 THC's dump of 2026-10-26 held 38,474,309 lines. Design A counted 0 refused lines under rule 3 as it then read and 4 refused lines under rule 4. DOM-009 counted distinct names of the same dump: 1,516 whose top-level label is all digits, under 256 distinct such labels, now refused under rule 3, and 2 that are themselves a suffix once the list's IDN rules are converted (MEASURED 2026-10-28T11:19Z, `docs/research/measure/DOM-009/local-2026-10-26.stat.json`). The dump is not bytewise sorted.
 0.57% of its lines carry upper case (MEASURED 2026-10-27, design B §2.4 item 1, design A M5).
@@ -109,8 +109,8 @@ This holds for names and for the new-domain feed. Hash partitioning cannot answe
 | --- | --- | --- | --- | --- |
 | `names` | `names` | reversed name | source mask, then per set bit `(first, last)`. Flag `wild`. | 10 B a name [E] |
 | `domains` | `names` | reversed registrable domain | source mask, per set bit `(first, last)`, evidence list | 14 B a domain [E] |
-| `feed` | `feed` | reversed registrable domain, then `first_seen` | `first_seen`, source mask, basis bits, confidence, flags | 15 to 30 MB a day [E] |
-| `new-name` | `feed` | reversed name, then `first_seen` | the same shape, name level | 250 MB a day [E] |
+| `feed` | `feed` | reversed registrable domain, one record a key | `first_seen`, source mask, basis bits, confidence, flags | 15 to 30 MB a day [E] |
+| `new-name` | `feed` | reversed name, one record a key | the same shape, name level | 250 MB a day [E] |
 | `rev` | `rev` | IP address (4 or 16 bytes, big endian) | the names that resolve to the address | measured by DOM-043 |
 
 `first` and `last` are varints. The unit is the source's precision. Days since 2026-01-01 for a day source.
@@ -118,12 +118,13 @@ Seconds since 2026-01-01T00:00:00Z for a second source. A record never stores a 
 
 The `domains` dataset is the ledger. It holds one record per registrable domain, with per-source first and last seen.
 It decides whether a domain is new. The `feed` dataset is a view of it, sorted for window queries.
+A `feed` or `new-name` pack holds one record a key, and `first_seen` is a field of it, not part of the key. The order of its rows by `first_seen` is the optional layer `tidx` (§4.4, DOM-022).
 
 An evidence entry is `(tier, basis, source, at, confidence)`.
 
 | Tier | Basis | Meaning |
 | --- | --- | --- |
-| T1 | `zone`, `rdap` | A registry zone adds the domain, a zone diff adds it, or an RDAP registration event says so. |
+| T1 | `zone`, `rdap` | A registry zone adds the domain, a zone diff adds it, or an RDAP registration event says so. A time is unsigned from 2026-01-01, so an RDAP creation date before it is not evidence: it sets `suspect` (ruling 19). |
 | T2 | `nrd-list`, `nrd-ct+rdap` | A third party claims it. OpenINTEL's confirmed topic passes its own `confidence` (1 to 10) through unchanged. |
 | T3 | `ct-first` | The first certificate in our corpus. It is a proxy. |
 
@@ -153,7 +154,7 @@ The size is in §4.8, from DOM-004's reading of the bytes a day as the broker se
 | `datasets` | Which datasets the source feeds. |
 | `precision` | `second` or `day`. A source whose precision changes gets a new id. |
 | `kind` | `ct_name`, `claimed_new`, `registered_claim`, `zone_add`, `list`, `dns`. |
-| `basis` | The evidence basis it writes (§3.3). |
+| `basis` | The evidence bases it writes, each one of the five of §3.3. A source that writes no newness evidence (`oi-measure`) lists none. |
 | `cadence`, `band` | How often it runs, and the expected volume band for the volume check (§5.8). |
 | `urls`, `fetched` | The publisher URLs and the fetch time. This is the provenance. |
 | `status`, `through` | `through` is the time through which the source is complete, written by the promotion job from the segments it lists. `status` is `ok`, `late` or `down`: the Worker derives it at read time from `through`, the source's `cadence` and the clock, so it never goes stale in the root. The hourly status workflow reads the same numbers through the Worker (§5.3). |
@@ -194,7 +195,7 @@ A read of a pinned object uses a digest, never a tag. Only `root:latest`, `state
 
 ### 4.2 Manifests
 
-Every artifact is an OCI manifest with an `artifactType` of the form `application/vnd.pkgforge.domains.<kind>.v1`.
+Every artifact is an OCI manifest with an `artifactType` of the form `application/vnd.pkgforge.domains.<kind>.v1`. `ARTIFACT_KINDS` of `packages/ghcr/src/layout.ts` lists the seven kinds, and `artifactType` builds the type.
 
 | Kind | Layers (by title) |
 | --- | --- |
@@ -204,9 +205,16 @@ Every artifact is an OCI manifest with an `artifactType` of the form `applicatio
 | `state` | `state.json` |
 | `rawchunk` | `chunk.000` and up, each at most 4 GiB, for the THC monthly CSV |
 | `raw` | the raw lane (§3.4): `raw.000` and up, each at most 1 GiB, the bytes as received (Kafka record batches or gzip tile bodies, concatenated), and `members.json`, one entry per member with its offsets, length and sha256 |
+| `ref` | one object of the `ref` package (§4.1): one layer, the file as fetched or as committed, titled `public_suffix_list.dat`, `log_list.json` or `sources.json` (`KINDS` of `scripts/ghcr/ref-inputs.mjs`) |
 
-Annotations on every manifest: `org.opencontainers.image.source`, `.created`, `.title`, and `dev.pkgforge.domains.*`
-for `schema`, `dataset`, `tier`, `span.start`, `span.end`, `count`, `bytes`, `psl`, `run`, `source` and `sha256`.
+Each layer carries `org.opencontainers.image.title`, its file name. The push tool `scripts/ghcr/push.mjs` sets `org.opencontainers.image.source` and `org.opencontainers.image.created` on every manifest.
+`created` is the end of the window, or a `ref` file's own time, never the push time. The caller passes every other annotation, each a key under `dev.pkgforge.domains.`.
+
+- Every manifest carries `run`, the id of the workflow run that pushed it.
+- A `pack` or `segment` manifest also carries `schema`, `dataset`, `tier`, `span.start`, `span.end`, `count`, `bytes`, `psl`, `source`, `writer` and `sha256`. `source` is one id, or several separated by commas. When it names one id, the manifest also carries `precision`, `day` or `second` (`VERIFY_ANNOTATIONS` of `packages/pack/src/verify.ts`). `docs/format.md` section 8 states the values of `dataset`, `count`, `bytes`, `sha256` and `writer`.
+- A quarantined segment also carries `quarantine`, with the value `1` (§5.8).
+- A `ref` manifest carries `sha256`, `bytes` and `url` (`.github/workflows/ref-refresh.yml`). `sha256` is the sha256 of the file, which is also the digest of its one layer. `url` names where the bytes came from.
+
 A blob is scoped to its repository, so the root records the repository next to every digest.
 
 ### 4.3 Reading GHCR
@@ -415,9 +423,10 @@ The corpus horizon is the earliest backfilled day, 2026-09-01. Answers carry `co
 
 ### 5.6 The adapter contract
 
-An adapter is a directory `adapters/<id>/`. The tree is created by DOM-016. It holds:
+An adapter is a directory `adapters/<dir>/`. The ingest entries create the tree, one directory each (`AGENTS.md` section 6). `packages/adapter` (DOM-016) holds the contract.
+A directory may hold several sources: DOM-026 puts three in `adapters/oi-nrd/`. The directory's name keeps the id grammar and need not be a source id. The directory holds:
 
-1. `source.json`: id, bit, family, datasets, precision, kind, basis, cadence, band, URLs, retention, parser.
+1. `source.json`: `{ "format": "domains.source.v1", "sources": [...] }`, a list of one or more sources. Each source holds exactly `id`, `bit`, `family`, `datasets`, `precision`, `kind`, `basis`, `cadence`, `band`, `urls`, `retention`, `parser` and `failure_modes` (`SOURCE_FIELDS` of `packages/adapter/src/validate.ts`). `validateSourceFile` refuses any other field. It refuses `fetched`, `status` and `through` with the code `runtime-field`: a run writes them, or a reader derives them (§3.5).
 2. A module with `run(cursor, ctx)`, which returns `{segments, cursor, stats, errors}`.
 3. Fixtures of recorded answers and a test that runs the module against them.
 
@@ -445,9 +454,9 @@ The VPS therefore holds nothing that can write GHCR, and a compromised VPS can o
 
 This step adapts the mirror's verify step. A job fails when any check fails.
 
-1. Decode the whole pack. Check bytewise key order, uniqueness, charset, label length, no upper case, and that counts match the annotations.
+1. Decode the whole pack. Check bytewise key order, uniqueness, charset, label length, no upper case, and that counts match the annotations. The verifier (DOM-018) prints SKIP for a check with nothing to compare, so a job that promotes names the checks it needs with `--require`.
 2. Re-find 1,000 random keys with the reader module the Worker uses. One TypeScript module runs in Node and in workerd.
-3. Compare volume with the median of the last 7 days that were not quarantined. A THC day under 40% of the median is quarantined: it is pushed under a `quarantine` annotation, excluded from `new` computations, and an issue `anomaly-<source>` opens.
+3. Compare volume with the median of the last 7 days that were not quarantined. A THC day under 40% of the median is quarantined: it is pushed with the annotation `dev.pkgforge.domains.quarantine` set to `1`, excluded from `new` computations, and an issue `anomaly-<source>` opens.
    THC's volume fell to about a third in early October with no stated reason: 843 to 986 MB a day in September, 984 and 957 MB on 10-01 and 10-02, 445 MB on 10-03, and 77 to 340 MB a day from 10-05 (MEASURED 2026-10-27T09:34:52Z, `curl -sS 'https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/tree?recursive=true'`, sizes summed per file).
    A baseline that never moves would quarantine every day after a lasting drop: all 21 observed days from 10-05 sit below the floor of 379 MB (40% of 947 MB).
    So the rule has a step change: 3 consecutive observed days below the floor reset the baseline to the median of those 3 days, and the third is accepted. A missing day neither counts nor breaks the run.
@@ -673,7 +682,7 @@ A merge never removes a record from a promoted tier. A rollback is a new root th
 - CT-derived rows say `seen`, never `registered`.
 - Feed rows keep the feed's own date. WhoisDS's file dated D matches ISC's day D-1 at 79.8% for one pair and 66.2% for another, and 0% for the same date (MEASURED 2026-10-27, design B M6).
   The adapter dates a WhoisDS file as D-1.
-- An `oi-nrd` event with a certificate older than 7 days is `suspect`.
+- An `oi-nrd` event with a certificate older than 7 days is `suspect`. So is a domain whose RDAP creation date is before 2026-01-01 (ruling 19).
 - Name-level newness is censored. A daily THC dump holds the names of certificates issued that day. 86.6% of 2026-10-26's names were absent from the union of four earlier days (design B M2). Against every earlier day of THC's 54 daily dumps, each day from 2026-10-16 to 10-26 still carries 25% to 31% names never seen before (MEASURED 2026-10-28, DOM-009's novelty curve, `docs/research/measure/DOM-009/result.json`).
   A name recurs only at a renewal. Until the corpus holds one validity period (about 200 days [E]), `new` for names carries `censored: true`.
   Domain-level newness from feeds with their own history is not censored.

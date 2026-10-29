@@ -1,0 +1,28 @@
+{
+  "format": "domains.source-bits.v1",
+  "comment": "Append-only. An id keeps its bit forever, and a bit is never given to another id, even after the id's adapter is deleted. A new source takes the next unused bit, appended at the end. packages/adapter/test/bits.test.ts holds this file to these rules; packages/adapter/src/validate.ts (validateBits) reads it.",
+  "bits": {
+    "thc-ct": 0,
+    "oi-nrd": 1,
+    "oi-nrd-fqdn": 2,
+    "oi-nrd-confirmed": 3,
+    "oi-cs": 4,
+    "ct-le": 5,
+    "ct-geomys": 6,
+    "ct-ipng": 7,
+    "isc-new": 8,
+    "whoisds": 9,
+    "cenk-nrd": 10,
+    "hagezi-nrd": 11,
+    "oi-zone": 12,
+    "sk-nic": 13,
+    "oi-zonediff": 14,
+    "dotgov": 15,
+    "rdap": 16,
+    "ct-godaddy": 17,
+    "vps-ct": 18,
+    "oi-measure": 19,
+    "crtsh": 20,
+    "zone-walks": 21
+  }
+}

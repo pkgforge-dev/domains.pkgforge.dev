@@ -52,8 +52,7 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
 
 ## DOM-014 — Workflow policy check and pinned installers
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T03:00:00Z; read the `ci.yml` run of the commit that carries this entry (`gh run list --workflow ci.yml --commit SHA`), confirm it passed on that SHA with `ok   node scripts/check-workflows.mjs` in its log, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** S
 - **Source:** the operator's ruling 6 of 2026-10-27 (no credential crosses between GitHub and Cloudflare; Actions writes with its own `GITHUB_TOKEN`) and ruling 5 (nothing is deleted from GHCR). mirror-archlinux `tests/static/50-workflow-policy.sh` holds the same kind of rules.
@@ -143,11 +142,14 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
     - The claim audit fixed the header that said the default permission is `write`.
     - One finding was rejected: keying `JOB_GRANTS` by file would change the entry's design.
   - Not yet seen: the `ci.yml` run of the pushed commit, the first Linux run of the new install-oras tests (`tar` and `sha256sum` on ubuntu-24.04).
+- **Closed 2026-10-28T23:47Z (proven):** `ci.yml` run 40789086109 on commit ec0014ffa021c14a3b0f5a958836422069c26ab0 passed on ubuntu-24.04 (`gh run watch 40789086109 --exit-status` exit 0; `gh run view 40789086109 --json conclusion,headSha` reads `success ec0014ffa021c14a3b0f5a958836422069c26ab0`). Its log reads `check-workflows: 11 workflow file(s) keep the 15 rules`, `ok   node scripts/check-workflows.mjs`, `ℹ tests 749`, `ℹ pass 749`, `ℹ skipped 0` and `gate: all steps passed`. On Linux the gate skips none of the 749 tests: the three that Windows skips run there.
+  - The 8 install-oras tests passed on ubuntu-24.04, which is their first run with the real `tar` and `sha256sum`. One of them installs a cached archive that hashes to the pin, with no download.
+  - The Prove lines above stand as recorded at 2026-10-28T23:38Z. Gate part (b) is this run and the anonymous reads of DOM-006. Part (c) is the wave's three lenses.
+- **Decision 2026-10-29T05:34Z (ruling 18):** the operator chose the group in the called file. DOM-020 changes rule 13 to exempt a workflow that only calls `root-promote.yml` and to require `root-writer` in `root-promote.yml`, in the same commit as that workflow. Until then the rule stays as it is, since no workflow calls `root-promote.yml`.
 
 ## DOM-015 — Names: normalisation, the Public Suffix List and reversed keys
 
-- **Status:** partial
-- **Waiting:** until 2026-10-29T03:00:00Z; read the `ci.yml` run of the commit that carries this entry, confirm it passed on that SHA with the names tests and the names workerd test run, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 4.1 and design B section 4; `docs/architecture.md` section 3.1 and section 3.2. The operator ruling 2 of 2026-10-27 asks for queries on any suffix or parent domain. Reversed keys make each one a contiguous range.
@@ -214,10 +216,14 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
   - `tsconfig.worker.json` now also checks `packages/names/test/names-worker.ts` and the probe's test entries against the Workers types, and `scripts/check-config.test.mjs` holds the list.
   - Gate part (c): the wave's three lenses. The guard mutation added the trie and exception cases, and the claim audit removed present-tense claims about DOM-019 from `split.mjs` and `fetch-psl.mjs`.
   - Not yet seen: the `ci.yml` run of the pushed commit, the first Linux run of these tests and of the names workerd test.
+- **Closed 2026-10-28T23:47Z (proven):** `ci.yml` run 40789086109 on commit ec0014ffa021c14a3b0f5a958836422069c26ab0 passed on ubuntu-24.04 (`gh run watch 40789086109 --exit-status` exit 0; `gh run view 40789086109 --json conclusion,headSha` reads `success ec0014ffa021c14a3b0f5a958836422069c26ab0`). Its log reads `check-workflows: 11 workflow file(s) keep the 15 rules`, `ok   node scripts/check-workflows.mjs`, `ℹ tests 749`, `ℹ pass 749`, `ℹ skipped 0` and `gate: all steps passed`.
+  - The log shows 31 passing `names` tests, both `names workerd` tests among them. On ubuntu-24.04, workerd's `normalise`, `split` and `key` answer what Node's do, IDN names included, and a list cut short is refused there as in Node.
+  - The Prove lines above stand as recorded at 2026-10-28T23:38Z. Part (c) is the wave's three lenses.
 
 ## DOM-016 — The source registry and the adapter contract
 
-- **Status:** open
+- **Status:** partial
+- **Waiting:** until 2026-10-29T09:00:00Z; the `ci.yml` run on the commit that carries this record ends `success` on ubuntu-24.04, with `ok   node scripts/sources/build.mjs --check` and the test "every committed version of config/source-bits.json keeps its ids and bits in the file now" passed, not skipped, in its log; then close.
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 5.5 and design B section 5.4; `docs/architecture.md` section 3.5 and section 5.6. The operator ruling 1 of 2026-10-27: a VPS ingester is one more source, if a core source shuts down.
@@ -243,3 +249,82 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
 - **Prove:** `node scripts/test.mjs packages/adapter` passes. Planted defects: a `source.json` with a reused bit, a missing `failure_modes`, an adapter that calls an unrecorded URL, and an adapter whose two runs differ each fail their test.
   - `node scripts/sources/build.mjs --check` exits 0 on the committed `config/sources.json`.
   - `node scripts/test.mjs packages/adapter --name "docs"` passes: the ids of `docs/sources.md` and of `config/source-bits.json` are equal.
+- **Built 2026-10-29T05:20Z:** the workspace package `@domains/adapter` (`packages/adapter/`, 0BSD, no dependency).
+  - `src/` imports no `node:` module, and `tsconfig.worker.json` checks it as Worker code. `node/` is the Node-only subpath `@domains/adapter/node`: the file readers `readRecordings`, `readBits`, `readSourceFiles` and `readRegistry`.
+  - `src/types.ts`: `Source`, `SourceFile`, `Registry`, `Segment`, `SegmentDraft`, `SegmentWriter`, `Cursor`, `AdapterContext` (`fetch`, `now`, `userAgent`, `writer`), `RunResult`, `AdapterModule`, and the value lists `FAMILIES`, `DATASETS`, `MASKED_DATASETS`, `PRECISIONS`, `KINDS`, `BASES` and `METRICS`.
+  - `src/validate.ts`: `validateBits`, `bitsAppendOnly`, `validateSource`, `validateSourceFile`, `buildRegistry`, `renderRegistry`, `validateRegistry`, `checkCursor` (at most 4,096 B of canonical UTF-8 JSON), `validateSegment` and `checkWindow`. A registry fault throws `SourceError`, which lists every problem with a stable code. A contract fault throws `ContractError`, which names its check.
+  - `src/band.ts`: `checkBand`, `median`, `BASELINE_DAYS = 7` and `RESET_AFTER = 3`. `src/harness.ts`: `parseRecording`, `replayFetch` and `runAdapter`. `src/writer.ts`: `memoryWriter`, the in-memory `SegmentWriter`. `src/live.ts`: `liveFetch`. `src/json.ts`: `canonicalJson`, `jsonEqual` and `sha256Hex`.
+  - `config/source-bits.json` (807 B) maps the 22 ids of the Premise to bits 0 to 21. `config/sources.json` (214 B, sha256 starting `d33793f12605`) is the registry of zero sources, because no `adapters/` directory exists yet.
+  - `scripts/sources/build.mjs [--check] [--root DIR]` builds `config/sources.json` from `adapters/*/source.json` and writes it through a temporary file and a rename. It exits 0 when written or current, 1 when a check fails or the registry is stale or absent, and 2 when it cannot run. `scripts/sources/build.test.mjs` holds 7 tests.
+  - `packages/adapter/test/` holds 81 tests in 8 files: band, basis, bits, docs, harness, validate, workerd and writer. The synthetic adapters are in `test/synthetic.ts`, and the test Worker is `test/adapter-worker.ts`. The 6 recordings in `test/fixtures/http/` each read `"origin": "synthetic"` and name `https://feed.example.test`.
+  - The gate runs `node scripts/sources/build.mjs --check` after `node scripts/check-workflows.mjs`: `scripts/gate.mjs` line 44 and the `TODO/RULES.md` section 1 row. `scripts/gate.test.mjs` builds its stub tree from `STEPS`.
+- **Correction 2026-10-29T05:20Z (Premise and Decision, the count of ids):** the bit table of the Premise lists 22 ids, bits 0 to 21. The Approach and the Decision say 21. `config/source-bits.json` and the `INITIAL` literal of `packages/adapter/test/bits.test.ts` hold all 22. The test "every id of DOM-016's table keeps its bit in config/source-bits.json" holds the two equal.
+- **Correction 2026-10-29T05:20Z (Approach, the `source.json` shape):**
+  - A `source.json` is `{ "format": "domains.source.v1", "sources": [...] }`, a list. DOM-026 puts three sources in `adapters/oi-nrd/`, and DOM-037 puts three in `adapters/ct-tiles/`. An adapter directory keeps the id grammar and need not be a source id.
+  - A source holds `id`, `bit`, `family`, `datasets`, `precision`, `kind`, `basis` (a list), `cadence`, `band`, `urls`, `retention`, `parser` and `failure_modes`. `validateSource` refuses any other field.
+  - `fetched`, `status` and `through` of `docs/architecture.md` section 3.5 are refused with the code `runtime-field`. Section 3.5 derives `status` at read time and gives `through` to the promotion job. DOM-020's Found of 2026-10-29T03:10Z puts `through` and `fetched` in the root's copy.
+  - `bit` is `null` only for a source that feeds no masked dataset, such as `thc-rdns`, which feeds `rev`.
+- **Correction 2026-10-29T05:20Z (Approach, the signatures):**
+  - `validateSource(json, bits)` takes the bit map, so Worker code reads no file. `readBits(root)` reads the map in Node.
+  - `runAdapter(adapter, { recordings, cursor, now, userAgent?, sources? })` takes the recordings, not a `fixtureDir`, so the harness runs in workerd too. `readRecordings(dir)` reads them in Node.
+  - `checkBand(count, history, band, { precision, resetAfter? })` takes the precision, because a band has none. It returns `{ verdict, reason, median, floor, ceiling, reset }`, not a bare string.
+- **Correction 2026-10-29T05:20Z (claim audit claim #2, the bases):** the build accepted 9 bases. `docs/sources.md` used 4 of them that the DPK1 basis table of `docs/format.md` section 5.3 cannot store.
+  - `BASES` is now the five bases of `docs/architecture.md` section 3.3, in DPK1 id order. `packages/adapter/test/basis.test.ts` holds it equal to the keys of `BASIS` in `packages/pack/src/codec.ts`.
+  - A source that writes no newness evidence lists `basis: []`, written `B none` in `docs/sources.md` (`oi-measure`).
+  - `docs/sources.md` relabels `oi-nrd` and `oi-nrd-fqdn` to `nrd-list`, and `dotgov` and `zone-walks` to `zone`.
+- **Correction 2026-10-29T05:20Z (claim audit claim #16, the docs test):** `docs/sources.md` held `dnscoffee-counts`, with Bit `none`, in the bit table, against its own lines 11 and 12. The build let it pass through the list `NO_BIT_ROWS_TO_MOVE`. The row is now in "Inputs without a bit", and the list is empty (`packages/adapter/test/docs.test.ts` line 20). The parser finds the Bit and Labels columns by their header.
+- **Correction 2026-10-29T05:20Z (door sweep door #5, a credential in a source URL):** `checkUrl` refused only a user name and a password.
+  - It now also refuses a fragment, and a query parameter whose name names a credential, with the code `credential` (`packages/adapter/src/validate.ts` lines 310 to 322). `apikey`, `access_token`, `X-Amz-Signature` and `sasl.password` are refused. `keyword`, `author` and `client.id` pass.
+  - `scripts/ghcr/ref-inputs.mjs` line 230 runs `validateRegistry` before it writes the copy that `ref-refresh.yml` publishes.
+- **Correction 2026-10-29T05:20Z (door sweep door #6, the harness and the network):** the build's note "the global fetch is trapped" did not mean that the adapter cannot reach the network.
+  - The harness now traps `fetch`, `WebSocket`, `XMLHttpRequest` and `EventSource` for the length of a run, and restores each one after it.
+  - It does not catch a `fetch` that the adapter captured before the run, such as at import, or `node:net`, `node:tls` and `node:http`. The header of `packages/adapter/src/harness.ts` lines 15 to 17 says so.
+  - A recorded socket door, `ctx.connect`, and a harness with no outbound network go to DOM-026, in its Found of 2026-10-29T04:54Z.
+- **Decision 2026-10-29T05:20Z (the grammars that section 5.6 does not state):**
+  - `cadence` is an ISO 8601 duration of days, hours, minutes and seconds, above zero (`PT10M`, `P1D`). `retention` is such a duration, `unbounded` or `unknown`. `parser` is `NAME/N`, such as `thc-lines/1`.
+  - `urls` use `https`, `http`, `wss` or `kafka`.
+  - `band` is exactly `{ metric, min, max, relative }`. `metric` is `count` or `bytes`, and `max` is above `min`. A relative band holds 1: `min < 1 < max`.
+  - An id and an adapter directory name keep the id grammar and at most `MAX_ID` (63) characters. `buildRegistry` and `validateRegistry` both check the length (`packages/adapter/src/validate.ts` lines 485 and 534).
+- **Decision 2026-10-29T05:20Z (the harness runs an adapter three times):**
+  - Run 1 starts from the given cursor. Run 2 starts from the same cursor and must return equal segments and an equal cursor. Run 3 starts from run 1's cursor and must not write a `(source, dataset, window)` that run 1 wrote.
+  - `CONTRACT_CHECKS` names the checks. `unrecorded` fails a request with no recording, even when the adapter catches the error. `user-agent` fails a request without `ctx.userAgent`. `global-fetch` fails a call of a trapped global.
+  - Of the recordings that match a request, the one that names the most request headers wins, so a conditional GET finds its 304. The replay follows a redirect hop by hop, at most 20.
+- **Decision 2026-10-29T05:20Z (the band details that section 5.8 does not state):**
+  - After a reset, the baseline is the 3 days of the run, the 2 quarantined ones included, until accepted days replace them. That gives the reset baseline that `checkBand` returns for 10-07: 294,318,949 B, the median of 10-05, 10-06 and 10-07, which is the size of 10-06.
+  - The median of an even count is the mean of the middle two. A median of 0 holds every day above 0. An absolute band never resets.
+  - The history replays in day order, whatever order it comes in. A stored quarantined day counts toward a run only when it is below the floor of its own day.
+- **Decision 2026-10-29T05:20Z (a gate step):** `node scripts/sources/build.mjs --check` is a step of its own, after `node scripts/check-workflows.mjs`. A `source.json` changed without a rebuild then fails the gate under that step's name, not inside `npm test`.
+- **Found 2026-10-29T05:20Z (DOM-024, DOM-025):** a production run gives `liveFetch` from `@domains/adapter` as `ctx.fetch`, not the global `fetch`.
+  - MEASURED 2026-10-29T00:20:59Z in workerd 1.20261006.1 through Miniflare, compatibility date 2026-10-13, flags `no_nodejs_compat` and `no_nodejs_compat_v2`: with `ctx = { fetch: globalThis.fetch }`, `ctx.fetch(url)` rejects with "Illegal invocation: function called with incorrect `this` reference". `liveFetch` reached the outbound stand-in with 200.
+  - Node's `fetch` accepts either receiver, so no Node test shows it. The workerd test "liveFetch works as a method of ctx, where workerd refuses the global fetch itself" holds it.
+- **Found 2026-10-29T05:20Z (DOM-017):** `packages/adapter/test/basis.test.ts` couples the registry's `BASES` to the `BASIS` table of `packages/pack/src/codec.ts`. A new basis changes both, and `docs/format.md` section 5.3, in one commit.
+- **Prove as it stands 2026-10-29T05:20Z:** on the operator's Windows 11 workstation, Node v26.7.0, 2026-10-29T05:00:39Z to 05:01:30Z, each exit code read from the process with no pipe:
+  - `node scripts/test.mjs packages/adapter` exits 0: `ℹ tests 81`, `ℹ pass 80`, `ℹ fail 0`, `ℹ skipped 1`, `test: 81 test(s) passed under packages/adapter (8 file(s))`. The skipped test is "every committed version of config/source-bits.json keeps its ids and bits in the file now", which prints `# config/source-bits.json has no commit yet`.
+  - The four planted defects of the Prove are tests that assert the refusal. `node scripts/test.mjs packages/adapter --name "reused bit|missing failure_modes|unrecorded URL|two runs"` exits 0 with `test: 6 test(s) passed`: the reused bit (`bit-taken`), the missing `failure_modes`, the unrecorded URL (twice, once with the adapter catching the error), and two runs that differ in segments or in cursor (`deterministic`).
+  - `node scripts/sources/build.mjs --check` exits 0 and prints `sources 0 adapters 0` and `config/sources.json is current`.
+  - `node scripts/test.mjs packages/adapter --name "docs"` exits 0: `test: 7 test(s) passed matching docs under packages/adapter (8 file(s))`. The first of them is "the ids with a bit in docs/sources.md are the keys of config/source-bits.json, each at its bit".
+  - `node scripts/test.mjs scripts/sources` exits 0 with 7 tests. A reused bit and a missing `failure_modes` each exit 1 and write nothing, and a stale or absent registry fails `--check`.
+  - `node scripts/test.mjs packages/adapter --name workerd` exits 0 with 2 tests. `node scripts/test.mjs scripts --name "the gate runs the steps"` exits 0 with 1 test.
+  - The THC band replay reads 54 days of `per_day[].gz_bytes` from `docs/research/measure/DOM-009/result.json`, 2026-09-01 to 2026-10-26 without 10-04 and 10-09. Their sum is 35,765,972,194 B, the bucket total of `docs/architecture.md` section 5.5.
+    - 10-05 is quarantined against a median of 947 MB and a floor of 379 MB. 10-06 is quarantined.
+    - 10-07 is `ok` as a step change, and the baseline resets to 294,318,949 B.
+    - 10-15 (77 MB) is quarantined against a median of 275,540,184 B. No other day is refused.
+    - Without the reset, all 21 observed days from 10-05 are quarantined.
+  - `npm run gate` exits 0 at 2026-10-29T04:57:36Z on tree `92e8b625ba91` (HEAD ec0014f with the working files). Its log `.tmp/gate-w3.txt` reads `ok   node scripts/sources/build.mjs --check`, `ℹ pass 1158`, `ℹ fail 0`, `ℹ skipped 4` and `gate: all steps passed`. The bits git-history test is one of the 4 skipped (line 37).
+  - Planted guards:
+    - Build: 24 guard removals on copies under `.tmp/DOM-016/` (`node .tmp/DOM-016/plant.mjs`, 2026-10-29T00:22:01Z to 00:23:00Z) each fail at least one test, and the unchanged controls pass. The guard mutation lens found that this driver copies no `node_modules`. The mutants sit in files that the tests import by relative path, so the result stands.
+    - Fix group: 39 plants in a copy with its own `node_modules`, canary first, 2026-10-29T03:20:13Z. Each named test passes unplanted and fails planted: 39 caught, 0 survived. The log is in the session scratchpad, not in the tree.
+    - Lead: stats of NaN and Infinity (`packages/adapter/test/synthetic.ts` lines 140 and 142) kill the mutant that drops `Number.isFinite` from the stats check. A 64-character adapter name in `config/sources.json` is refused (`packages/adapter/test/validate.test.ts` lines 334 to 336), and the mutant that drops the length check is killed.
+  - Gate part (c), the wave's three lenses and the verification:
+    - Door sweep: door #5 and door #6, in the Corrections above.
+    - Claim audit: claim #2 and claim #16, in the Corrections above.
+    - Guard mutation: 24 band removals, 54 validator removals and 53 harness, writer and build removals. It killed the reused bit, `failure_modes`, the id grammar with `MAX_ID`, the step-change reset and the 54-day replay. It reported guard #5 (the band's history sort, the run window after a reset, the absolute upper edge, the replay's `below`), guard #10 (the band ranges, a non-finite number, a duplicate registry id, the adapter grammar, the window and `raw` checks) and guard #11 (the overlap guard, an empty user agent, the cursor copy, the frozen `ctx`, the stats and errors shape, the replay's redirect limit, 303 and HEAD). Each guard was right, and each now has a test.
+    - Verification (`.tmp/w3fix-8.json`): the `Number.isFinite` mutant of the stats check survived, and the gate was red because the `TODO/RULES.md` row lacked the new step. Both are fixed. It found the rest of door #6 in no entry, and DOM-026 now carries it.
+  - Gate part (b): this entry deploys nothing and pushes nothing. DOM-019's `ref-refresh.yml` pushes `config/sources.json` as `ref:sources-<sha12>`.
+  - Not run: the `ci.yml` run of the commit that carries this record, which is the first Linux run of `packages/adapter` and `scripts/sources`. The bits git-history test skips until `config/source-bits.json` has a commit.
+- **Open 2026-10-29T05:20Z:** the credential check reads parameter names only (`packages/adapter/src/validate.ts` line 322). A credential in the value of a neutrally named parameter passes it, and a harmless name that ends in `key` is refused. No entry takes it yet.
+- **Built 2026-10-29T06:30Z (the rest of the Open items of 05:20Z):**
+  - `TODO/ingest.md` relabels the bases the validator refuses: `nrd-list` in DOM-026, `zone` in DOM-048 and DOM-051. The test "the labels of the old Premises are refused, and the bases that replace them pass" (`packages/adapter/test/validate.test.ts`) holds the refusals of `nrd-ct`, `zone-list`, `zone-walk`, `status: reserved` and `partial: true`.
+  - DOM-057 (the reserved `vps-ct`) and DOM-051 (the `partial` label of `zone-walks`) carry Found notes of 2026-10-29T06:00Z.
+  - `docs/architecture.md` section 2 names the eight families of `FAMILIES`. Section 5.6 states the list form of `source.json` with `failure_modes`, and that the ingest entries create `adapters/`. Section 3.1 says the PSL's hash is in the tag of the `ref` package (DOM-019), and DOM-020's Found of 06:00Z asks which hash the root names.
+  - `ci.yml` checks out the whole history (`fetch-depth: 0`), so the bits git-history test reads every committed version on CI too.

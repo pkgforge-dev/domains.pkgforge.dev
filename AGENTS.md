@@ -232,19 +232,22 @@ adapters/<source>/   one source adapter each: source.json, a module, fixtures an
 probes/<name>/       temporary measurement Workers, such as probes/worker/ (created by DOM-061, deleted when the measurements close)
 config/              decided facts the code reads: clock.json, source-bits.json, sources.json (created by the foundation and ops entries)
 .github/workflows/   ingest, publish and check workflows (created by the ingest entries)
-scripts/             the gate, the test runner, the record guard (todo/), the workflow policy, the text and secret sweeps, the PSL fetch (ref/), the measurement scripts (measure/)
+scripts/             the gate, the test runner, the record guard (todo/), the workflow policy, the text and secret sweeps, the PSL fetch (ref/), the GHCR push and reads (ghcr/), the registry build (sources/), the pack verifier, the benches (bench/), the measurement scripts (measure/)
 .githooks/           commit-msg: refuses a commit that credits a tool
 ```
 
 `TODO/` with its entry files, the architecture, the source catalogue, the
 ledger, the methodology, the conventions and the research reports exist. So do
-`packages/core/` and `packages/testkit/` (DOM-013), `packages/names/` (DOM-015), `probes/worker/` (DOM-061),
-the measurement workflows and `ci.yml` under `.github/workflows/`, and
-`docs/research/measure/`, where each measurement writes its results under its
-entry id.
+`packages/core/` and `packages/testkit/` (DOM-013), `packages/names/` (DOM-015),
+`packages/adapter/` with `config/source-bits.json` and `config/sources.json`
+(DOM-016), `packages/pack/` with `docs/format.md` (DOM-017, DOM-018),
+`packages/ghcr/` with `ref-refresh.yml` (DOM-019), `packages/ledger/` (DOM-021),
+`probes/worker/` (DOM-061), the measurement workflows and `ci.yml` under
+`.github/workflows/`, and `docs/research/measure/`, where each measurement
+writes its results under its entry id.
 
 ⚠ Not yet created, each by the entry whose row says so: `apps/<worker>/`,
-`adapters/<source>/`, `config/`, and every other `packages/<name>/`,
+`adapters/<source>/`, `config/clock.json`, and every other `packages/<name>/`,
 `probes/<name>/` and `.github/workflows/<name>.yml`.
 
 ## 7. What a session owes at its end

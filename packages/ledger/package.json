@@ -1,0 +1,11 @@
+{
+  "name": "@domains/ledger",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The domains table that decides what is new: name records aggregated to registrable domains, exact first and last seen across precisions, the exact new-domain join over the earlier tiers, the hourly provisional Bloom filter with its exact delta, and the daily reconcile. Runs in Node and in workerd alike.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

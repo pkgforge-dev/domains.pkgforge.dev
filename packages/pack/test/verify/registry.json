@@ -1,0 +1,64 @@
+{
+  "format": "domains.sources.v1",
+  "comment": "Synthetic: the registry of the verifier's tests (packages/pack/test/verify/make-fixtures.ts). Not config/sources.json.",
+  "sources": [
+    {
+      "id": "thc-ct",
+      "bit": 0,
+      "family": "ct",
+      "datasets": [
+        "names"
+      ],
+      "precision": "day",
+      "kind": "ct_name",
+      "basis": [
+        "ct-first"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "count",
+        "min": 0.4,
+        "max": 2.5,
+        "relative": true
+      },
+      "urls": [
+        "https://feed.example.test/{date}.txt"
+      ],
+      "retention": "unknown",
+      "parser": "synthetic/1",
+      "failure_modes": [
+        "Synthetic: a row of the verifier's tests (packages/pack/test/verify), not this source's registry row."
+      ],
+      "adapter": "synthetic"
+    },
+    {
+      "id": "ct-le",
+      "bit": 5,
+      "family": "ct",
+      "datasets": [
+        "names"
+      ],
+      "precision": "second",
+      "kind": "ct_name",
+      "basis": [
+        "ct-first"
+      ],
+      "cadence": "PT10M",
+      "band": {
+        "metric": "count",
+        "min": 0.4,
+        "max": 2.5,
+        "relative": true
+      },
+      "urls": [
+        "https://feed.example.test/{date}.txt"
+      ],
+      "retention": "unknown",
+      "parser": "synthetic/1",
+      "failure_modes": [
+        "Synthetic: a row of the verifier's tests (packages/pack/test/verify), not this source's registry row."
+      ],
+      "adapter": "synthetic"
+    }
+  ]
+}

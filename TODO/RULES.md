@@ -18,7 +18,7 @@ sessions.
 | | |
 | --- | --- |
 | run the gate | `npm run gate` (`scripts/gate.mjs`) |
-| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `node scripts/check-workflows.mjs` (every workflow parses as YAML and keeps the 15 rules of DOM-014), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `npm run typecheck` (tsc on `tsconfig.json` against Node's types, then on `tsconfig.worker.json` against the Workers runtime's), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
+| the mechanical gate | its steps, one process each, in this order: `node scripts/todo/check.mjs` (the record guard: the checks are listed in its header), `node scripts/todo/count.mjs --check` (the counts against the rows), `node scripts/check-workflows.mjs` (every workflow parses as YAML and keeps the 15 rules of DOM-014), `node scripts/sources/build.mjs --check` (`config/sources.json` equals the build of every `adapters/*/source.json`, DOM-016), `npm test` (through `scripts/test.mjs`: every `*.test.*` under node:test, and zero tests is a failure), `npm run lint` (Biome: the format and the lint rules of `biome.json`), `npm run typecheck` (tsc on `tsconfig.json` against Node's types, then on `tsconfig.worker.json` against the Workers runtime's), `node scripts/text-check.mjs` (control bytes, invalid UTF-8, narrative markers), `node scripts/scan-secrets.mjs --all` (credential shapes), `node scripts/check-hooks.mjs` (the commit hook carries the executable bit in the index) |
 | the record | [`PROGRESS.md`](PROGRESS.md) and [`INDEX.md`](INDEX.md) |
 | an entry's status moved | `node scripts/todo/count.mjs --set <ID> <status>` (`--proven` for a closed Prove) |
 | the counts | `node scripts/todo/count.mjs`; ⛔ never retyped |
@@ -271,6 +271,21 @@ where this record holds none, it says so.
     gap of at most 15 minutes and a maximum gap of at most 60 minutes, the
     numbers the record proposed on 2026-10-27. Overturn: the operator sets
     other numbers; `config/clock.json` holds them once.
+18. **The concurrency group `root-writer` lives in `root-promote.yml`**
+    (operator, 2026-10-29, choosing the recommended option "In the called
+    file"). Every promotion of the root waits in that one group, whoever calls
+    it. Rule 13 of `scripts/check-workflows.mjs` (DOM-014) exempts a workflow
+    that only calls `root-promote.yml` and requires the group in the called
+    file; DOM-020 changes the rule and its test in the same commit as
+    `root-promote.yml`, with a measured run. Overturn: the operator's ruling.
+19. **An RDAP creation date before 2026 is a flag, not evidence** (operator,
+    2026-10-29, choosing the recommended option "Flag, don't store"). A time of
+    DPK1 is unsigned from 2026-01-01 (`docs/format.md` section 1). `rdap`
+    evidence is written only for a creation date on or after that epoch. An
+    earlier creation date refutes newness: the row gets the `suspect` flag and
+    its reason, and no evidence entry. The format stays version 1. Overturn:
+    the operator's ruling; a signed time or an earlier epoch is DPK1 version 2
+    (`docs/format.md` section 11).
 
 Also settled, as a default and not as an operator ruling:
 

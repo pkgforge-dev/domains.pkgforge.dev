@@ -29,14 +29,19 @@ const node = (args) => ({ name: `node ${args.join(' ')}`, cmd: process.execPath,
 const npm = (args) => ({ name: `npm ${args.join(' ')}`, cmd: 'npm', args, shell: win });
 
 // Order: the record first (cheapest, and the one a session most often breaks),
-// then the workflow policy, then the suites, then the formatter and linter,
-// then the type check, then the tree-wide text and secret sweeps. TODO/RULES.md
-// §1 lists the same steps, and gate.test.mjs holds the two lists equal.
+// then the workflow policy, then the source registry, then the suites, then the
+// formatter and linter, then the type check, then the tree-wide text and secret
+// sweeps. TODO/RULES.md §1 lists the same steps, and gate.test.mjs holds the
+// two lists equal.
 export const STEPS = [
   node(['scripts/todo/check.mjs']),
   node(['scripts/todo/count.mjs', '--check']),
-  // Every workflow parses as YAML and keeps the 15 rules of DOM-014.
+  // Every workflow parses as YAML and keeps the 15 rules of DOM-014; rule 10
+  // (no GHCR deletion) reads every script and package file too.
   node(['scripts/check-workflows.mjs']),
+  // config/sources.json is the build of every adapters/*/source.json (DOM-016):
+  // a source.json changed without the registry rebuilt fails here.
+  node(['scripts/sources/build.mjs', '--check']),
   npm(['test']),
   // One formatter and linter for JavaScript and TypeScript, biome.json its rules.
   npm(['run', 'lint']),

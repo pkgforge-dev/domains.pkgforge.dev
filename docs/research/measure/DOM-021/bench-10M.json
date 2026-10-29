@@ -1,0 +1,69 @@
+{
+  "schema": "domains.bench.ledger-filter.v1",
+  "entry": "DOM-021",
+  "started_at": "2026-10-29T01:01:23.957Z",
+  "finished_at": "2026-10-29T01:01:42.174Z",
+  "runtime": {
+    "node": "v26.7.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "keys_of": "synthetic: <suffix>.b<seed>k<n> in base 36; present n below keys, absent n from keys to keys + absent",
+  "times_of": "Node wall time in this process, in ms",
+  "seed": 1,
+  "keys": 10000000,
+  "absent": 1000000,
+  "bits_per_key": 10,
+  "hashes": 7,
+  "partition_bits": 14285760,
+  "filter_bytes": 12500076,
+  "bytes_per_key": 1.250008,
+  "false_positives": 8279,
+  "rate": 0.008279,
+  "theory": 0.008194,
+  "sigma": 0.00009,
+  "missed": 0,
+  "delta_hashes": 800000,
+  "delta_bytes": 6400032,
+  "round_trip": true,
+  "ms": {
+    "build": 8241,
+    "check_present": 6493.6,
+    "query_absent": 640.5,
+    "encode": 39,
+    "decode": 39.3,
+    "delta_add": 1211.8,
+    "delta_encode": 1171.4,
+    "delta_decode": 39.9
+  },
+  "criteria": [
+    {
+      "name": "false-positive-rate-0.8-to-1.2-percent",
+      "value": 0.008279,
+      "limit": [
+        0.008,
+        0.012
+      ],
+      "pass": true
+    },
+    {
+      "name": "filter-at-most-1-percent-above-bits-a-key",
+      "value": 12500076,
+      "limit": 12625000,
+      "pass": true
+    },
+    {
+      "name": "no-present-key-missed",
+      "value": 0,
+      "limit": 0,
+      "pass": true
+    },
+    {
+      "name": "filter-and-delta-decode-to-their-bytes",
+      "value": true,
+      "limit": true,
+      "pass": true
+    }
+  ],
+  "pass": true
+}

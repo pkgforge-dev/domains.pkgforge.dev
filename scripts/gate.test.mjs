@@ -45,8 +45,8 @@ function stubTree(overrides = {}) {
     copyFileSync(join(ROOT, rel), join(dir, rel));
   }
   const ok = "import { appendFileSync } from 'node:fs';\nappendFileSync('.tmp-ran.txt', process.argv[1] + '\\n');\n";
-  for (const rel of ['scripts/todo/check.mjs', 'scripts/todo/count.mjs', 'scripts/check-workflows.mjs', 'scripts/text-check.mjs', 'scripts/scan-secrets.mjs', 'scripts/check-hooks.mjs'])
-    put(rel, overrides[rel] ?? ok);
+  // A stub for the script of every node step, so a step added to STEPS is stubbed too.
+  for (const rel of STEPS.filter((s) => s.cmd === process.execPath).map((s) => s.args[0])) put(rel, overrides[rel] ?? ok);
   const pass = 'node -e "process.exit(0)"';
   put('package.json', JSON.stringify({ name: 'stub', private: true, scripts: { test: pass, lint: pass, typecheck: pass, ...overrides.scripts } }));
   put('.gitignore', '.tmp/\n.tmp-ran.txt\nnode_modules/\n');

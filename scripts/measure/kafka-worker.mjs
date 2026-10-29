@@ -371,10 +371,16 @@ async function checkProbe(ctx) {
   ctx.result.route.summary = row.summary ?? null;
 }
 
+// The marker of the ready request. It has the shape of a call label (eight hex
+// characters and a suffix): the tail showed a full UUID in a query value as
+// REDACTED (MEASURED 2026-10-29T00:17Z, `wrangler tail` 4.150.0 on the probe),
+// while the call labels came through whole.
+export const readyLabel = (runId) => `${runId}-ready`;
+
 // Waits until the tail shows a request of this run, re-sending it every poll.
 async function waitReady(ctx, tail) {
   if (!tail.live) return;
-  const id = randomUUID();
+  const id = readyLabel(ctx.runId);
   const t0 = performance.now();
   while (performance.now() - t0 < ctx.readyCapMs && tail.alive()) {
     try {

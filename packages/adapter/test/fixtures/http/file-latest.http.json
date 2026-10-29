@@ -1,0 +1,15 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://feed.example.test/latest.txt"
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "location": "/files/2026-10-28.txt"
+    },
+    "body_base64": ""
+  }
+}

@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACTION_PINS, checkText, defaultFiles, JOB_GRANTS, ROOT_PROMOTE_GRANTS, RULES } from './check-workflows.mjs';
+import { ACTION_PINS, checkScript, checkText, defaultFiles, isShell, JOB_GRANTS, ROOT_PROMOTE_GRANTS, RULES, scriptFiles } from './check-workflows.mjs';
 import { ROOT } from './files.mjs';
 
 const SCRIPT = join(ROOT, 'scripts', 'check-workflows.mjs');
@@ -279,6 +279,137 @@ test('workflow policy: rule 10 refuses each way of deleting from GHCR, and passe
   accepted(plant('        run: gh workflow run clean.yml', '        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/1" && gh workflow run clean.yml'));
 });
 
+// A synthetic script: a header comment, then `body` from line 4.
+const SCRIPT_HEAD = "// synthetic script\nimport { spawnSync } from 'node:child_process';\nconst ref = 'ghcr.io/pkgforge-dev/x:tag';\n";
+const lineOf10 = (text, shell = false) => checkScript(text, shell).map((f) => `${f.rule}:${f.line}`);
+
+test('workflow policy: rule 10 refuses a deletion in a script or a package file, in a string, a command or an argument array, at its line', () => {
+  for (const body of [
+    "spawnSync('oras', ['manifest', 'delete', ref]);",
+    "await deps.oras(['manifest', '--registry-config', config, 'delete', '--force', ref]);",
+    'await deps.oras(["blob", "delete", ref]);',
+    "spawnSync('regctl', ['tag', 'rm', ref]);",
+    'spawnSync("sh", ["-c", `oras manifest delete --force ${ref}`]);',
+    "spawnSync('sh', ['-c', 'crane delete ' + ref]);",
+    "await fetch(`https://${ref}/v2/x/manifests/sha256:00`, { method: 'DELETE' });",
+    "await fetch(url, { method:\n    'DELETE' });",
+    "await github.request('DELETE /orgs/pkgforge-dev/packages/container/x/versions/1');",
+    'await octokit.rest.packages.deletePackageVersionForOrg({});',
+  ]) {
+    assert.deepEqual(lineOf10(SCRIPT_HEAD + body), ['10:4'], body);
+  }
+  // manifest fetch reads; a later 'delete' of another array is not its verb.
+  assert.deepEqual(lineOf10(`${SCRIPT_HEAD}await deps.oras(['manifest', 'fetch', ref]);\nconst verbs = ['delete'];`), []);
+  // A DELETE in a file that names no registry, and a comment that names a deleter, run nothing against GHCR.
+  assert.deepEqual(lineOf10("// synthetic\nawait fetch('https://api.example/caches/1', { method: 'DELETE' });\n"), []);
+  assert.deepEqual(lineOf10(`${SCRIPT_HEAD}// never \`oras manifest delete\`, \`crane delete\` or ['manifest', 'delete']\n  // nor curl -X DELETE on ghcr.io\n`), []);
+  // A shell script: its # lines are comments, and its commands are read.
+  assert.deepEqual(lineOf10('#!/usr/bin/env bash\n# never oras manifest delete\noras manifest delete "$REF"\n', true), ['10:3']);
+  assert.deepEqual(lineOf10('#!/usr/bin/env bash\n# never oras manifest delete\noras manifest fetch "$REF"\n', true), []);
+  // A flag at the start of a continuation line is reported at its own line, not the line before.
+  assert.deepEqual(lineOf10('#!/usr/bin/env bash\ncurl -fsS \\\n-X DELETE "https://ghcr.io/v2/x/manifests/sha256:00"\n', true), ['10:3']);
+  // Read as JavaScript, a # line is code: a shell script is never under-read.
+  assert.deepEqual(lineOf10('# oras manifest delete "$REF"\n'), ['10:1']);
+});
+
+test('workflow policy: rule 10 reads every script and package file, a shell script by its #! line, and leaves out only its own test', () => {
+  mkdirSync(join(ROOT, '.tmp'), { recursive: true });
+  const root = mkdtempSync(join(ROOT, '.tmp', 'check-workflows-'));
+  dirs.push(root);
+  const files = {
+    'scripts/a.mjs': '',
+    'scripts/ghcr/b.mjs': '',
+    'scripts/c.sh': '',
+    'scripts/install-x': '#!/usr/bin/env bash\n',
+    'scripts/run-node': '#!/usr/bin/env node\n',
+    'scripts/README': 'no shebang\n',
+    'scripts/data.json': '{}',
+    'scripts/check-workflows.test.mjs': '',
+    'scripts/check-workflows.mjs': '',
+    'packages/p/src/x.ts': '',
+    'packages/p/bench/y.mjs': '',
+    'packages/p/test/fixtures/f.bin': '',
+    'packages/p/node_modules/dep/index.js': '',
+    'packages/p/.cache/z.ts': '',
+  };
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(join(root, rel, '..'), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  }
+  assert.deepEqual(
+    scriptFiles(root).map((f) => f.shown),
+    ['packages/p/bench/y.mjs', 'packages/p/src/x.ts', 'scripts/a.mjs', 'scripts/c.sh', 'scripts/check-workflows.mjs', 'scripts/ghcr/b.mjs', 'scripts/install-x', 'scripts/run-node'],
+  );
+  assert.equal(isShell('scripts/install-x', files['scripts/install-x']), true);
+  assert.equal(isShell('scripts/run-node', files['scripts/run-node']), false);
+  assert.equal(isShell('scripts/c.sh', ''), true);
+  assert.equal(isShell('scripts/a.mjs', '#!/usr/bin/env bash\n'), false);
+  // The real tree: the GHCR writer, the shell installer and the package code are all read.
+  const real = scriptFiles(ROOT).map((f) => f.shown);
+  for (const f of ['scripts/ghcr/push.mjs', 'scripts/install-oras', 'scripts/check-workflows.mjs', 'packages/ghcr/src/index.ts', 'packages/ledger/bench/ledger-filter.mjs'])
+    assert.ok(real.includes(f), f);
+  assert.ok(!real.includes('scripts/check-workflows.test.mjs'));
+});
+
+// The oras verbs of scripts/ghcr/push.mjs, the one GHCR writer, read from its
+// code (comment lines dropped): every `orasCall(label, [...])`, every
+// `deps.oras(name, ...)` resolved to the array its name is built from, and
+// every process it can start. `unresolved` names a call whose verbs it could not read.
+function orasVerbs(text) {
+  const code = text
+    .split('\n')
+    .filter((l) => !/^\s*\/\//.test(l))
+    .join('\n');
+  const count = (re) => [...code.matchAll(re)].length;
+  const verb = (a, b) => (a === 'manifest' || a === 'blob' || a === 'repo' ? `${a} ${b}` : a);
+  const verbs = [];
+  const unresolved = [];
+  const calls = [...code.matchAll(/\borasCall\(\s*(?:'[^'\n]*'|`[^`\n]*`)\s*,\s*\[\s*'([a-z-]+)'(?:\s*,\s*'([a-z-]+)')?/g)];
+  for (const m of calls) verbs.push(verb(m[1], m[2]));
+  // orasCall's own definition is the one occurrence that is not a call.
+  if (count(/\borasCall\(/g) - 1 !== calls.length) unresolved.push('an orasCall whose arguments are not a literal array');
+  for (const [, name] of code.matchAll(/\bdeps\.oras\(\s*([A-Za-z_$][\w$]*)/g)) {
+    if (name === 'args' && /async function orasCall\(label, args,/.test(code)) continue;
+    const built = new RegExp(String.raw`\bconst ${name} = \[\s*'([a-z-]+)'(?:\s*,\s*'([a-z-]+)')?`).exec(code);
+    if (built === null) unresolved.push(`deps.oras(${name})`);
+    else verbs.push(built[1] === 'push' && built[2] !== '--oci-layout' ? 'push to a registry' : verb(built[1], built[2]));
+  }
+  // A call of oras that is not deps.oras( with a name: an inline array, an alias.
+  if (count(/\boras\(/g) !== count(/\bdeps\.oras\(\s*[A-Za-z_$]/g)) unresolved.push('an oras call not through deps.oras(name)');
+  // One import of node:child_process, its spawn called once, in spawnProcess,
+  // which only orasRunner names, and orasRunner named only where deps.oras defaults to it.
+  const oneSpawn = count(/child_process/g) === 1 && /^import \{ spawn \} from 'node:child_process';$/m.test(code) && count(/\bspawn\(/g) === 1;
+  if (!oneSpawn || count(/\bspawnProcess\b/g) !== 2 || count(/\borasRunner\b/g) !== 2) unresolved.push('a process started outside orasRunner');
+  return { verbs: [...new Set(verbs)].sort(), unresolved };
+}
+
+test('workflow policy: rule 10: the oras calls of scripts/ghcr/push.mjs log in, push to a local layout, fetch a manifest and copy, and nothing else', () => {
+  const text = readFileSync(join(ROOT, 'scripts', 'ghcr', 'push.mjs'), 'utf8');
+  const allowed = ['copy', 'login', 'manifest fetch', 'push'];
+  assert.deepEqual(orasVerbs(text), { verbs: allowed, unresolved: [] });
+  // Each plant is refused by this reading alone.
+  const swap = (from, to) => {
+    assert.equal(text.split(from).length - 1, 1, from);
+    return orasVerbs(text.replace(from, to));
+  };
+  assert.deepEqual(swap("['manifest', 'fetch',", "['manifest', 'delete',").verbs, ['copy', 'login', 'manifest delete', 'push']);
+  assert.deepEqual(swap("['copy', '--from-oci-layout',", "['tag', '--from-oci-layout',").verbs, ['login', 'manifest fetch', 'push', 'tag']);
+  assert.ok(swap("const pushArgs = ['push', '--oci-layout',", "const pushArgs = ['push', '--disable-path-validation',").verbs.includes('push to a registry'));
+  assert.deepEqual(swap('  // 5. The anonymous read-back.', '  await deps.oras(deleteArgs, {});\n  // 5. The anonymous read-back.').unresolved, ['deps.oras(deleteArgs)']);
+  assert.deepEqual(swap('  // 5. The anonymous read-back.', "  await deps.oras(['manifest', 'delete', plan.ref], {});\n  // 5. The anonymous read-back.").unresolved, [
+    'an oras call not through deps.oras(name)',
+  ]);
+  assert.deepEqual(swap('  // 5. The anonymous read-back.', "  const { oras } = deps;\n  await oras(['tag', plan.ref]);\n  // 5. The anonymous read-back.").unresolved, [
+    'an oras call not through deps.oras(name)',
+  ]);
+  assert.deepEqual(swap('  // 5. The anonymous read-back.', "  await orasCall('x', rest, {}, 1, deps);\n  // 5. The anonymous read-back.").unresolved, [
+    'an orasCall whose arguments are not a literal array',
+  ]);
+  assert.deepEqual(swap('  // 5. The anonymous read-back.', "  spawnProcess(process.env.ORAS, ['manifest', 'delete', plan.ref]);\n  // 5. The anonymous read-back.").unresolved, [
+    'a process started outside orasRunner',
+  ]);
+});
+
 test('workflow policy: rule 11 refuses a self-hosted runner and a runner from an expression, and accepts the one-label list', () => {
   const RUNS = '    runs-on: ubuntu-24.04\n    timeout-minutes: 5\n';
   refusedBy(plant(RUNS, '    runs-on: [self-hosted]\n    timeout-minutes: 5\n'), '11');
@@ -385,4 +516,30 @@ test('workflow policy: the command line exits 2 on a .github/workflows/ that hol
   const r = spawnSync(process.execPath, [join(root, 'scripts', 'check-workflows.mjs')], { cwd: root, encoding: 'utf8' });
   assert.equal(r.status, 2, r.stdout + r.stderr);
   assert.match(r.stderr, /holds no \*\.yml or \*\.yaml file; nothing was examined/);
+});
+
+test('workflow policy: the command line reads the scripts and packages beside the workflows, and a named script, for rule 10', () => {
+  // A copy of the script under .tmp/, as above, with clean.yml and one synthetic
+  // script that deletes a manifest through an oras argument array.
+  mkdirSync(join(ROOT, '.tmp'), { recursive: true });
+  const root = mkdtempSync(join(ROOT, '.tmp', 'check-workflows-'));
+  dirs.push(root);
+  mkdirSync(join(root, 'scripts', 'ghcr'), { recursive: true });
+  mkdirSync(join(root, 'packages', 'p', 'src'), { recursive: true });
+  mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+  const copy = join(root, 'scripts', 'check-workflows.mjs');
+  writeFileSync(copy, readFileSync(SCRIPT));
+  writeFileSync(join(root, '.github', 'workflows', 'clean.yml'), CLEAN);
+  writeFileSync(join(root, 'packages', 'p', 'src', 'x.ts'), '// synthetic\nexport const x = 1;\n');
+  const run = (...args) => spawnSync(process.execPath, [copy, ...args], { cwd: root, encoding: 'utf8' });
+  const good = run();
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  assert.match(good.stdout, /1 workflow file\(s\) keep the 15 rules; 2 script and package file\(s\) delete nothing from GHCR \(rule 10\)/);
+  writeFileSync(join(root, 'scripts', 'ghcr', 'drop.mjs'), `${SCRIPT_HEAD}await deps.oras(['manifest', 'delete', ref]);\n`);
+  const bad = run();
+  assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+  assert.match(bad.stderr, /^scripts\/ghcr\/drop\.mjs:4: rule 10: a deletion of GHCR content in a script/m);
+  const named = run('scripts/ghcr/drop.mjs');
+  assert.equal(named.status, 1, named.stdout + named.stderr);
+  assert.match(named.stderr, /^scripts\/ghcr\/drop\.mjs:4: rule 10: /m);
 });

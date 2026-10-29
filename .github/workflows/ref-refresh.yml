@@ -1,0 +1,153 @@
+# DOM-019 (TODO/storage.md): publish the reference files of the `ref` package,
+# ghcr.io/pkgforge-dev/domains.pkgforge.dev/ref, once a day:
+#   psl-<sha12>      https://publicsuffix.org/list/public_suffix_list.dat
+#   ctlogs-<sha12>   https://www.gstatic.com/ct/log_list/v3/log_list.json
+#   sources-<sha12>  config/sources.json as committed (DOM-016)
+# sha12 is the first 12 hex digits of the file's sha256, so a tag names one
+# content and a new content is a new tag. Tags are written once: push.mjs reads
+# the tag first, a tag that holds the same manifest, or the same
+# dev.pkgforge.domains.sha256 over the same file (its one layer has that
+# digest), is left as it is, and one that holds anything else fails the job and
+# is never rewritten (docs/architecture.md section 4.7). Nothing here deletes
+# anything from GHCR (AGENTS.md absolute 13).
+#
+# The first run creates the package with this job's own GITHUB_TOKEN, and is
+# expected to leave it linked to this repository and public with no manual step
+# (ruling 6). DOM-006 measured that for the probe package only. For ref, the
+# step after the push proves the public part: scripts/ghcr/check-public.mjs
+# reads the package with no credential. When that read fails, the issue
+# visibility-ref is raised by scripts/track-issue, which comes with DOM-034;
+# until then the job fails red and holds no issues: write (least privilege, as
+# measure-push.yml).
+#
+# Dispatch once and read the result from any machine with no GitHub login:
+#   gh workflow run ref-refresh.yml --ref main
+#   node scripts/ghcr/tags.mjs ref --prefix psl- --min 1
+#   node scripts/ghcr/check-public.mjs ref
+name: Refresh the ref package
+
+on:
+  schedule:
+    - cron: "13 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ref-refresh
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  ref:
+    # The job pushes with main's code only: a dispatch on another branch is skipped whole.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Nothing is installed from npm: the scripts import the packages they use
+      # by path, and Node runs their TypeScript as it is.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # No credential in this step: it reads the two lists with the contact
+      # User-Agent and checks each is well formed before anything pins its hash.
+      - name: Read and check the three files
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/ref"
+          mkdir -p "$WORK"
+          node scripts/ghcr/ref-inputs.mjs psl --out "$WORK/psl" > "$WORK/psl.json"
+          node scripts/ghcr/ref-inputs.mjs ctlogs --out "$WORK/ctlogs" > "$WORK/ctlogs.json"
+          # sources.json carries no time of its own: created is the time of the commit it is read from.
+          created="$(TZ=UTC0 git show -s --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ HEAD)"
+          node scripts/ghcr/ref-inputs.mjs sources --out "$WORK/sources" --created "$created" --commit "$GITHUB_SHA" > "$WORK/sources.json"
+          for k in psl ctlogs sources; do
+            jq -c '{kind, tag, bytes, sha256, created, url, facts}' "$WORK/$k.json"
+          done
+
+      # The only step that holds the job's token, which reaches oras on stdin
+      # (scripts/ghcr/push.mjs). Each file is pushed on its own; a file that
+      # fails does not stop the others, and fails the step at its end.
+      - name: Push to the ref package
+        timeout-minutes: 35
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/ref"
+          TYPE=application/vnd.pkgforge.domains.ref.v1
+          failed=0
+          {
+            echo '### ref'
+            echo
+            echo '```text'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for k in psl ctlogs sources; do
+            info="$WORK/$k.json"
+            tag="$(jq -r .tag "$info")"
+            file="$(jq -r .file "$info")"
+            media="$(jq -r .mediaType "$info")"
+            sha="$(jq -r .sha256 "$info")"
+            bytes="$(jq -r .bytes "$info")"
+            created="$(jq -r .created "$info")"
+            url="$(jq -r .url "$info")"
+            rc=0
+            node scripts/ghcr/push.mjs ref "$tag" --artifact-type "$TYPE" --created "$created" \
+              --annotation "dev.pkgforge.domains.sha256=$sha" \
+              --annotation "dev.pkgforge.domains.bytes=$bytes" \
+              --annotation "dev.pkgforge.domains.url=$url" \
+              --annotation "dev.pkgforge.domains.run=$GITHUB_RUN_ID" \
+              "$file:$media" > "$WORK/$k.push" || rc=$?
+            cat "$WORK/$k.push"
+            cat "$WORK/$k.push" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::scripts/ghcr/push.mjs exited $rc for ref:$tag (1 a fault, 2 could not run, 3 the tag holds another manifest, 4 not public, 70 an internal error)"
+              failed=1
+            fi
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
+
+      # No credential in this step: the read a consumer makes. rc is
+      # check-public's own exit code: 4 alone means the package does not read
+      # with no credential; 1 (no tag), 2 (a GHCR error) and 70 (a defect)
+      # fail the job with their own message and raise nothing.
+      - name: Read the ref package anonymously
+        id: public
+        timeout-minutes: 15
+        run: |
+          rc=0
+          node scripts/ghcr/check-public.mjs ref || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # ⚠ A no-op that fails the job. DOM-034 replaces it with scripts/track-issue,
+      # which raises the issue visibility-ref, and adds issues: write to this job
+      # in the same commit. It opens nothing today.
+      - name: Raise visibility-ref (a no-op until DOM-034)
+        if: ${{ failure() && steps.public.outputs.rc == '4' }}
+        run: |
+          echo "::error::the ref package did not read with no credential (scripts/ghcr/check-public.mjs ref exited 4, PRIVATE PACKAGE). scripts/track-issue, which raises visibility-ref, comes with DOM-034; until then this step raises nothing and fails the job."
+          exit 1

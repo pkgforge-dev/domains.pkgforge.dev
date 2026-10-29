@@ -53,9 +53,22 @@ test('config: the Worker program checks every Worker source against the runtime 
   const worker = tsconfig('tsconfig.worker.json');
   assert.equal(worker.extends, './tsconfig.base.json');
   assert.deepEqual(worker.compilerOptions.types, ['@cloudflare/workers-types']);
-  assert.deepEqual(worker.include, ['apps/*/src', 'probes/*/src', 'probes/*/test/*-entry.ts', 'packages/*/src']);
-  assert.ok(worker.files.includes('packages/testkit/test/smoke-worker.ts'));
-  assert.ok(worker.files.includes('packages/names/test/names-worker.ts'));
+  assert.deepEqual(worker.include, ['apps/*/src', 'probes/*/src', 'probes/*/test/*-entry.ts', 'packages/*/src', 'packages/*/test/*-worker.ts']);
+  assert.equal(worker.files, undefined, 'the test Worker entries are matched by the pattern, not listed');
+  // The Worker entry each package's workerd test loads from its own directory
+  // (`join(import.meta.dirname, "<entry>.ts")`) is a *-worker.ts the pattern
+  // matches, so none runs in workerd unchecked against the runtime's types.
+  // An entry under test/fixtures/ is a planted fault (a node: import) and stays out.
+  for (const name of readdirSync(join(ROOT, 'packages'))) {
+    const harness = join(ROOT, 'packages', name, 'test', 'workerd.test.ts');
+    if (!existsSync(harness)) continue;
+    const entries = [...readFileSync(harness, 'utf8').matchAll(/join\(import\.meta\.dirname, "([^"/]+\.ts)"\)/g)].map((m) => m[1]);
+    assert.ok(entries.length > 0, `packages/${name}/test/workerd.test.ts loads no entry of its own directory`);
+    for (const entry of entries) {
+      assert.match(entry, /-worker\.ts$/, `packages/${name}/test/${entry} runs in workerd and packages/*/test/*-worker.ts does not match it`);
+      assert.ok(existsSync(join(ROOT, 'packages', name, 'test', entry)), `packages/${name}/test/${entry}`);
+    }
+  }
   // A package source left out of the Worker program is named Node-only, and
   // each name is a package that exists.
   const nodeOnly = worker.exclude.filter((p) => /^packages\/[^/*]+\/src$/.test(p));

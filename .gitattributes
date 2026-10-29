@@ -76,5 +76,12 @@
 *.woff          binary
 *.woff2         binary
 
+# The packs the verifier's tests commit (packages/pack/test/verify): DPK1 parts
+# and indexes, whose names (clean.part.000, clean.idx) carry no extension above.
+# verify.test.ts holds them to the records of synthetic.ts, the SHA-256 of their
+# raw blocks and their byte length, so a translated byte fails it.
+packages/pack/test/verify/*.idx     binary
+packages/pack/test/verify/*.part.*  binary
+
 # Generated and noisy in a diff. Collapsed in review, still tracked.
 package-lock.json   linguist-generated=true

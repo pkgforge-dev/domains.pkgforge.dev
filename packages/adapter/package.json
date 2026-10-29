@@ -1,0 +1,12 @@
+{
+  "name": "@domains/adapter",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The source registry and the adapter contract: the source.json shape and its validator, the append-only bit map, the segment and cursor types, the volume band check, and the harness that runs an adapter against recorded answers. src/ runs in Node and in workerd; node/ holds the Node-only file readers.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./node/index.ts"
+  }
+}

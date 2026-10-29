@@ -1,0 +1,16 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://feed.example.test/files/2026-10-28.txt"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain",
+      "etag": "\"v1\""
+    },
+    "body_base64": "ZC5leGFtcGxlLmNvbQplLmV4YW1wbGUuY29tCg=="
+  }
+}
