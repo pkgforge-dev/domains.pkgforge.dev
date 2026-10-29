@@ -43,7 +43,7 @@ defaults:
 
 jobs:
   measure-chain:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # At most 3 dispatch tries 15 s apart, then a sleep under 5 minutes.
     timeout-minutes: 15
     permissions:

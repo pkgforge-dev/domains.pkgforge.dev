@@ -48,7 +48,7 @@ jobs:
   ref:
     # The job pushes with main's code only: a dispatch on another branch is skipped whole.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
       contents: read

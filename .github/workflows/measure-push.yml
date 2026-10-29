@@ -68,7 +68,7 @@ jobs:
     # tag, so only main's code may: a dispatch on another branch is skipped
     # whole, and push-summary.mjs --run refuses a run off main as well.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The pushes stop starting new layer attempts after 21 minutes of their
     # step (BUDGET), so the reads, the artifact and the verdict always fit.
     timeout-minutes: 40

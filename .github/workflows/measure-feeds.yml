@@ -52,7 +52,7 @@ defaults:
 
 jobs:
   measure-chain:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # At most 3 dispatch tries 15 s apart.
     timeout-minutes: 5
     permissions:
@@ -128,7 +128,7 @@ jobs:
           echo "successor=started tries=$tries" >> "$GITHUB_STEP_SUMMARY"
 
   poll:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 34 polls 10 minutes apart: the last starts 330 minutes in and takes about
     # a minute; then the upload.
     timeout-minutes: 350

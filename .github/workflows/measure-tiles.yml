@@ -68,7 +68,7 @@ jobs:
     # successor, so it leaves the group at once and its artifacts never join
     # the evidence.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # At most 3 dispatch tries 15 s apart.
     timeout-minutes: 5
     permissions:
@@ -145,7 +145,7 @@ jobs:
 
   rounds:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 12 rounds 30 minutes apart: the last starts 330 minutes in and ends
     # within its 10-minute deadline; then the upload.
     timeout-minutes: 350
@@ -183,7 +183,7 @@ jobs:
 
   overlap:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The overlap waits at most 120 minutes for THC's day; its reads, the
     # Geomys window and the 10-minute rates take about 20 minutes more.
     timeout-minutes: 240
