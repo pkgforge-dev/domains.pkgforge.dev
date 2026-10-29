@@ -308,6 +308,31 @@ where this record holds none, it says so.
     sees which lists answered (absolute 11) while packs built under an older
     list wait for compaction (DOM-020, DOM-023). Overturn: the operator's
     ruling.
+23. **A quarantined day is served, but never as new** (operator, 2026-10-29,
+    choosing the recommended option "Serve, not as new"). A pack whose
+    manifest carries `dev.pkgforge.domains.quarantine` joins the root,
+    marked quarantined in its pack entry (an additive field,
+    `docs/architecture.md` section 11). Its names answer every query of
+    `names`, `domains` and `rev`, and it counts toward no `new` window and
+    no `feed` or `new-name` row (section 5.8). DOM-029 adds the field and
+    lifts the refusal that `packFromManifest` holds today. Overturn: the
+    operator's ruling.
+24. **A day no source covers is a hole named in `gaps`** (operator,
+    2026-10-29, choosing the recommended option "Hole named in gaps"). The
+    live-set rule accepts a hole in a dataset's interval when every day of it
+    is listed in the root's `gaps`; a hole that `gaps` does not name is still
+    refused as a missed promotion. No empty pack is written for such a day.
+    DOM-029 changes the rule in `packages/root`, before the backfill's
+    promotion (THC lacks 2026-10-04 and 2026-10-09). Overturn: the operator's
+    ruling.
+25. **A rebuilt tier pack takes a suffix `-rN` on its tag** (operator,
+    2026-10-29, choosing the recommended option "Suffix -rN"). The first
+    build of a pack of tier `h` to `y` keeps the tag its span gives, such as
+    `names-d-20261026`; a rebuild of the same span takes
+    `names-d-20261026-r2`, then `-r3`, since tags are write-once and nothing
+    is deleted from GHCR. The root names whichever is live. DOM-023 builds it
+    in `tierTag` and `checkTag` of `packages/ghcr` and in `validatePack`.
+    Overturn: the operator's ruling.
 
 Also settled, as a default and not as an operator ruling:
 

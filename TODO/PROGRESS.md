@@ -7,7 +7,7 @@ is the only one.
 ## State
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), is the commit that carries this record.
-- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 22 on 2026-10-29), then works the order unattended.
+- **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 25 on 2026-10-29), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
@@ -72,6 +72,8 @@ is the only one.
 - Pushed wave 4 as 34c573f and closed DOM-020 and DOM-022 on `ci.yml` run 40904791877 (1,360 of 1,360 tests on ubuntu-24.04, none skipped).
   - DOM-020 also on `root-promote.yml` run 40905355025: `root:latest` holds `root_seq` 1 with no pack, and reads with no credential.
   - Ruling 18 is measured: two calls of `root-promote.yml` queue in its group `root-writer` (runs 40905625954 and 40905643334, the second promote job 2 s after the first ended). The caller that measured it is removed.
+- Asked the operator three design questions from wave 4's findings and recorded the answers as rulings 23 to 25: a quarantined day is served but never as new (DOM-029); a day no source covers is a hole named in `gaps`, not an empty pack (DOM-029); a rebuilt tier pack takes the suffix `-rN` on its tag (DOM-023).
+- Moved biome to 2.6.4 (Renovate #1); its new rule `useMathMinMax` flags four string reductions, each now carrying a `biome-ignore` with its reason.
 
 ## What is in progress
 
@@ -125,7 +127,7 @@ Former Operator actions 1 (a wrangler login: present, on the operator's account 
 
 **Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence. The questions of wave 4 were decided on 2026-10-29 under ruling 20, each in its entry: the time copy in place of `tidx` (DOM-022), no overlapping packs in `feed` and `new-name` and the `withdrawn` list (DOM-020), and the conflict of a rebuilt tier pack with its write-once tag, decided as a rebuild suffix on tier tags that DOM-023 builds (DOM-023's Decision of 2026-10-29T15:18Z, `docs/architecture.md` section 4.7 rule 2).
 
-**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the questions of 2026-10-29 the same day (rulings 18 to 22).
+**Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the questions of 2026-10-29 the same day (rulings 18 to 22, then 23 to 25 on wave 4's findings).
 
 ## Settled
 
