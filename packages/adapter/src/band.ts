@@ -2,6 +2,7 @@
 // (docs/architecture.md section 5.8, step 3). DOM-018's verifier calls it.
 //
 //   checkBand(count, history, band, { precision })  →  { verdict, reason, median, floor, ceiling, reset }
+//   checkHistory(history)                            →  the days, sorted, or BandError
 //
 // `history` lists the source's earlier observed days, `{ day, count, quarantined }`,
 // in any order; a day with no file is absent from it. `count` is the day being
@@ -81,7 +82,10 @@ export function median(values: readonly number[]): number {
 
 const isAmount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
-function checkHistory(history: unknown): BandDay[] {
+// `history` as days, sorted by day, or BandError: each item `{ day, count,
+// quarantined }`, day `YYYY-MM-DD`, no day twice. checkBand reads its history
+// through it, and packages/state holds each source's volume history to it.
+export function checkHistory(history: unknown): BandDay[] {
   if (!Array.isArray(history)) throw new BandError("history is not a list");
   const seen = new Set<string>();
   const days: BandDay[] = history.map((h: unknown, i: number) => {

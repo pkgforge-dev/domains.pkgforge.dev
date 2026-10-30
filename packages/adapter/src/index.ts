@@ -2,17 +2,19 @@
 //   types         Source, Segment, Cursor, RunResult, AdapterModule, SegmentWriter
 //   validate      validateBits, validateSource(File), buildRegistry, validateRegistry,
 //                 checkCursor, validateSegment
-//   band          checkBand: the volume verdict of one day, with the step change
+//   band          checkBand: the volume verdict of one day, with the step change;
+//                 checkHistory: a source's volume history held to its shape
 //   writer        memoryWriter: the in-memory SegmentWriter of the tests
-//   harness       runAdapter: an adapter against recorded answers, three runs
+//   harness       runAdapter: an adapter against recorded answers, three runs;
+//                 checkResult, checkSources: one run's result held to the contract
 //   live          liveFetch: the ctx.fetch of a production run
 // It imports nothing from `node:`, so it runs in Node and in workerd alike. The
 // file readers (recordings, config/, adapters/) are Node-only, in
 // `@domains/adapter/node` (packages/adapter/node/index.ts).
 export type { BandDay, BandOptions, BandReason, BandResult, Verdict } from "./band.ts";
-export { BandError, BASELINE_DAYS, checkBand, median, RESET_AFTER } from "./band.ts";
+export { BandError, BASELINE_DAYS, checkBand, checkHistory, median, RESET_AFTER } from "./band.ts";
 export type { HarnessOptions, HarnessResult, HarnessRun, Recording, Replay, RequestLog } from "./harness.ts";
-export { HARNESS_USER_AGENT, parseRecording, RECORDING_FORMAT, replayFetch, runAdapter } from "./harness.ts";
+export { checkResult, checkSources, HARNESS_USER_AGENT, parseRecording, RECORDING_FORMAT, replayFetch, runAdapter } from "./harness.ts";
 export { canonicalJson, JsonError, jsonEqual, sha256Hex } from "./json.ts";
 export { liveFetch } from "./live.ts";
 export type {
@@ -58,8 +60,10 @@ export {
   MAX_BIT,
   MAX_CURSOR_BYTES,
   MAX_ID,
+  MAX_URLS_CHARS,
   PROBLEM_CODES,
   parseDuration,
+  RAW_ID_PREFIX,
   REGISTRY_COMMENT,
   RETENTION_WORDS,
   RUNTIME_FIELDS,

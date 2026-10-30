@@ -37,7 +37,8 @@
 // hour's own domains and judges them all old, so it is refused (plan); a
 // delta of another filter is refused by ProvisionalFilter (LedgerError pair).
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { buildFeedHour, type FeedPack, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
 import { repoOf, tierTag } from "@domains/ghcr";
 import { BloomFilter, HashDelta, ProvisionalFilter } from "@domains/ledger";

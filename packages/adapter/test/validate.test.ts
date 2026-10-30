@@ -12,6 +12,7 @@ import {
   checkCursor,
   MAX_CURSOR_BYTES,
   MAX_ID,
+  MAX_URLS_CHARS,
   parseDuration,
   REGISTRY_COMMENT,
   renderRegistry,
@@ -148,6 +149,8 @@ test("adapter validate: each field's own fault gives its own problem", () => {
     [{ id: "THC_ct" }, [["id", "grammar"]]],
     [{ id: "thc--ct" }, [["id", "grammar"]]],
     [{ id: `a${"-b".repeat(32)}` }, [["id", "grammar"]]],
+    // raw- begins the raw lane's tags, which no source id takes.
+    [{ id: "raw-ct" }, [["id", "grammar"]]],
     [{ licence: "x" }, [["licence", "unknown-field"]]],
     [{ through: "2026-10-27T00:00:00Z" }, [["through", "runtime-field"]]],
     [{ status: "ok" }, [["status", "runtime-field"]]],
@@ -181,12 +184,19 @@ test("adapter validate: each field's own fault gives its own problem", () => {
     // A user name alone, and a password alone: either is refused.
     [{ urls: ["https://reader@feed.example.test/x"] }, [["urls[0]", "credential"]]],
     [{ urls: ["kafka://:pw@kafka.example.test:9092/t"] }, [["urls[0]", "credential"]]],
+    // The urls joined by a space are one annotation of at most 1024 characters.
+    [{ urls: [`https://feed.example.test/${"a".repeat(574)}`, `https://feed.example.test/${"b".repeat(574)}`] }, [["urls", "range"]]],
     [{ retention: "forever" }, [["retention", "grammar"]]],
     [{ retention: "PT0S" }, [["retention", "grammar"]]],
     [{ parser: "thc-lines" }, [["parser", "grammar"]]],
     [{ parser: "thc-lines/0" }, [["parser", "grammar"]]],
   ];
   for (const [change, want] of cases) assert.deepEqual(problems({ ...GOOD, ...change }), want, JSON.stringify(change));
+  // Exactly 1024 characters joined is taken: two urls of 26 + 485 and the space.
+  const edge = [`https://feed.example.test/${"a".repeat(485)}`, `https://feed.example.test/${"b".repeat(486)}`];
+  assert.equal(edge.join(" ").length, MAX_URLS_CHARS);
+  assert.deepEqual(problems({ ...GOOD, urls: edge }), []);
+  assert.deepEqual(problems({ ...GOOD, urls: [...edge.slice(0, 1), `${edge[1]}c`] }), [["urls", "range"]]);
 });
 
 test("adapter validate: the accepted forms of each field pass", () => {
@@ -250,6 +260,9 @@ test("adapter validate: the bit map refuses a shared bit, a bit out of range, a 
   assert.deepEqual(codes({ a: 0, b: 0 }), [["config/source-bits.json.bits.b", "bit-taken"]]);
   assert.deepEqual(codes({ a: 0, b: 64 }), [["config/source-bits.json.bits.b", "range"]]);
   assert.deepEqual(codes({ a: 0, B: 1 }), [["config/source-bits.json.bits.B", "grammar"]]);
+  // raw- begins the raw lane's tags: a source id never takes it (rawTag of @domains/ghcr).
+  assert.deepEqual(codes({ a: 0, "raw-oi-cs": 1 }), [["config/source-bits.json.bits.raw-oi-cs", "grammar"]]);
+  assert.deepEqual(codes({ a: 0, "oi-raw": 1, rawx: 2 }), []);
   assert.deepEqual(codes({ a: 1, b: 0 }), [["config/source-bits.json.bits.b", "order"]]);
   assert.deepEqual(codes({ a: 0 }, { format: "domains.source-bits.v0" }), [["config/source-bits.json.format", "format"]]);
   assert.deepEqual(codes({ a: 0 }, { extra: 1 }), [["config/source-bits.json.extra", "unknown-field"]]);

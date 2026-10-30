@@ -28,11 +28,14 @@ const steps = job.steps;
 const step = (name) => steps.find((s) => s.name === name);
 const INPUTS = ['add', 'replace', 'psl', 'rollback_to'];
 
-test('root-promote: called and dispatched with the same four string inputs, in the group root-writer with queue: max and no cancel', () => {
+test('root-promote: called and dispatched with the same four string inputs and the boolean partial, default false, in the group root-writer with queue: max and no cancel', () => {
   for (const trigger of ['workflow_call', 'workflow_dispatch']) {
-    assert.deepEqual(Object.keys(wf.on[trigger].inputs), INPUTS, trigger);
+    assert.deepEqual(Object.keys(wf.on[trigger].inputs), [...INPUTS, 'partial'], trigger);
     for (const i of INPUTS) assert.deepEqual([wf.on[trigger].inputs[i].type, wf.on[trigger].inputs[i].required, wf.on[trigger].inputs[i].default], ['string', false, ''], `${trigger}.${i}`);
+    const p = wf.on[trigger].inputs.partial;
+    assert.deepEqual([p.type, p.required, p.default], ['boolean', false, false], `${trigger}.partial`);
   }
+  assert.deepEqual(wf.on.workflow_call.inputs, wf.on.workflow_dispatch.inputs, 'the two triggers take the same inputs');
   assert.deepEqual(Object.keys(wf.on).sort(), ['workflow_call', 'workflow_dispatch']);
   assert.equal(wf.on.workflow_call.secrets, undefined);
   assert.deepEqual(wf.permissions, {});
@@ -56,7 +59,14 @@ test('root-promote: only the move step holds the token; the links and oras come 
   );
   const move = step('Move root:latest');
   assert.equal(move.id, 'move');
-  assert.deepEqual(move.env, { REGISTRY_TOKEN: '${{ github.token }}', ADD: '${{ inputs.add }}', REPLACE: '${{ inputs.replace }}', PSL: '${{ inputs.psl }}', ROLLBACK_TO: '${{ inputs.rollback_to }}' });
+  assert.deepEqual(move.env, {
+    REGISTRY_TOKEN: '${{ github.token }}',
+    ADD: '${{ inputs.add }}',
+    REPLACE: '${{ inputs.replace }}',
+    PSL: '${{ inputs.psl }}',
+    ROLLBACK_TO: '${{ inputs.rollback_to }}',
+    PARTIAL: '${{ inputs.partial }}',
+  });
   assert.doesNotMatch(move.run, /REGISTRY_TOKEN/);
   const names = steps.map((s) => s.name ?? s.uses);
   const at = (n) => names.indexOf(n);
@@ -115,7 +125,7 @@ function runMove(t, env) {
   const r = spawnSync(BASH, ['-c', `${prelude}${script}`], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, FAKE_BIN: bin, FAKE_LOG: posix(log), GITHUB_OUTPUT: posix(output), ADD: '', REPLACE: '', PSL: '', ROLLBACK_TO: '', ...env },
+    env: { ...process.env, FAKE_BIN: bin, FAKE_LOG: posix(log), GITHUB_OUTPUT: posix(output), ADD: '', REPLACE: '', PSL: '', ROLLBACK_TO: '', PARTIAL: 'false', ...env },
   });
   const calls = readFileSync(log, 'utf8')
     .split('--\n')
@@ -146,15 +156,29 @@ test('root-promote: the move step passes each input word to promote.mjs as its o
   assert.match(three.stdout, /::error::the move of root:latest exited 3/);
 });
 
+test('root-promote: partial true passes --partial last, false passes nothing, and any other value runs nothing and fails', { skip: BASH === null ? 'no bash on this machine' : false }, (t) => {
+  const on = runMove(t, { ADD: 'obs:a obs:b', PARTIAL: 'true' });
+  assert.equal(on.status, 0, on.stderr);
+  assert.deepEqual(on.calls, [['scripts/root/promote.mjs', '--add', 'obs:a', '--add', 'obs:b', '--partial']]);
+  assert.deepEqual(runMove(t, { ADD: 'obs:a', PARTIAL: 'false' }).calls, [['scripts/root/promote.mjs', '--add', 'obs:a']]);
+  for (const value of ['', 'True', '1', 'yes']) {
+    const bad = runMove(t, { ADD: 'obs:a', PARTIAL: value });
+    assert.equal(bad.status, 2, JSON.stringify(value));
+    assert.deepEqual(bad.calls, [], JSON.stringify(value));
+    assert.equal(bad.output, 'rc=2\n');
+    assert.match(bad.stdout, /::error::partial is not true or false/);
+  }
+});
+
 test('root-promote: rollback_to runs rollback.mjs, alone; with another input it runs nothing and fails', { skip: BASH === null ? 'no bash on this machine' : false }, (t) => {
   const r = runMove(t, { ROLLBACK_TO: 'r-20261029t091000z' });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.calls, [['scripts/root/rollback.mjs', '--to', 'r-20261029t091000z']]);
-  for (const extra of [{ ADD: 'names:x' }, { REPLACE: 'names:a=names:b' }, { PSL: 'psl-1f96bae40adf' }]) {
+  for (const extra of [{ ADD: 'names:x' }, { REPLACE: 'names:a=names:b' }, { PSL: 'psl-1f96bae40adf' }, { PARTIAL: 'true' }]) {
     const bad = runMove(t, { ROLLBACK_TO: 'r-20261029t091000z', ...extra });
     assert.equal(bad.status, 2, JSON.stringify(extra));
     assert.deepEqual(bad.calls, []);
     assert.equal(bad.output, 'rc=2\n');
-    assert.match(bad.stdout, /::error::rollback_to takes no add, replace or psl/);
+    assert.match(bad.stdout, /::error::rollback_to takes no add, replace, psl or partial/);
   }
 });

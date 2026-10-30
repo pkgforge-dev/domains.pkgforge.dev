@@ -261,6 +261,9 @@ test('push: a tag whose manifest differs but carries the same dev.pkgforge.domai
     const r = await runPush(s, argsFor(s, { created: '2026-10-23T00:00:00Z' }), { oras });
     assert.equal(r.code, EXIT.ok);
     assert.match(r.out[0], /\(the same dev\.pkgforge\.domains\.sha256 and layers\)$/);
+    // The line names the digest the tag holds, the one a reader of the tag
+    // finds, not the manifest built for this push.
+    assert.equal(r.out[0].split(' ')[2], sha(before));
     assert.deepEqual(r.verbs, ['login', 'push', 'fetch']);
     assert.equal(w.manifests.get('ref:psl-aaaaaaaaaaaa'), before);
   });
@@ -650,7 +653,11 @@ test('push: the arguments are checked before oras runs', async (t) => {
     [[...base, '--annotation', 'dev.pkgforge.domains.sha256=XYZ', `${s.file('a.dat')}:text/plain`], /64 lowercase hex/],
     [[...base, '--annotation', 'a=1', '--annotation', 'a=2', `${s.file('a.dat')}:text/plain`], /given twice/],
     [[...base, '--annotation', 'novalue', `${s.file('a.dat')}:text/plain`], /not KEY=VALUE/],
-    [[...base, '--annotation', 'k=line\nbreak', `${s.file('a.dat')}:text/plain`], /control character/],
+    [[...base, '--annotation', 'k=line\nbreak', `${s.file('a.dat')}:text/plain`], /^the annotation k holds a control character$/],
+    [[...base, '--annotation', 'k=a\u007fb', `${s.file('a.dat')}:text/plain`], /^the annotation k holds a control character$/],
+    // The limit as annotationProblem of packages/ghcr gives it: 1024 characters taken, 1025 refused.
+    [[...base, '--annotation', `k=${'x'.repeat(1025)}`, `${s.file('a.dat')}:text/plain`], /^the annotation k is 1025 characters, over 1024$/],
+    [[...base, '--annotation', 'k=', `${s.file('a.dat')}:text/plain`], /not KEY=VALUE/],
     [[...base, '--tag', 'x', `${s.file('a.dat')}:text/plain`], /unknown flag --tag/],
     [[...base, `${s.file('a.dat')}:text/plain; charset=utf-8`], /not FILE:MEDIATYPE/],
     [[...base], /at least one FILE/],
@@ -663,6 +670,7 @@ test('push: the arguments are checked before oras runs', async (t) => {
       argv.join(' ').slice(0, 300),
     );
   }
+  assert.deepEqual(parsePushArgs([...base, '--annotation', `k=${'x'.repeat(1024)}`, `${s.file('a.dat')}:text/plain`]).annotations, [['k', 'x'.repeat(1024)]]);
   // 256 layers, DOM-006's largest accepted count, is a plan.
   assert.equal(MAX_LAYERS, 256);
   assert.equal(parsePushArgs([...base, ...Array.from({ length: 256 }, (_, i) => `${s.file(`f${i}`)}:text/plain`)]).files.length, 256);

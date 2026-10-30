@@ -395,6 +395,12 @@ test('assemble cli: no run id, one source with no precision, or inputs under two
     const noRun = await call(main, ['--plan', w.planPath, '--dir', w.ranges, '--out', join(dir, 'x'), '--tags', w.tags]);
     assert.equal(noRun.code, EXIT.usage, noRun.text);
     assert.match(noRun.text, /is not a workflow run id/);
+    // A run id off its grammar (WORKFLOW_RUN_ID): a leading zero, 21 digits, a letter, local.
+    for (const run of ['0', '01', '1e3', `1${'0'.repeat(20)}`, 'local']) {
+      const bad = await call(main, ['--plan', w.planPath, '--dir', w.ranges, '--out', join(dir, `r${run.length}`), '--tags', w.tags, '--run', run]);
+      assert.equal(bad.code, EXIT.usage, run);
+      assert.match(bad.text, /is not a workflow run id/, run);
+    }
     // A plan of domains whose inputs were built under two lists.
     const tier = {
       verdict: 'ready',

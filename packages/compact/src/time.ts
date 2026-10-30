@@ -19,7 +19,8 @@
 // holds the two equal byte for byte), and it refuses more than `maxRows` rows
 // before it writes a byte (CompactError sort).
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { msOf } from "@domains/root";
 import { type DatasetCodec, type FeedRecord, MAX_TIME_FIRST_SEEN, type PackSink, type PackSummary, parseHead, timeBindFault, timeCodecOf, writePack } from "@domains/pack";
 import { CompactError } from "./errors.ts";

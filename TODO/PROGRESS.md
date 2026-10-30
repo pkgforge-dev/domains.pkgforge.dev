@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 39 open, 7 partial, 0 blocked, 16 done.**
+**62 items. 38 open, 8 partial, 0 blocked, 16 done.**
 
 ## What this session did
 
@@ -82,10 +82,17 @@ is the only one.
 - Ran the three lenses on wave 5 and fixed their findings in two rounds. A verification then planted 86 mutants: 79 killed, 2 equivalent, and 5 gaps. A third round answered the gaps with tests or by deleting the clause, and no mutant was planted after it. Decided D1, D2 and D3 under ruling 20, each a Decision of DOM-023: a unit that starts before `corpus_since` is never built, `new-name` has no hour pack, and a rebuild finds the build that already holds its bytes. `npm run gate` exited 0 at 2026-10-30T05:30:42Z with 1,573 tests: 1,570 pass and 3 platform skips of this Windows machine. No compaction has run on GitHub.
 - Recorded what the compaction leaves to other entries, a Found or a Decision in each: DOM-014, DOM-024, DOM-029, DOM-034, DOM-036, DOM-037, DOM-038, DOM-041, DOM-042 and DOM-043.
 - Measured one compaction range on a runner with `measure-compact.yml` (run 41032308505): 0.58 GB of input, 92.4 million records, in 83 s of `count` and 382 s of `write`, under 300 MiB, 0.52 GB of disk (`docs/research/measure/DOM-023/result.json`).
+- Closed Renovate #6 and #7 with a comment each on 2026-10-30: each moved wrangler, the compatibility date or the Workers types alone, and DOM-030's Found of 2026-10-29T16:10Z moves the three together, as #3 and #4 were closed.
+- Built the sixth wave on 2026-10-30, the ingest skeleton (DOM-024), now partial, ahead of DOM-003 because only its job `chain` reads `config/clock.json`:
+  - `packages/state/`: `state.json` with the cursors, the volume history and the packs owed to the root; the cursor proposals; `advance` and `settle`; and the guard that moves a tag only from the digest it read.
+  - `scripts/ingest/` (plan, run, the disk writer, the pack push and the chain) and `scripts/state/` (advance, the hour packs, the moves of `state:latest` and `ledger-delta`), with `config/lanes.json` and `.github/workflows/ingest-live.yml`.
+  - `promote.mjs --partial`: a promotion of `ingest-live.yml` adds the owed packs that the live-set rule allows and leaves the rest owed, so one pack across a hole no longer blocks every promotion for 7 days.
+  - Decided D1 to D24 of DOM-024 under ruling 20, each a Decision of the entry, and the bound on owed packs, which DOM-036 measures.
+- Ran the three lenses on wave 6 (87 findings over two halves) and fixed them in four rounds, each verified on sonnet. The last verification left one test gap, which the lead closed: every named mutant now fails a test.
 
 ## What is in progress
 
-Seven entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Eight entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
@@ -95,7 +102,8 @@ Seven entries are partial. Each one's Waiting line names the instant its result 
 | DOM-007 | the `/range` deploy, the cache check and the single reads now; the loads at 20, 50 and 100 requests a second after `crons = []` |
 | DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
-| DOM-023 | the first scheduled run of `compact-daily.yml` and one run of `measure-compact.yml` after the push; then its live Prove, once DOM-024's `state` guard moves `ledger-delta` and DOM-029's backfill has put THC's days in the root |
+| DOM-023 | the first scheduled run of `compact-daily.yml`; then its live Prove, once DOM-029's backfill has put THC's days in the root (DOM-024's guard that moves `ledger-delta` is built) |
+| DOM-024 | DOM-003's `config/clock.json` and a first adapter in `config/lanes.json`; then a dispatch of `ingest-live.yml`, its queued successor and the anonymous read of `state:latest` |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
 
@@ -105,8 +113,8 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-012 closes after its 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. Compaction: DOM-023 is partial, built and gated. `measure-compact.yml` measured one range on 2026-10-30, and no compaction has built a pack on GitHub. Its live Prove waits on DOM-024's `state` guard and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
-4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
+3. Compaction: DOM-023 is partial, built and gated. `measure-compact.yml` measured one range on 2026-10-30, and no compaction has built a pack on GitHub. Its live Prove waits on DOM-024's skeleton and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
+4. The ingest skeleton: DOM-024 is partial, built and gated. Its live Prove waits on DOM-003's `config/clock.json` and the first adapter (item 5). Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
 6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
 7. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.

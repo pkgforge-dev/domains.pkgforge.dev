@@ -1,0 +1,5 @@
+{
+  "format": "domains.lanes.v1",
+  "comment": "The adapters each lane of .github/workflows/ingest-live.yml runs, by directory name under adapters/. An adapter in no lane runs in no lane of ingest-live.yml (THC's daily file runs in ingest-thc.yml, DOM-029).",
+  "lanes": { "kafka": [], "tiles": [], "feeds": [] }
+}

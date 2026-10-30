@@ -9,8 +9,9 @@
 //   mergeRanged                     the ranged layout in one process
 //   timeMode, sortTimeCopy,         the time copy of a feed or new-name pack: merged from the inputs'
 //   bindFault                       time copies, or sorted, and held to its key copy
-//   packManifest, MAX_LAYERS        the OCI manifest of the result, held to what the promotion accepts
-//                                   and to the layers one push takes, with extra layers such as summary.json
+//   packManifest, MAX_LAYERS,       the OCI manifest of the result, held to what the promotion accepts
+//   ANNOTATION_MAX_CHARS,           and to the layers and the annotation values one push takes, with extra
+//   WORKFLOW_RUN_ID                 layers such as summary.json; the grammar of its run annotation
 //   tagDecision                     present, or the tag to write (a rebuild takes -rN, ruling 25, unless
 //                                   a build holds the sha256 the caller is about to write)
 //   planFile, countFile,            the JSON files the jobs of one compaction pass each other, each
@@ -22,8 +23,9 @@
 //   buildDay, SummaryCounter,       ledger through the day's end: the live filter and delta checked,
 //   checkLedger, rebuildLedger      the filter rebuilt, the delta rebased onto it
 //   isQuarantined                   the root's mark of a quarantined pack entry (ruling 23)
-// It imports nothing from `node:`, so it runs in Node and in workerd alike;
-// packages/compact/node holds the packs on disk.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd. packages/compact/node
+// holds the packs on disk.
 export { checkMerged, checkRange, type MergeCheck, type RangeKeys } from "./check.ts";
 export type { BuiltDay, Day, DayInput, DaySummary, LedgerCheck, LiveLedger, RebuiltLedger, SuffixCount } from "./daily.ts";
 export {
@@ -47,7 +49,18 @@ export { checkPlanFile, codecOf, COUNT_FORMAT, countFile, countsOf, layersOf, PL
 export type { BuiltHour, Hour, HourMissing, HourOptions, HourPlan, SegmentInput, Skipped } from "./hour.ts";
 export { buildHour, hourOf, membershipOf, planHour } from "./hour.ts";
 export type { BuiltManifest, ExtraLayer, ManifestInput } from "./manifest.ts";
-export { CREATED_ANNOTATION, EMPTY_CONFIG, LAYER_MEDIA_TYPE, MANIFEST_MEDIA_TYPE, MAX_LAYERS, packManifest, RUN_ANNOTATION, SOURCE_ANNOTATION } from "./manifest.ts";
+export {
+  ANNOTATION_MAX_CHARS,
+  CREATED_ANNOTATION,
+  EMPTY_CONFIG,
+  LAYER_MEDIA_TYPE,
+  MANIFEST_MEDIA_TYPE,
+  MAX_LAYERS,
+  packManifest,
+  RUN_ANNOTATION,
+  SOURCE_ANNOTATION,
+  WORKFLOW_RUN_ID,
+} from "./manifest.ts";
 export type { CompactTier, Excluded, LiveInput, Missing, TierPlan, TierVerdict } from "./plan.ts";
 export { COMPACT_TIERS, isQuarantined, NEW_DATASETS, planTier, QUARANTINE_FIELD, SLOT_TIERS, unitOf } from "./plan.ts";
 export type { Assembled, BlockDigest, MergeOptions, PackFormat, PartOptions, RangeCount, RangeFacts, RangeOptions, RangeOutput, RangePlan, RangeWindow } from "./range.ts";

@@ -5,6 +5,7 @@
 //   repoOf("ref")                                          "pkgforge-dev/domains.pkgforge.dev/ref"
 //   segTag("oi-cs", "2026-10-26T08:00:00Z", "2026-10-26T08:10:00Z")
 //                                                          "oi-cs.20261026t080000z.20261026t081000z"
+//   segTag("oi-cs", same window, "d")                      "oi-cs.20261026t080000z.20261026t081000z-d"
 //   rawTag("oi-cs", same window)                           "raw-oi-cs.20261026t080000z.20261026t081000z"
 //   fileTag("thc-ct", "2026-10-26", SHA256)                "thc-ct.20261026.0232f4df0831"
 //   fileTag("thc-ct", "2026-10-26", SHA256, "d")           "thc-ct.20261026.0232f4df0831-d"
@@ -16,8 +17,10 @@
 //                                                            start: "2026-10-26T00:00:00Z", rebuild: 2 }
 //   rootTag("2026-10-29T05:13:00Z")                        "r-20261029t051300z"
 //   stateTag("2026-10-29")                                 "state-20261029"
+//   stateRunTag("2026-10-30T08:30:12Z")                    "state-20261030t083012z"
 //   ledgerFilterTag("2026-10-27")                          "ledger-filter-20261027"
 //   LEDGER_DELTA_TAG                                       "ledger-delta"
+//   ledgerDeltaRunTag("2026-10-30T09:00:41Z")              "ledger-delta-20261030t090041z"
 //   refTag("psl", SHA256)                                  "psl-0232f4df0831"
 //
 // Every builder returns a lowercase tag that matches TAG and throws LayoutError
@@ -64,6 +67,19 @@ export const TAG = /^[a-z0-9_][a-z0-9._-]{0,127}$/;
 // packages/ghcr/test/layout.test.ts holds equal to these.
 export const SOURCE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const MAX_SOURCE_ID = 63;
+// The start of every raw lane tag (rawTag). A source id never starts with it,
+// so segTag of one source is never rawTag of another: `raw-oi-cs.<window>` is
+// oi-cs's raw lane object, and no source `raw-oi-cs` writes a segment there.
+export const RAW_PREFIX = "raw-";
+// The run annotation of a manifest, dev.pkgforge.domains.run: a workflow run
+// id (GITHUB_RUN_ID), digits with no leading zero, at most 20. packManifest of
+// @domains/compact and the scripts hold a run to it; the state's RUN_ID
+// (@domains/state) is this or "local".
+export const WORKFLOW_RUN_ID = /^[1-9][0-9]{0,19}$/;
+// The longest annotation value scripts/ghcr/push.mjs takes, in characters.
+// annotationProblem holds every value to it: the push tool, packManifest of
+// @domains/compact and the disk writer of scripts/ingest/ apply that one rule.
+export const ANNOTATION_MAX_CHARS = 1024;
 
 // The artifact kinds of section 4.2. `ref` is the kind of the objects of the
 // `ref` package (the PSL, the CT log list, sources.json): one layer, the file
@@ -81,9 +97,11 @@ export type Tier = (typeof TIERS)[number];
 export const REF_KINDS = Object.freeze(["psl", "ctlogs", "sources"] as const);
 export type RefKind = (typeof REF_KINDS)[number];
 
-// The two tags that move (section 4.7): every other tag is write-once.
+// The tags that move are `latest` of `root` and of `state`, and
+// LEDGER_DELTA_TAG of `state` (section 4.7): every other tag is write-once.
+// Each moves by a write-once run tag first (rootTag, stateRunTag,
+// ledgerDeltaRunTag), then a guarded `oras tag` (DOM-024).
 export const LATEST = "latest";
-export const STATE = "state";
 
 const isOneOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === "string" && (list as readonly string[]).includes(v);
 
@@ -164,6 +182,7 @@ function sourceId(source: unknown): string {
   if (typeof source !== "string" || !SOURCE_ID.test(source) || source.length > MAX_SOURCE_ID) {
     throw new LayoutError(`${JSON.stringify(source)} is not a source id: lowercase letters and digits joined by single dashes, at most ${MAX_SOURCE_ID} characters`);
   }
+  if (source.startsWith(RAW_PREFIX)) throw new LayoutError(`${JSON.stringify(source)} is not a source id: ${RAW_PREFIX} begins the raw lane's tags, so no source id takes it`);
   return source;
 }
 
@@ -181,10 +200,21 @@ function windowOf(start: Date | string, end: Date | string): [string, string] {
   return [stamp(s), stamp(e)];
 }
 
-// `<source>.<window start>.<window end>`: a segment of a windowed source (`obs`).
-export function segTag(source: string, start: Date | string, end: Date | string): string {
+// The suffix `-<variant>` of a segment or file tag, none without one: 1 to 8
+// lowercase letters or digits.
+function variantSuffix(variant: unknown): string {
+  if (variant === undefined) return "";
+  if (typeof variant !== "string" || !/^[a-z0-9]{1,8}$/.test(variant)) throw new LayoutError(`the variant ${JSON.stringify(variant)} is not 1 to 8 lowercase letters or digits`);
+  return `-${variant}`;
+}
+
+// `<source>.<window start>.<window end>`: a segment of a windowed source
+// (`obs`). `variant` names the dataset of a second segment of the same window,
+// as `-d` names a stream source's domains segment beside its names segment
+// (DOM-024).
+export function segTag(source: string, start: Date | string, end: Date | string, variant?: string): string {
   const [s, e] = windowOf(start, end);
-  return checkTag(`${sourceId(source)}.${s}.${e}`);
+  return checkTag(`${sourceId(source)}.${s}.${e}${variantSuffix(variant)}`);
 }
 
 // `raw-<source>.<window start>.<window end>`: the raw lane of `obs` (section 3.4).
@@ -197,9 +227,46 @@ export function rawTag(source: string, start: Date | string, end: Date | string)
 // is of the file as fetched. `variant` names a second segment of the same file,
 // as `-d` names THC's domains segment beside its names segment (DOM-029).
 export function fileTag(source: string, date: Date | string, sha256: string, variant?: string): string {
-  if (variant !== undefined && (typeof variant !== "string" || !/^[a-z0-9]{1,8}$/.test(variant)))
-    throw new LayoutError(`the variant ${JSON.stringify(variant)} is not 1 to 8 lowercase letters or digits`);
-  return checkTag(`${sourceId(source)}.${ymd(day(date, "the file date"))}.${sha12(sha256)}${variant === undefined ? "" : `-${variant}`}`);
+  const suffix = variantSuffix(variant);
+  return checkTag(`${sourceId(source)}.${ymd(day(date, "the file date"))}.${sha12(sha256)}${suffix}`);
+}
+
+// Why `value` is not an annotation value the push tool takes, or null: a
+// string of 1 to ANNOTATION_MAX_CHARS characters with no control character
+// (U+0000 to U+001F, U+007F), as `--annotation KEY=VALUE` passes it to oras.
+export function annotationProblem(value: unknown): string | null {
+  if (typeof value !== "string") return `is ${value === null ? "null" : typeof value}, not a string`;
+  if (value === "") return "is empty";
+  if (value.length > ANNOTATION_MAX_CHARS) return `is ${value.length} characters, over ${ANNOTATION_MAX_CHARS}`;
+  if (/[\u0000-\u001f\u007f]/.test(value)) return "holds a control character";
+  return null;
+}
+
+const SOURCE_PART = /^([a-z0-9]+(?:-[a-z0-9]+)*)\./;
+const FILE_FORM = /^[a-z0-9-]+\.[0-9]{8}\.([0-9a-f]{12})(?:-[a-z0-9]{1,8})?$/;
+
+// Why `tag` is not the tag of a `dataset` segment (names or domains) from
+// start to end, or null: segTag of the window, or fileTag of the window's
+// first day for a file segment, with the dataset's variant (none for names,
+// `d` for domains; DOM-024). `source`, when known, must be the tag's. The
+// disk writer, packManifest of a segment and the state's readers hold a
+// segment's tag to its facts with this one rule.
+export function segmentTagProblem(tag: string, dataset: string, start: string, end: string, source?: string): string | null {
+  if (typeof tag !== "string") return `${JSON.stringify(tag)} is not a tag`;
+  if (dataset !== "names" && dataset !== "domains") return `${tag}: a segment holds names or domains, not ${JSON.stringify(dataset)}`;
+  const own = SOURCE_PART.exec(tag)?.[1];
+  const src = source ?? own;
+  if (src === undefined) return `${tag} is not <source>.<start>.<end>[-d] nor <source>.<YYYYMMDD>.<sha12>[-d]`;
+  const variant = dataset === "domains" ? "d" : undefined;
+  const file = FILE_FORM.exec(tag);
+  let want: string;
+  try {
+    want = file !== null ? fileTag(src, start, file[1] ?? "", variant) : segTag(src, start, end, variant);
+  } catch (e) {
+    if (e instanceof LayoutError) return `${tag}: a ${dataset} segment of ${src} from ${start} to ${end} has no tag: ${e.message}`;
+    throw e;
+  }
+  return want === tag ? null : `${tag} is not the tag of a ${dataset} segment of ${src} from ${start} to ${end}, which is ${want}`;
 }
 
 // ISO 8601 week-year and week of a Monday: the week holding its Thursday.
@@ -397,6 +464,13 @@ export function stateTag(date: Date | string): string {
   return checkTag(`state-${ymd(day(date, "the state date"))}`);
 }
 
+// `state-<YYYYMMDDTHHMMSSZ>`: one state of the package `state`, write-once,
+// at its `updated`. `latest` of `state` moves to it under the state guard
+// (DOM-024), as `latest` of `root` moves to `r-<created>`.
+export function stateRunTag(at: Date | string): string {
+  return checkTag(`state-${stamp(instant(at, "the state time"))}`);
+}
+
 // `ledger-filter-<YYYYMMDD>`: the provisional filter of the package `state`
 // that holds the domains table through the end of that UTC day, write-once
 // (docs/format.md section 15, DOM-023). `date` is the day, `YYYY-MM-DD`, its
@@ -409,6 +483,13 @@ export function ledgerFilterTag(date: Date | string): string {
 // the domains first seen after its filter's as_of. It moves under the state
 // guard of DOM-024, like `state` (docs/format.md section 15).
 export const LEDGER_DELTA_TAG = "ledger-delta";
+
+// `ledger-delta-<YYYYMMDDTHHMMSSZ>`: one delta of the package `state`,
+// write-once, at the time it was built for its move. LEDGER_DELTA_TAG moves to
+// it under the state guard (DOM-024).
+export function ledgerDeltaRunTag(at: Date | string): string {
+  return checkTag(`${LEDGER_DELTA_TAG}-${stamp(instant(at, "the delta time"))}`);
+}
 
 // `<kind>-<sha12>`: an object of the `ref` package, sha12 of its bytes.
 export function refTag(kind: RefKind, sha256: string): string {

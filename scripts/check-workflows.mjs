@@ -56,8 +56,10 @@
 //   12  a workflow with `schedule:` has `workflow_dispatch:` too
 //   13  a concurrency `queue` is `single` or `max`, and `max` never with a
 //       `cancel-in-progress` that is not false; a job that runs `oras tag`,
-//       scripts/ghcr/push.mjs with `state` or `root`, or scripts/root/promote.mjs
-//       or rollback.mjs is in the group `root-writer` with `queue: max` and
+//       scripts/ghcr/push.mjs with `state` or `root`, scripts/root/promote.mjs
+//       or rollback.mjs, or scripts/state/move.mjs or hours.mjs (each moves
+//       state:latest or state:ledger-delta, DOM-024) is in the group
+//       `root-writer` with `queue: max` and
 //       `cancel-in-progress: false` (its own or the workflow's), and so is
 //       every job of root-promote.yml itself (ruling 18, read by the file's
 //       name); a job that only calls root-promote.yml holds no group, and one in
@@ -208,8 +210,20 @@ const ARGV_DELETE = /(['"`])(?:manifest|blob|repo|tag)\1\s*,\s*(?:(?:(['"`])-[^'
 const SCRIPT_DIRS = ['scripts', 'packages'];
 const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|mts|cts|sh)$/;
 const SCRIPT_EXEMPT = new Set(['scripts/check-workflows.test.mjs']);
-// Rule 13: a step that moves a tag of the root or of state.
-const ROOT_MOVE = [/\boras\s+tag\b/, /scripts\/ghcr\/push\.mjs\b[^\n]*\b(?:state|root)\b/, /\bscripts\/root\/(?:promote|rollback)\.mjs\b/];
+// Rule 13: a step that moves a tag of the root or of state. The two movers of
+// scripts/state/ push and tag inside their own process, so the step names
+// neither push.mjs nor `oras tag`. A mover is read by its file name under its
+// directory however the path is spelled: the run string is read with `/./`
+// and `//` collapsed (moveRun), and a bare name after a `cd` into the
+// directory counts.
+const ROOT_MOVE = [
+  /\boras\s+tag\b/,
+  /scripts\/ghcr\/push\.mjs\b[^\n]*\b(?:state|root)\b/,
+  /\broot\/(?:promote|rollback)\.mjs\b/,
+  /\bstate\/(?:move|hours)\.mjs\b/,
+  /\bcd\s+["']?(?:\.\/)?scripts\/root\/?["']?(?:\s|;|&|$)[\s\S]*\b(?:promote|rollback)\.mjs\b/,
+  /\bcd\s+["']?(?:\.\/)?scripts\/state\/?["']?(?:\s|;|&|$)[\s\S]*\b(?:move|hours)\.mjs\b/,
+];
 // Rule 13 (ruling 18): the one workflow that moves root:latest for every
 // caller, read by its file name; it holds the group root-writer itself.
 const ROOT_PROMOTE_FILE = /(?:^|\/)root-promote\.ya?ml$/;
@@ -224,6 +238,12 @@ const expressions = (s) => [...s.matchAll(EXPR)].map((m) => m[1]);
 const firstLine = (s) => String(s).split('\n')[0];
 // A run string with its `\` line continuations joined, as bash reads it.
 const joinLines = (s) => s.replace(/\\\r?\n/g, ' ');
+// A run string as rule 13 reads it: lines joined, and each path's `/./` and
+// `//` collapsed, so `scripts/state/./move.mjs` reads as `scripts/state/move.mjs`.
+const moveRun = (s) =>
+  joinLines(s)
+    .replace(/\/(?:\.\/)+/g, '/')
+    .replace(/\/{2,}/g, '/');
 
 // The key and value nodes at a path of keys and indexes, aliases resolved. Where
 // the path leaves the nodes (a merged key), the deepest node found stands in.
@@ -404,7 +424,7 @@ function checkWorkflow(ctx) {
     if (job.secrets !== undefined) ctx.add(9, ctx.at('jobs', id, 'secrets'), `job ${id} passes secrets; the repository holds none, and github.token is the token`);
     // Rule 13, the job's group.
     checkConcurrency(ctx, job.concurrency, ['jobs', id, 'concurrency']);
-    const movesRoot = runsOf(job).some(([, s]) => ROOT_MOVE.some((re) => re.test(s.run.replace(/\\\r?\n/g, ' '))));
+    const movesRoot = runsOf(job).some(([, s]) => ROOT_MOVE.some((re) => re.test(moveRun(s.run))));
     if (movesRoot && !holdsRootWriter(wf.concurrency) && !holdsRootWriter(job.concurrency)) {
       ctx.add(13, ctx.at('jobs', id), `job ${id} moves a root or state tag outside the group ${ROOT_WRITER} with queue: max and cancel-in-progress: false`);
     }

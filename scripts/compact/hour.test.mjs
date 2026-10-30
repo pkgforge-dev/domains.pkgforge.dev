@@ -286,6 +286,12 @@ test('hour cli: a segment that crosses the hour or an idx that is not its manife
       const u = await call(main, argv);
       assert.equal(u.code, EXIT.usage, `${argv.join(' ')}\n${u.text}`);
     }
+    // A run id off its grammar (WORKFLOW_RUN_ID): a leading zero, 21 digits, a letter, local.
+    for (const run of ['0', '01', '1e3', `1${'0'.repeat(20)}`, 'local']) {
+      const u = await call(main, ['--hour', '2026102705', '--filter', h.filter, '--delta', h.delta, '--out', join(dir, 'o'), '--segments', h.segments, '--run', run]);
+      assert.equal(u.code, EXIT.usage, run);
+      assert.match(u.text, /is not a workflow run id/, run);
+    }
   }));
 
 test('hour cli: segments built under two PSL hashes are exit 1, FAIL psl, and nothing is written', () =>

@@ -1,0 +1,11 @@
+{
+  "name": "@domains/state",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The state of the ingest: state.json (the cursors, the volume history and the packs owed to the root), the cursor proposal of one adapter run, and the pure functions that read, propose, settle and advance them, and the digest guard of every moving tag of the package state. It imports nothing from node: and is type-checked as Worker code.",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

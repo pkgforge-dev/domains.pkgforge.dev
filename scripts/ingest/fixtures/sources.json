@@ -1,0 +1,65 @@
+{
+  "format": "domains.sources.v1",
+  "comment": "Written by node scripts/sources/build.mjs from adapters/*/source.json; never edited by hand. Sorted by bit, then the sources with no bit by id.",
+  "sources": [
+    {
+      "id": "oi-cs",
+      "bit": 4,
+      "family": "ct",
+      "datasets": [
+        "names",
+        "domains"
+      ],
+      "precision": "second",
+      "kind": "ct_name",
+      "basis": [
+        "ct-first"
+      ],
+      "cadence": "PT10M",
+      "band": {
+        "metric": "count",
+        "min": 0,
+        "max": 1000000,
+        "relative": false
+      },
+      "urls": [
+        "https://stream.example.test/window/"
+      ],
+      "retention": "unknown",
+      "parser": "fixture-stream/1",
+      "failure_modes": [
+        "Synthetic: a window is not published yet (404)."
+      ],
+      "adapter": "fixture-stream"
+    },
+    {
+      "id": "isc-new",
+      "bit": 8,
+      "family": "isc",
+      "datasets": [
+        "domains"
+      ],
+      "precision": "day",
+      "kind": "claimed_new",
+      "basis": [
+        "nrd-list"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "bytes",
+        "min": 0.4,
+        "max": 2.5,
+        "relative": true
+      },
+      "urls": [
+        "https://files.example.test/{date}.txt"
+      ],
+      "retention": "unknown",
+      "parser": "fixture-file/1",
+      "failure_modes": [
+        "Synthetic: a day is not published yet (404)."
+      ],
+      "adapter": "fixture-file"
+    }
+  ]
+}

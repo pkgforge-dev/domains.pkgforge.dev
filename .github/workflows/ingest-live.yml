@@ -1,0 +1,509 @@
+# DOM-024 (TODO/ingest.md): the live ingest. A run reads the adapters of the
+# three lanes of config/lanes.json, pushes their segments and raw lane objects
+# to the package obs, moves the cursors of state:latest, builds the hour packs
+# of the closed hours, and promotes the packs that state owes to the root
+# (docs/architecture.md sections 5.3 and 5.4). Nothing is deleted from GHCR
+# (AGENTS.md absolute 13).
+#
+#   plan      on main alone. scripts/ingest/plan.mjs reads config/lanes.json
+#             and config/sources.json and writes the matrix: one leg for each
+#             lane that holds an adapter. When no lane holds an adapter, only
+#             plan and chain run, nothing is pushed, and the run ends green.
+#   ingest    one leg a lane (kafka, tiles, feeds), on main alone, at most 3 at
+#             once. A failed leg fails alone (fail-fast: false). The leg runs
+#             scripts/ingest/run.mjs for each adapter of its lane: it reads the
+#             adapter's cursor from state:latest and the list the root pins
+#             (--psl root) with no credential, verifies every segment before
+#             it pushes any, pushes the raw lane objects and then the segments
+#             to obs with the job's token, and writes one cursor proposal. It
+#             never writes state. A failed adapter fails the leg after the
+#             other adapters of the lane ran. The leg uploads its proposals as
+#             the artifact proposals-<lane>.
+#   push      after the legs, on main alone, in the group root-writer (ruling
+#             18, rule 13 of scripts/check-workflows.mjs). It reads every
+#             proposal. scripts/state/advance.mjs reads the live state and the
+#             live root and writes the next state: it keeps a proposal whose
+#             tags hold their digests and whose before is the live cursor,
+#             owes each segment that is not quarantined, and settles each owed
+#             pack the live root holds. scripts/state/hours.mjs builds each
+#             closed hour of the last 6 that has a segment and no build, oldest
+#             first (scripts/compact/hour.mjs), pushes feed-h-HOUR, then moves
+#             ledger-delta under the guard, and owes the hour pack. An hour
+#             whose sources are behind their clock waits (exit 3), and the run
+#             stays green. scripts/state/move.mjs moves state:latest only while
+#             the live state is the one advance.mjs read, last in the job. Its
+#             output add is every pack the moved state owes.
+#   promote   only calls root-promote.yml with add and partial: true, and
+#             holds no group (ruling 18). The promotion adds the owed packs
+#             that the root's live-set rule allows and prints each other one as
+#             waiting (the input partial of root-promote.yml), so a pack across
+#             a hole, such as a day source's last day before a stream's first
+#             window, holds back no other pack. A pack that waits, and every
+#             pack of a promotion that fails, stays owed: the next run adds it
+#             again, and its advance.mjs settles the packs the live root holds.
+#   chain     needs no job and starts with the run, on main alone, so a
+#             failure of another job cannot stop its dispatch of the successor.
+#             scripts/ingest/chain.mjs reads config/clock.json (DOM-003). Under
+#             the clock actions-chain it dispatches the next run of this
+#             workflow, which waits in the group ingest-live until this run
+#             ends, then sleeps to the next boundary of the interval. With no
+#             file, or with another clock, it dispatches nothing and does not
+#             sleep: only the cron backstop and the dispatches start runs.
+#
+# Every run waits in the group ingest-live (queue: max, no cancel), so one run
+# at a time reads and moves the cursors. A dispatch with sources reads the
+# adapters that hold those sources alone. A dispatch with from and to is a
+# backfill of that window: run.mjs calls the adapter's backfill export instead
+# of run, and the proposal keeps the live cursor, so its segments are owed and
+# promoted and no cursor moves. The inputs reach a step through env alone.
+#
+#   gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev
+#   gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev -f sources=oi-cs -f from=2026-10-30T00:00:00Z -f to=2026-10-30T01:00:00Z
+#   gh run list --workflow ingest-live.yml --limit 3 --repo pkgforge-dev/domains.pkgforge.dev
+#   node scripts/ghcr/tags.mjs state --prefix state-
+#   curl -sS -H 'Authorization: Bearer QQ==' -H 'Accept: application/vnd.oci.image.manifest.v1+json' https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/state/manifests/latest
+name: Ingest live
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: Source ids separated by spaces or commas; empty runs every adapter of every lane
+        required: false
+        default: ""
+        type: string
+      from:
+        description: "With to: the start of a backfill window, YYYY-MM-DDTHH:MM:SSZ; empty for a live run"
+        required: false
+        default: ""
+        type: string
+      to:
+        description: "With from: the end of the window, YYYY-MM-DDTHH:MM:SSZ"
+        required: false
+        default: ""
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ingest-live
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  plan:
+    # Only main's code ingests: a dispatch on another branch plans nothing, so
+    # no job after it runs.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      any: ${{ steps.plan.outputs.any }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      from: ${{ steps.plan.outputs.from }}
+      to: ${{ steps.plan.outputs.to }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The scripts import the workspace packages by name. --omit=dev links the
+      # workspaces and installs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/adapter');"
+
+      # The plan file (domains.ingest-plan.v1) is the one source of the four
+      # outputs. A flag is passed only when its input is given: plan.mjs
+      # refuses from without to, and a window without sources.
+      - name: Plan the lanes
+        id: plan
+        timeout-minutes: 5
+        env:
+          SOURCES: ${{ inputs.sources }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -uo pipefail
+          p="$RUNNER_TEMP/plan.json"
+          args=(--out "$p")
+          if [ -n "$SOURCES" ]; then
+            args+=(--only "$SOURCES")
+          fi
+          if [ -n "$FROM" ]; then
+            args+=(--from "$FROM")
+          fi
+          if [ -n "$TO" ]; then
+            args+=(--to "$TO")
+          fi
+          rc=0
+          node scripts/ingest/plan.mjs "${args[@]}" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/plan.mjs exited $rc (2 could not run: a usage error, a lanes file or registry that does not validate, an unknown source id or a window it refuses; 70 an internal error); nothing is ingested in this run"
+            exit "$rc"
+          fi
+          if ! jq -e '.format == "domains.ingest-plan.v1" and (.any | type == "boolean") and (.lanes | type == "object" and all(.[]; type == "array"))' "$p" > /dev/null; then
+            echo "::error::$p is not a plan file of the format domains.ingest-plan.v1"
+            exit 1
+          fi
+          any="$(jq -r '.any' "$p")"
+          matrix="$(jq -c '{include: [.lanes | to_entries[] | select(.value | length > 0) | {lane: .key, adapters: .value}]}' "$p")"
+          legs="$(jq -r '.include | length' <<< "$matrix")"
+          from="$(jq -r '.from // ""' "$p")"
+          to="$(jq -r '.to // ""' "$p")"
+          # any and the matrix come from one file and must agree: a leg with no
+          # push job after it, or a push job with no leg, is a defect of plan.mjs.
+          if { [ "$any" = true ] && [ "$legs" -eq 0 ]; } || { [ "$any" = false ] && [ "$legs" -ne 0 ]; }; then
+            echo "::error::the plan says any=$any and names $legs lane(s) with adapters"
+            exit 1
+          fi
+          instant='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?$'
+          if ! [[ "$from" =~ $instant ]] || ! [[ "$to" =~ $instant ]]; then
+            echo "::error::the plan's window is not two instants YYYY-MM-DDTHH:MM:SSZ"
+            exit 1
+          fi
+          {
+            echo "any=$any"
+            echo "matrix=$matrix"
+            echo "from=$from"
+            echo "to=$to"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$any" = false ]; then
+            echo "no lane holds an adapter: nothing is ingested, and state is not moved"
+          fi
+
+  ingest:
+    needs: plan
+    if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # issues: write joins with scripts/track-issue (DOM-034), for the issues
+    # anomaly-<source> and visibility-<package>; no step uses it before then.
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # A job that holds packages: write runs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/adapter'); await import('@domains/state'); await import('@domains/pack'); await import('@domains/compact'); await import('@domains/ghcr'); await import('@domains/root'); await import('@domains/names');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The only step of the leg that holds the job's token: run.mjs pushes
+      # with scripts/ghcr/push.mjs in its own process, the token on stdin.
+      # ADAPTERS is the leg's list of adapter directories, held to the id
+      # grammar of packages/adapter (ID_GRAMMAR, at most 63 characters) before
+      # any of them runs.
+      - name: Run the lane's adapters
+        id: run
+        timeout-minutes: 25
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          LANE: ${{ matrix.lane }}
+          ADAPTERS: ${{ toJSON(matrix.adapters) }}
+          FROM: ${{ needs.plan.outputs.from }}
+          TO: ${{ needs.plan.outputs.to }}
+        run: |
+          set -uo pipefail
+          if ! [[ "$LANE" =~ ^(kafka|tiles|feeds)$ ]]; then
+            echo "::error::the lane is not kafka, tiles or feeds; no adapter runs"
+            exit 1
+          fi
+          if ! jq -e 'type == "array" and length > 0 and all(.[]; type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$") and length <= 63)' <<< "$ADAPTERS" > /dev/null; then
+            echo "::error::the adapters of the lane $LANE are not a list of ids (lowercase letters and digits, joined by single hyphens, at most 63 characters); no adapter runs"
+            exit 1
+          fi
+          window=()
+          if [ -n "$FROM$TO" ]; then
+            if [ -z "$FROM" ] || [ -z "$TO" ]; then
+              echo "::error::the plan gave one end of the backfill window and not the other; no adapter runs"
+              exit 1
+            fi
+            window=(--from "$FROM" --to "$TO")
+          fi
+          ids=()
+          while IFS= read -r id; do
+            ids+=("$id")
+          done <<< "$(jq -r '.[]' <<< "$ADAPTERS")"
+          failed=()
+          for id in "${ids[@]}"; do
+            echo "adapter $id of the lane $LANE"
+            rc=0
+            node scripts/ingest/run.mjs --adapter "$id" --lane "$LANE" --out "$RUNNER_TEMP/out" --psl root "${window[@]}" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::scripts/ingest/run.mjs exited $rc for the adapter $id (1 a fault: a contract fault, a verdict other than ok or quarantine, a push that failed, or adapter errors after its proposal; 2 could not run; 4 not public; 70 an internal error); the other adapters of the lane still run"
+              failed+=("$id")
+            fi
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "${#failed[@]} of ${#ids[@]} adapter(s) of the lane $LANE failed: ${failed[*]}"
+            exit 1
+          fi
+          echo "${#ids[@]} adapter(s) of the lane $LANE ran"
+
+      # A proposal written before a later fault of its adapter is real
+      # progress, so the proposals are uploaded whatever the run step did.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: proposals-${{ matrix.lane }}
+          path: ${{ runner.temp }}/out/proposals/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: ignore
+
+  # Ruling 18: the job that moves state runs in root-writer itself, after the
+  # legs with needs, and the job that calls root-promote.yml follows it
+  # (DOM-020's Found of 2026-10-29T15:30Z in TODO/ingest.md, DOM-024). A leg
+  # that failed wrote its proposals up to the fault; the other legs' are
+  # advanced.
+  push:
+    needs: [plan, ingest]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: root-writer
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      add: ${{ steps.move.outputs.add }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/state'); await import('@domains/root'); await import('@domains/ghcr'); await import('@domains/pack'); await import('@domains/compact'); await import('@domains/ledger'); await import('@domains/feed'); await import('@domains/adapter'); await import('@domains/names');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # Every leg's proposals in one directory. No artifact at all, when no
+      # adapter wrote a proposal, is no proposal.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: proposals-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/proposals
+
+      # It pushes nothing. The token tells an absent state from a private one
+      # (a state that does not read with no credential): absent is the first
+      # state, private is exit 4.
+      - name: Advance the cursors
+        id: advance
+        timeout-minutes: 5
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/state/advance.mjs --proposals "$RUNNER_TEMP/proposals" --out "$RUNNER_TEMP/state" > "$RUNNER_TEMP/advance.txt" || rc=$?
+          cat "$RUNNER_TEMP/advance.txt"
+          # A dropped proposal is read again from its old cursor by the next run.
+          awk '$1 == "dropped" { print "::warning::" $0 "; the adapter is read again from its live cursor next run" }' "$RUNNER_TEMP/advance.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/advance.mjs exited $rc (1 a live state or root that does not validate, or a next state over 1 MiB; 2 could not run; 4 not public; 70 an internal error); state is not moved"
+          fi
+          exit "$rc"
+
+      # Writes feed-h-HOUR packs once each (write-once tags), moves ledger-delta
+      # under the guard of scripts/state/lib.mjs, and rewrites next.json with
+      # the packs it owes.
+      # Exit 3: an hour waits on a source behind its clock. The hours before
+      # it were built, and a later run builds it and the hours after it.
+      - name: Build the closed hours
+        id: hours
+        timeout-minutes: 15
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/state/hours.mjs --next "$RUNNER_TEMP/state/next.json" --out "$RUNNER_TEMP/hours" || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "an hour waits (scripts/state/hours.mjs exited 3): the hours before it were built, and a later run builds it"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/hours.mjs exited $rc (1 a fault: hour.mjs exited 1, a verify that is not ok, a push that failed or a refused move of ledger-delta; 2 could not run; 4 not public; 70 an internal error); the cursors still move, and no pack is promoted in this run"
+          fi
+          exit "$rc"
+
+      # Last in the job, and also after a failed hours step: the cursors the
+      # proposals moved are kept, with the packs pushed so far owed. A
+      # refusal keeps the live state, warns and fails the job, so nothing is
+      # promoted. The output add is every pack the state owes, the earlier
+      # runs' among them, since only the live root settles an owed pack.
+      - name: Move state:latest
+        id: move
+        if: ${{ !cancelled() && steps.advance.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          a="$RUNNER_TEMP/state/advance.json"
+          next="$RUNNER_TEMP/state/next.json"
+          if [ ! -f "$a" ] || [ ! -f "$next" ]; then
+            echo "::error::scripts/state/advance.mjs exited 0 and wrote no advance.json or no next.json"
+            exit 1
+          fi
+          if ! jq -e '.format == "domains.advance.v1"' "$a" > /dev/null; then
+            echo "::error::$a is not of the format domains.advance.v1"
+            exit 1
+          fi
+          expect="$(jq -r '.live // "none"' "$a")"
+          if ! [[ "$expect" =~ ^(none|sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error::advance.json names a live state that is not none or a sha256 digest"
+            exit 1
+          fi
+          rc=0
+          node scripts/state/move.mjs state --file "$next" --expect "$expect" || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning::state:latest was not moved: another writer moved it since this run read it, or the move failed (scripts/state/move.mjs exited 1); the live state is kept, and the next run proposes again from it"
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/move.mjs exited $rc moving state:latest (1 refused or a fault, 2 could not run, 4 not public, 70 an internal error); nothing is promoted in this run"
+            exit "$rc"
+          fi
+          rc=0
+          owed="$(jq -r '.owed[].ref' "$next")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::$next holds no list owed of packs with a ref (jq exited $rc)"
+            exit 1
+          fi
+          refs=()
+          if [ -n "$owed" ]; then
+            while IFS= read -r ref; do
+              if ! [[ "$ref" =~ ^(obs|feed):[a-z0-9][a-z0-9._-]*$ ]]; then
+                echo "::error::next.json owes $ref, which is not obs:TAG or feed:TAG"
+                exit 1
+              fi
+              refs+=("$ref")
+            done <<< "$owed"
+          fi
+          echo "add=${refs[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#refs[@]}" -eq 0 ]; then
+            echo "state owes no pack: nothing to promote"
+          else
+            echo "state owes ${#refs[@]} pack(s) to the root: ${refs[*]}"
+          fi
+
+  # Ruling 18: this job only calls root-promote.yml, which holds the group
+  # root-writer itself. partial: an owed pack the live-set rule refuses waits,
+  # owed, and the others are promoted.
+  promote:
+    needs: push
+    if: ${{ !cancelled() && needs.push.result == 'success' && needs.push.outputs.add != '' }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/root-promote.yml
+    with:
+      add: ${{ needs.push.outputs.add }}
+      partial: true
+
+  # The successor is dispatched at the start of the run, so a fault of any
+  # other job cannot break the chain (the Decision of DOM-024). The cron is
+  # the backstop: a run it starts dispatches a successor only when none waits.
+  chain:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # The sleep is at most interval_min minutes of config/clock.json, 12 at most.
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # chain.mjs imports no workspace package, so the job runs no npm ci.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The first step of the job that runs a script. At most 3 dispatches 15 s
+      # apart (scripts/ingest/chain.mjs).
+      - name: Start the successor
+        id: start
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/ingest/chain.mjs start || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/chain.mjs start exited $rc (1 the successor was not dispatched in 3 tries, and the cron backstop restarts the chain; 2 could not run: a usage error, a config/clock.json that does not validate, or no GITHUB_REPOSITORY; 70 an internal error)"
+          fi
+          exit "$rc"
+
+      # Sleeps to the next boundary of the interval of the clock, which keeps the chain on the grid.
+      - name: Sleep to the next boundary
+        id: sleep
+        timeout-minutes: 13
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/ingest/chain.mjs sleep || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/chain.mjs sleep exited $rc (2 could not run: a usage error or a config/clock.json that does not validate; 70 an internal error)"
+          fi
+          exit "$rc"

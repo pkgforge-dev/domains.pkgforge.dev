@@ -37,7 +37,8 @@
 // nothing. A range whose count was wrong breaks that chain or its own window
 // (writeRange refuses inputs that end early or run on), never silently.
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import {
   type BlockEntry,
   type Compress,

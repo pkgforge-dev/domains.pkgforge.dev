@@ -11,7 +11,8 @@
 // this one. A key is a JSON string of one code unit a byte, as @domains/pack
 // holds keys, so a time key's four bytes of time survive the round trip.
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import type { TierDataset } from "@domains/ghcr";
 import { type DatasetCodec, DEFAULT_PAGE_ENTRIES, DEFAULT_RECORDS_PER_BLOCK, DOMAINS_CODEC, FEED_CODEC, type FeedRecord, NAMES_CODEC, NEW_NAME_CODEC, sha256Hex, timeCodecOf } from "@domains/pack";
 import { canonical, type PackEntry, TIME_COPY_TIERS, TIME_DATASETS } from "@domains/root";

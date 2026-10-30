@@ -51,6 +51,7 @@ const PLANTED = [
   ['schedule-dispatch.yml', '12', 6],
   ['queue.yml', '13', 21],
   ['root-writer.yml', '13', 67],
+  ['state-mover.yml', '13', 56],
   ['upload-overwrite.yml', '14', 49],
   ['if-bang.yml', '15', 48],
 ];
@@ -551,6 +552,54 @@ test('workflow policy: rule 13 reads a run of scripts/root/promote.mjs or rollba
   }
   // show.mjs only reads.
   accepted(plant(CHAIN, '        run: node scripts/root/show.mjs --ref latest\n'));
+});
+
+test('workflow policy: rule 13 reads a run of scripts/state/move.mjs or hours.mjs as a move of state, which names neither push.mjs nor oras tag', () => {
+  const CHAIN = '        run: gh workflow run clean.yml --ref main --repo "$GITHUB_REPOSITORY"\n';
+  for (const cmd of [
+    'node scripts/state/move.mjs state --file "$RUNNER_TEMP/state/next.json" --expect none',
+    'node scripts/state/move.mjs ledger-delta --onto "$filter"',
+    'node scripts/state/hours.mjs --next "$RUNNER_TEMP/state/next.json" --out "$RUNNER_TEMP/hours"',
+  ]) {
+    const f = checkText(plant(CHAIN, `        run: ${cmd}\n`));
+    assert.deepEqual(rulesOf(f), ['13'], `${cmd}\n${JSON.stringify(f)}`);
+    assert.match(f[0].what, /job measure-chain moves a root or state tag outside the group root-writer/);
+  }
+  // A mover spelled another way is the same mover: /./, //, a cd into its directory.
+  for (const cmd of [
+    'node scripts/state/./move.mjs state --file next.json --expect none',
+    'node scripts/state//hours.mjs --next next.json --out hours',
+    'node ./scripts//state/./move.mjs ledger-delta --onto "$filter"',
+    'cd scripts/state && node move.mjs state --file next.json --expect none',
+    'cd ./scripts/state/ ; node hours.mjs --next next.json --out hours',
+    'cd scripts && node state/move.mjs state --file next.json --expect none',
+    'node scripts/root/./promote.mjs --add names:names-d-20261026',
+    'cd scripts/root && node rollback.mjs --to r-20261029t080000z',
+  ]) {
+    const f = checkText(plant(CHAIN, `        run: ${cmd}\n`));
+    assert.deepEqual(rulesOf(f), ['13'], `${cmd}\n${JSON.stringify(f)}`);
+  }
+  // advance.mjs pushes nothing: it writes the next state on the runner.
+  accepted(plant(CHAIN, '        run: node scripts/state/advance.mjs --proposals "$RUNNER_TEMP/proposals" --out "$RUNNER_TEMP/state"\n'));
+  accepted(plant(CHAIN, '        run: cd scripts/state && node advance.mjs --proposals proposals --out state\n'));
+  // The job push of ingest-live.yml runs both movers and names no other mover:
+  // out of root-writer, this clause alone refuses it.
+  const text = readFileSync(join(ROOT, '.github', 'workflows', 'ingest-live.yml'), 'utf8');
+  const GROUP = '      group: root-writer\n';
+  assert.equal(text.split(GROUP).length - 1, 1, 'one job of ingest-live.yml holds root-writer');
+  assert.doesNotMatch(text, /scripts\/ghcr\/push\.mjs[^\n]*\b(?:state|root)\b|\boras\s+tag\b|scripts\/root\/(?:promote|rollback)\.mjs/);
+  const moved = checkText(text.replace(GROUP, '      group: ingest-push\n'), '.github/workflows/ingest-live.yml');
+  assert.deepEqual(rulesOf(moved), ['13'], JSON.stringify(moved));
+  assert.match(moved[0].what, /^job push moves a root or state tag outside the group root-writer/);
+});
+
+test('workflow policy: every workflow of the tree keeps every rule', () => {
+  const files = defaultFiles(ROOT);
+  assert.ok(
+    files.some((f) => f.shown === '.github/workflows/ingest-live.yml'),
+    'ingest-live.yml is in the tree',
+  );
+  for (const f of files) assert.deepEqual(checkText(readFileSync(f.path, 'utf8'), f.shown), [], f.shown);
 });
 
 test('workflow policy: rule 13 accepts queue: single, and refuses a root push, and a root-writer group with no queue or no cancel-in-progress: false', () => {

@@ -52,10 +52,10 @@
 // each pack this script wrote, then pushes it, and promotes the packs pushed
 // or found present. Its job push pushes the day's
 // ledger filter when the day's domains pack verified and pushed in the run,
-// or was live before it. It does not move ledger-delta, which moves under the
-// state guard of DOM-024: until DOM-024 builds the guard, the step after the
-// filters moves nothing and fails the job when a filter it pushed came with a
-// delta.
+// or was live before it. This script does not move ledger-delta: the job
+// push of compact-daily.yml moves it under the state guard of DOM-024, with
+// `scripts/state/move.mjs ledger-delta --onto` the newest filter it pushed,
+// rebasing the delta that is live in that job (D8 of DOM-024).
 //
 // --out is checked before anything is read: a file, or a path under a file,
 // is exit 2, and so is an output that cannot be written. Every blob it reads
@@ -120,6 +120,7 @@ import {
   SUMMARY_MEDIA_TYPE,
   SUMMARY_TITLE,
   tagDecision,
+  WORKFLOW_RUN_ID,
 } from '@domains/compact';
 import { DirPartsSink, fileDigest, openCopy, titlesOf } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
@@ -177,7 +178,7 @@ function parse(argv, env) {
   const rebuild = a.rebuild === undefined ? [] : a.rebuild.split(',');
   for (const r of rebuild) if (!REBUILDS.includes(r)) throw new UsageError(`--rebuild ${JSON.stringify(a.rebuild)} names ${JSON.stringify(r)}, not domains or feed`);
   const run = a.run ?? env.GITHUB_RUN_ID;
-  if (run === undefined || !/^[1-9][0-9]{0,19}$/.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
+  if (run === undefined || !WORKFLOW_RUN_ID.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
   return {
     day: a.day,
     out: a.out,

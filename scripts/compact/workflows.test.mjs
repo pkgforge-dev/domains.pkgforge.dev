@@ -7,8 +7,11 @@
 // plan.mjs plan and exit code, tags.mjs's tags) and logs its call. jq is the
 // real one. Each guard of a step is planted alone: an exit code of a script,
 // a verdict, the MAX_LEGS bound, a unit held for its PSL lists, the live
-// ledger's read, the package of each replaced pack, the ledger filter's wait
-// on its day's domains pack, and the checks that verify-pack must compare.
+// ledger's read (a filter with no ledger-delta among them), the package of
+// each replaced pack, the ledger filter's wait on its day's domains pack, the
+// newest filter pushed and the move of ledger-delta onto it
+// (scripts/state/move.mjs, a double here), and the checks that verify-pack
+// must compare.
 // The replacement step reads a plan file that planTier and planFile of
 // packages/compact write, so its jq reads the fields a real plan holds.
 // The job conditions, which no bash run reaches, are held by name at the end
@@ -75,6 +78,7 @@ node() {
     scripts/compact/assemble.mjs) cat "$STUB/assemble.txt"; stub_rc "$STUB/assemble.rc" ;;
     scripts/verify-pack.mjs) stub_rc "$STUB/verify.rc" ;;
     scripts/ghcr/push.mjs) stub_rc "$STUB/push.rc" ;;
+    scripts/state/move.mjs) stub_rc "$STUB/move.rc" ;;
     *) echo "stub node: no double for $script" >&2; return 99 ;;
   esac
 }
@@ -390,8 +394,14 @@ test('workflow shell: a public state with no filter is the first ledger, one of 
     ledger('', 0),
     ledger('ledger-filter-20261026\n', 0),
     ledger('ledger-filter-20261025\nledger-filter-20261027\n', 0),
-    ledger('ledger-filter-20261024\nledger-filter-20261025\n', 0),
+    ledger('ledger-delta\nledger-delta-20261025t090000z\nledger-filter-20261024\nledger-filter-20261025\n', 0),
   ]);
+  // One listing reads the filters, ledger-delta and its run tags.
+  for (const r of [none, same, later, live])
+    assert.deepEqual(
+      r.calls.filter((c) => c.startsWith('node ')),
+      ['node scripts/ghcr/tags.mjs state --prefix ledger-'],
+    );
   assert.equal(none.env.LEDGER, '--first-ledger');
   assert.equal(same.env.LEDGER, '--no-ledger');
   assert.equal(later.env.LEDGER, '--no-ledger');
@@ -405,6 +415,28 @@ test('workflow shell: a public state with no filter is the first ledger, one of 
     live.calls.some((c) => /^oras pull ghcr\.io\/pkgforge-dev\/domains\.pkgforge\.dev\/state:ledger-delta /.test(c)),
     live.calls.join('\n'),
   );
+});
+
+test('workflow shell: a newest filter with no ledger-delta fails the day leg, and the run tags of ledger-delta are not the delta', opts, async () => {
+  const [bare, runTags, pairedOld] = await Promise.all([
+    ledger('ledger-filter-20261025\n', 0),
+    ledger('ledger-delta-20261025t090000z\nledger-delta-20261025t100000z\nledger-filter-20261025\n', 0),
+    // The delta beside an older filter is still the live delta: day.mjs holds it to the newest filter.
+    ledger('ledger-delta\nledger-filter-20261024\n', 0),
+  ]);
+  for (const r of [bare, runTags]) {
+    assert.equal(r.status, 1, r.text);
+    // The text names hours.mjs without its path: rule 13 of scripts/check-workflows.mjs
+    // reads scripts/state/hours.mjs in a run string as a move of state, and this job is not in root-writer.
+    assert.match(
+      r.text,
+      /::error::state holds ledger-filter-20261025 and no ledger-delta: the delta's first move failed; the first push job of ingest-live\.yml that builds an hour writes it \(hours\.mjs of scripts\/state\), and none runs before an adapter exists/,
+    );
+    assert.equal(r.env.LEDGER, undefined, 'no ledger is chosen');
+    assert.ok(!r.calls.some((c) => c.startsWith('oras ')), r.calls.join('\n'));
+  }
+  assert.equal(pairedOld.status, 0, pairedOld.text);
+  assert.equal(pairedOld.env.LEDGER, 'live');
 });
 
 // The replacement step of `file` for the plan file `text`.
@@ -518,29 +550,91 @@ test('workflow shell: verify names every check to compare, time for a feed pack 
   }
 });
 
-// The daily push step over one day whose domains unit is `planned` this run,
-// and whose leg wrote its replacement when `replaced`.
-function pushFilters(planned, replaced) {
-  const files = {
-    [`runner/days/day.${DAY}/ledger/filter.dlbf`]: 'filter',
-    [`runner/days/day.${DAY}/ledger/delta.dlbd`]: 'delta',
-    [`runner/days/day.${DAY}/day.json`]: JSON.stringify({ day: DAY, ledger: { tag: 'ledger-filter-20261026' } }),
-  };
-  if (planned) files['runner/plans/domains-d-20261026.json'] = planJson('domains', 'domains-d-20261026', D);
-  if (replaced) files['runner/replace/domains-d-20261026.txt'] = 'replace names:x=names:domains-d-20261026\n';
-  return runStep('compact-daily.yml', 'push', 'Push the ledger filters', { env: { REGISTRY_TOKEN: 'none' }, files });
+// The daily push step over `days`, each { day, planned, replaced }: its
+// domains unit is planned this run when `planned`, and its leg wrote its
+// replacement when `replaced`. `rc` is the exit of every push.mjs call.
+function pushFiltersOf(days, rc = 0) {
+  const files = {};
+  for (const { day, planned, replaced } of days) {
+    const compact = day.replaceAll('-', '');
+    files[`runner/days/day.${day}/ledger/filter.dlbf`] = 'filter';
+    files[`runner/days/day.${day}/ledger/delta.dlbd`] = 'delta';
+    files[`runner/days/day.${day}/day.json`] = JSON.stringify({ day, ledger: { tag: `ledger-filter-${compact}` } });
+    if (planned) files[`runner/plans/domains-d-${compact}.json`] = planJson('domains', `domains-d-${compact}`, `${day}T00:00:00Z`);
+    if (replaced) files[`runner/replace/domains-d-${compact}.txt`] = `replace names:x=names:domains-d-${compact}\n`;
+  }
+  return runStep('compact-daily.yml', 'push', 'Push the ledger filters', { env: { REGISTRY_TOKEN: 'none' }, files, stub: rc === 0 ? {} : { 'push.rc': String(rc) } });
 }
-const pushed = (r) => r.calls.some((c) => c.startsWith('node scripts/ghcr/push.mjs state ledger-filter-20261026 '));
+const pushFilters = (planned, replaced) => pushFiltersOf([{ day: DAY, planned, replaced }]);
+const pushed = (r, tag = 'ledger-filter-20261026') => r.calls.some((c) => c.startsWith(`node scripts/ghcr/push.mjs state ${tag} `));
 
 test("workflow shell: a day's ledger filter is pushed once its domains pack verified and pushed, or was live, and not when its leg failed", opts, async () => {
   const [failed, done, live] = await Promise.all([pushFilters(true, false), pushFilters(true, true), pushFilters(false, false)]);
   assert.equal(failed.status, 0, failed.text);
   assert.ok(!pushed(failed), failed.calls.join('\n'));
   assert.match(failed.text, /ledger-filter-20261026 is not pushed: the leg of domains-d-20261026 wrote no replacement/);
-  assert.equal(failed.output.moves, '0');
+  assert.equal(failed.output.newest, '', 'no filter pushed: no delta moves');
   assert.ok(pushed(done), done.calls.join('\n'));
-  assert.equal(done.output.moves, '1');
+  assert.equal(done.output.newest, DAY);
   assert.ok(pushed(live), 'a domains day live before the run');
+  assert.equal(live.output.newest, DAY);
+  assert.equal(done.output.moves, undefined, 'the step counts no delta files');
+});
+
+test('workflow shell: newest is the latest day whose filter push exited 0, and a push that fails writes no newest', opts, async () => {
+  const before = '2026-10-25';
+  const [both, laterHeld, fails] = await Promise.all([
+    pushFiltersOf([
+      { day: before, planned: true, replaced: true },
+      { day: DAY, planned: true, replaced: true },
+    ]),
+    pushFiltersOf([
+      { day: before, planned: true, replaced: true },
+      { day: DAY, planned: true, replaced: false },
+    ]),
+    pushFiltersOf([{ day: DAY, planned: true, replaced: true }], 3),
+  ]);
+  assert.equal(both.status, 0, both.text);
+  assert.ok(pushed(both, 'ledger-filter-20261025') && pushed(both), both.calls.join('\n'));
+  assert.equal(both.output.newest, DAY);
+  assert.equal(laterHeld.status, 0, laterHeld.text);
+  assert.ok(!pushed(laterHeld), 'the held day pushes no filter');
+  assert.equal(laterHeld.output.newest, before, 'the delta moves onto the filter that was pushed');
+  assert.equal(fails.status, 3, fails.text);
+  assert.match(fails.text, /push\.mjs exited 3 for state:ledger-filter-20261026/);
+  assert.equal(fails.output.newest, undefined);
+});
+
+// The step that moves ledger-delta onto the filter of NEWEST, with move.mjs's exit.
+const moveDelta = (rc, { filter = true } = {}) =>
+  runStep('compact-daily.yml', 'push', 'Move ledger-delta', {
+    env: { REGISTRY_TOKEN: 'none', NEWEST: DAY },
+    stub: rc === 0 ? {} : { 'move.rc': String(rc) },
+    files: filter ? { [`runner/days/day.${DAY}/ledger/filter.dlbf`]: 'filter' } : {},
+  });
+
+test('workflow shell: the daily moves ledger-delta with move.mjs --onto the newest filter it pushed, warns on a refusal and keeps every exit', opts, async () => {
+  const [moved, refused, usage, priv, defect, missing] = await Promise.all([moveDelta(0), moveDelta(1), moveDelta(2), moveDelta(4), moveDelta(70), moveDelta(0, { filter: false })]);
+  assert.equal(moved.status, 0, moved.text);
+  const calls = moved.calls.filter((c) => c.startsWith('node '));
+  assert.equal(calls.length, 1, moved.calls.join('\n'));
+  assert.match(calls[0], new RegExp(`^node scripts/state/move\\.mjs ledger-delta --onto \\S*/runner/days/day\\.${DAY}/ledger/filter\\.dlbf$`));
+  assert.doesNotMatch(moved.text, /::(?:warning|error)::/);
+  assert.equal(refused.status, 1, refused.text);
+  assert.match(refused.text, /::warning::state:ledger-delta was not moved: another writer moved it, or a newer filter's delta is live/);
+  assert.match(refused.text, /::error::scripts\/state\/move\.mjs exited 1 moving state:ledger-delta/);
+  for (const [r, rc] of [
+    [usage, 2],
+    [priv, 4],
+    [defect, 70],
+  ]) {
+    assert.equal(r.status, rc, r.text);
+    assert.match(r.text, new RegExp(`::error::scripts/state/move\\.mjs exited ${rc} moving state:ledger-delta`));
+    assert.doesNotMatch(r.text, /::warning::/, `exit ${rc} is no refusal`);
+  }
+  assert.equal(missing.status, 1, missing.text);
+  assert.match(missing.text, /::error::no filter file for 2026-10-26, though its filter was pushed/);
+  assert.deepEqual(missing.calls, [], 'nothing is moved');
 });
 
 test('workflow shell: gather promotes nothing when no leg wrote a replacement', opts, async () => {
@@ -577,4 +671,21 @@ test('workflow shell: the job and step conditions keep the order plan, verify, p
   const { push } = workflow('compact-daily.yml').jobs;
   assert.deepEqual(push.needs, ['plan', 'day', 'assemble']);
   for (const c of [MAIN, "needs.day.result == 'success'", "needs.assemble.result != 'skipped'"]) assert.ok(conds(push.if).includes(c), `push: ${c}`);
+  // The delta moves after the filters, in the same job, and only when a filter was pushed or present.
+  const names = push.steps.map((s) => s.name);
+  assert.deepEqual(
+    names.filter((n) => /ledger/.test(n ?? '')),
+    ['Push the ledger filters', 'Move ledger-delta'],
+  );
+  const move = push.steps.find((s) => s.name === 'Move ledger-delta');
+  assert.equal(move.id, 'delta');
+  assert.equal(move.if, "steps.filters.outputs.newest != ''");
+  assert.deepEqual(move.env, { REGISTRY_TOKEN: '${{ github.token }}', NEWEST: '${{ steps.filters.outputs.newest }}' });
+  // The move runs scripts/state/move.mjs, which imports @domains/state and @domains/ledger: the link step imports both.
+  const link = push.steps.find((s) => s.name === 'Link the workspace packages')?.run ?? '';
+  assert.match(link, /npm ci --omit=dev --ignore-scripts --no-audit --no-fund/);
+  assert.deepEqual([...link.matchAll(/import\('(@domains\/[a-z]+)'\)/g)].map((m) => m[1]).sort(), ['@domains/ghcr', '@domains/ledger', '@domains/state']);
+  // The day leg reads state with no credential, and only the two steps of push hold the token.
+  const tokened = Object.entries(workflow('compact-daily.yml').jobs).flatMap(([id, job]) => (job.steps ?? []).filter((s) => s.env?.REGISTRY_TOKEN).map((s) => `${id}: ${s.name}`));
+  assert.deepEqual(tokened, ['assemble: Push the pack', 'push: Push the ledger filters', 'push: Move ledger-delta']);
 });

@@ -1,0 +1,15 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://stream.example.test/window/2.txt"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/plain"
+    },
+    "body_base64": ""
+  }
+}

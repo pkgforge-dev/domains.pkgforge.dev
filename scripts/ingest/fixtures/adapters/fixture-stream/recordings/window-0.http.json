@@ -1,0 +1,15 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://stream.example.test/window/0.txt"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/plain"
+    },
+    "body_base64": "MTIgd3d3LmFscGhhLXN5bnRoZXRpYy5jb20KNDAgbWFpbC5hbHBoYS1zeW50aGV0aWMuY29tCjMzMyBiZXRhLXN5bnRoZXRpYy5uZXQKNTk5IHd3dy5nYW1tYS1zeW50aGV0aWMub3JnCg=="
+  }
+}

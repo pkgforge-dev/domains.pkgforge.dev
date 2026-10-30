@@ -268,7 +268,11 @@ async function withGlobalTrap<T>(calls: string[], fn: () => Promise<T>): Promise
   }
 }
 
-function checkResult(result: unknown, what: string): RunResult {
+// `result` as a RunResult, or ContractError `result`, `segment` or `cursor`:
+// { segments, cursor, stats, errors }, each segment and the cursor held to
+// their grammar. runAdapter holds every run to it, and so does
+// scripts/ingest/run.mjs.
+export function checkResult(result: unknown, what: string): RunResult {
   if (!isObject(result)) throw new ContractError("result", `${what}: run() did not return an object`);
   const { segments, cursor, stats, errors } = result;
   if (!Array.isArray(segments)) throw new ContractError("result", `${what}: segments is not a list`);
@@ -285,7 +289,10 @@ function checkResult(result: unknown, what: string): RunResult {
   return result as unknown as RunResult;
 }
 
-function checkSources(segments: readonly Segment[], sources: readonly Source[], what: string): void {
+// Nothing, or ContractError `source`: each segment names one of `sources`,
+// with its precision and one of its datasets. runAdapter holds every run to
+// it when given the sources, and so does scripts/ingest/run.mjs.
+export function checkSources(segments: readonly Segment[], sources: readonly Source[], what: string): void {
   const byId = new Map(sources.map((s) => [s.id, s]));
   segments.forEach((seg, i) => {
     const s = byId.get(seg.source);

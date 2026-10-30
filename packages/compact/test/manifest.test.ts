@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { packFromManifest } from "@domains/root";
 import { FEED_CODEC, FEED_TIME_CODEC, NAMES_CODEC } from "@domains/pack";
 import { writerId } from "@domains/pack/node";
-import { CompactError, EMPTY_CONFIG, type ManifestInput, packManifest, tagDecision } from "../src/index.ts";
+import { CompactError, EMPTY_CONFIG, type ExtraLayer, type ManifestInput, packManifest, tagDecision, WORKFLOW_RUN_ID } from "../src/index.ts";
 import { feedPack, feedRows, keys, memPack, nameRecords } from "./helpers.ts";
 
 const PSL = "1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9";
@@ -182,4 +182,179 @@ test("tag: a rebuild whose sha256 a build already holds is present at that build
   assert.deepEqual(tagDecision("names", "d", start, existing, false, { sha256: C, buildSha256: held }), { action: "present", tag: "names-d-20261026-r2", builds });
   // A span with no build reads no annotation: its first build.
   assert.deepEqual(tagDecision("names", "d", start, [], true, { sha256: C, buildSha256: new Map() }), { action: "write", tag: "names-d-20261026", builds: [] });
+});
+
+// A names segment of one second-precision source, its window ten minutes (D12 of DOM-024).
+async function segmentInput(): Promise<ManifestInput> {
+  const p = await memPack(nameRecords(keys(5, 12), 0, 298), NAMES_CODEC);
+  return {
+    dataset: "names",
+    tier: "seg",
+    span: { start: "2026-10-30T08:00:00Z", end: "2026-10-30T08:10:00Z" },
+    tag: "oi-cs.20261030t080000z.20261030t081000z",
+    sources: ["oi-cs"],
+    precision: "second",
+    psl: PSL,
+    run: "40000000001",
+    summary: p.summary,
+    writer: writerId(),
+    parts: p.parts.map(digestOf),
+    idx: digestOf(p.summary.idx),
+  };
+}
+
+test("manifest: a segment of tier seg is a segment of obs, which the promotion reads, with the annotations added after the pack's own", async () => {
+  const input = await segmentInput();
+  const added = { "dev.pkgforge.domains.adapter": "fixture-stream", "dev.pkgforge.domains.cursor.after": '{"n":2}', "dev.pkgforge.domains.raw": "raw-oi-cs.20261030t080000z.20261030t081000z" };
+  const m = packManifest({ ...input, annotations: added });
+  assert.equal(m.json.artifactType, "application/vnd.pkgforge.domains.segment.v1");
+  assert.equal(m.annotations["dev.pkgforge.domains.tier"], "seg");
+  for (const [k, v] of Object.entries(added)) assert.equal(m.annotations[k], v);
+  // After the pack's own, in the order given, in the manifest as in the returned annotations.
+  assert.deepEqual(Object.keys(m.annotations).slice(-3), Object.keys(added));
+  assert.deepEqual(Object.keys(m.json.annotations as object), Object.keys(m.annotations));
+  assert.equal(Object.keys(m.annotations).at(-4), "org.opencontainers.image.source");
+  assert.equal(m.annotations["org.opencontainers.image.created"], "2026-10-30T08:10:00Z");
+  const head = { dataset: 1, records: input.summary.records, keyMin: input.summary.keyMin, keyMax: input.summary.keyMax, parts: input.summary.parts.map((p) => p.bytes) };
+  const entry = packFromManifest({ repo: "pkgforge-dev/domains.pkgforge.dev/obs", tag: input.tag, digest: m.digest, json: m.json, head });
+  assert.equal(entry.pack.tier, "seg");
+  assert.equal(entry.pack.repo, "pkgforge-dev/domains.pkgforge.dev/obs");
+  // A segment holds names or domains, and carries no time copy.
+  assert.throws(
+    () => packManifest({ ...input, dataset: "feed" }),
+    (e: unknown) => e instanceof CompactError && e.code === "usage" && /a segment holds names or domains, not feed/.test(e.message),
+  );
+  const t = digestOf(new Uint8Array([1]));
+  assert.throws(
+    () => packManifest({ ...input, time: { idxBytes: input.summary.idx, parts: [t], idx: t } }),
+    (e: unknown) => e instanceof CompactError && e.code === "time" && /a segment carries no time copy/.test(e.message),
+  );
+});
+
+test("manifest: an added annotation outside dev.pkgforge.domains., one packManifest sets, the quarantine mark, or a value push.mjs refuses is refused", async () => {
+  const input = await segmentInput();
+  const refused = (annotations: Record<string, string>, why: RegExp) =>
+    assert.throws(
+      () => packManifest({ ...input, annotations }),
+      (e: unknown) => e instanceof CompactError && e.code === "usage" && why.test(e.message),
+    );
+  refused({ "org.example.cursor": "1" }, /is not dev\.pkgforge\.domains\. and lowercase words/);
+  refused({ "dev.pkgforge.domains.Cursor": "1" }, /is not dev\.pkgforge\.domains\. and lowercase words/);
+  refused({ "dev.pkgforge.domains.quarantine": "1" }, /added at the push of a quarantined segment/);
+  for (const k of ["dev.pkgforge.domains.sha256", "dev.pkgforge.domains.tier", "dev.pkgforge.domains.run", "dev.pkgforge.domains.source"]) refused({ [k]: "x" }, /is one packManifest sets/);
+  // precision is packManifest's own even on a pack of two sources, which carries none.
+  const two = await namesInput();
+  assert.throws(
+    () => packManifest({ ...two, annotations: { "dev.pkgforge.domains.precision": "day" } }),
+    (e: unknown) => e instanceof CompactError && e.code === "usage" && /is one packManifest sets/.test(e.message),
+  );
+  // The key's grammar to its end: the prefix with its dot, then words joined by . _ or -.
+  for (const k of [
+    "dev.pkgforge.domains.cursor.Before",
+    "dev.pkgforge.domains.cursor after",
+    "dev.pkgforge.domainsxcursor",
+    "dev.pkgforge.domains.",
+    "dev.pkgforge.domains.cursor.",
+    "",
+    "xdev.pkgforge.domains.cursor",
+  ])
+    refused({ [k]: "1" }, /is not dev\.pkgforge\.domains\. and lowercase words/);
+  // The value: annotationProblem of @domains/ghcr, the push tool's own rule.
+  refused({ "dev.pkgforge.domains.cursor.before": "x".repeat(1025) }, /^the annotation dev\.pkgforge\.domains\.cursor\.before is 1025 characters, over 1024/);
+  refused({ "dev.pkgforge.domains.url": "a\nb" }, /holds a control character/);
+  refused({ "dev.pkgforge.domains.url": "a\u007fb" }, /holds a control character/);
+  refused({ "dev.pkgforge.domains.url": "a\tb" }, /holds a control character/);
+  // push.mjs refuses --annotation KEY= as not KEY=VALUE: an empty value is refused here too.
+  refused({ "dev.pkgforge.domains.adapter": "" }, /^the annotation dev\.pkgforge\.domains\.adapter is empty/);
+  refused({ "dev.pkgforge.domains.adapter": 7 as unknown as string }, /is number, not a string/);
+  // The annotations themselves are a plain object: a Map, a list, a number or true would add nothing.
+  for (const bad of [new Map([["dev.pkgforge.domains.adapter", "x"]]), [], ["x"], 7, true, "x"]) {
+    assert.throws(
+      () => packManifest({ ...input, annotations: bad as unknown as Record<string, string> }),
+      (e: unknown) => e instanceof CompactError && e.code === "usage" && /^annotations is not a plain object/.test(e.message),
+      String(bad),
+    );
+  }
+  assert.equal(packManifest({ ...input, annotations: { "dev.pkgforge.domains.cursor.before": "x".repeat(1024) } }).annotations["dev.pkgforge.domains.cursor.before"].length, 1024);
+});
+
+test("manifest: an extra layer given by its blob names that digest and size, and one given by both or neither is refused", async () => {
+  const input = await segmentInput();
+  const raw = { digest: `sha256:${"ab".repeat(32)}`, size: 734_003_200 };
+  const m = packManifest({ ...input, extra: [{ title: "raw", mediaType: "application/octet-stream", blob: raw }] });
+  const layers = m.json.layers as { annotations: Record<string, string>; digest: string; size: number; mediaType: string }[];
+  const last = layers.at(-1) as (typeof layers)[number];
+  assert.deepEqual([last.annotations["org.opencontainers.image.title"], last.digest, last.size, last.mediaType], ["raw", raw.digest, raw.size, "application/octet-stream"]);
+  // The bytes form still names the bytes' own digest.
+  const bytes = new TextEncoder().encode("{}\n");
+  const b = (packManifest({ ...input, extra: [{ title: "summary.json", mediaType: "application/json", bytes }] }).json.layers as { digest: string; size: number }[]).at(-1);
+  assert.deepEqual(b, { ...b, ...digestOf(bytes) });
+  assert.throws(
+    () => packManifest({ ...input, extra: [{ title: "raw", mediaType: "application/octet-stream", blob: { digest: "sha256:zz", size: 1 } }] }),
+    (e: unknown) => e instanceof CompactError && e.code === "plan" && /raw is not \{ digest/.test(e.message),
+  );
+  const both = { title: "raw", mediaType: "application/octet-stream", bytes, blob: raw } as unknown as ExtraLayer;
+  const neither = { title: "raw", mediaType: "application/octet-stream" } as unknown as ExtraLayer;
+  for (const x of [both, neither]) {
+    assert.throws(
+      () => packManifest({ ...input, extra: [x] }),
+      (e: unknown) => e instanceof CompactError && e.code === "usage" && /^the extra layer raw is given by its bytes or by its blob, one of the two$/.test(e.message),
+    );
+  }
+  // An extra layer that is not one: each refused as usage, never a TypeError.
+  const plants: [unknown, RegExp][] = [
+    [[null], /^extra\[0\] is not an object$/],
+    [["raw"], /^extra\[0\] is not an object$/],
+    [[{ title: "raw", mediaType: "application/octet-stream", bytes: "abc" }], /^the bytes of the extra layer raw are not a Uint8Array$/],
+    [[{ title: "raw", mediaType: "application/octet-stream", bytes: [1, 2] }], /^the bytes of the extra layer raw are not a Uint8Array$/],
+    [[{ title: "raw", blob: raw }], /^the extra layer raw has no media type$/],
+    [[{ title: "raw", mediaType: "", blob: raw }], /^the extra layer raw has no media type$/],
+    [[{ mediaType: "application/octet-stream", blob: raw }], /is not the title of an extra layer/],
+    [{ title: "raw" }, /^extra is not a list of layers$/],
+  ];
+  for (const [extra, re] of plants) {
+    assert.throws(
+      () => packManifest({ ...input, extra: extra as ExtraLayer[] }),
+      (e: unknown) => e instanceof CompactError && e.code === "usage" && re.test(e.message),
+      JSON.stringify(extra),
+    );
+  }
+});
+
+test("manifest: a segment's tag is the one its source, window and dataset give, and a segment is of one source", async () => {
+  const input = await segmentInput();
+  const plan = (patch: Partial<ManifestInput>, re: RegExp) =>
+    assert.throws(
+      () => packManifest({ ...input, ...patch }),
+      (e: unknown) => e instanceof CompactError && e.code === "plan" && re.test(e.message),
+      String(patch.tag ?? patch.dataset ?? patch.sources),
+    );
+  plan({ tag: "x" }, /^the tag of the segment: x is not the tag of a names segment of oi-cs/);
+  plan({ tag: "other-src.20261030t080000z.20261030t081000z" }, /which is oi-cs\.20261030t080000z\.20261030t081000z$/);
+  plan({ tag: "oi-cs.20261030t080000z.20261030t082000z" }, /which is oi-cs\.20261030t080000z\.20261030t081000z$/);
+  plan({ span: { start: "2026-10-30T08:00:00Z", end: "2026-10-30T08:20:00Z" } }, /which is oi-cs\.20261030t080000z\.20261030t082000z$/);
+  // The dataset's variant: -d for domains, none for names.
+  plan({ dataset: "domains" }, /which is oi-cs\.20261030t080000z\.20261030t081000z-d$/);
+  plan({ tag: "oi-cs.20261030t080000z.20261030t081000z-d" }, /is not the tag of a names segment/);
+  plan({ sources: ["a-b", "oi-cs"], precision: undefined }, /^a segment is of one source, not a-b,oi-cs$/);
+  // The domains segment of the window, and a file segment of a day source, are taken.
+  const d = packManifest({ ...input, dataset: "domains", tag: "oi-cs.20261030t080000z.20261030t081000z-d" });
+  assert.equal(d.annotations["dev.pkgforge.domains.tier"], "seg");
+  const day = { ...input, span: { start: "2026-10-29T00:00:00Z", end: "2026-10-30T00:00:00Z" }, sources: ["isc-new"], precision: "day" as const };
+  assert.equal(packManifest({ ...day, tag: "isc-new.20261029.0232f4df0831" }).annotations["dev.pkgforge.domains.tier"], "seg");
+  plan({ ...day, tag: "isc-new.20261028.0232f4df0831" }, /which is isc-new\.20261029\.0232f4df0831$/);
+});
+
+test("manifest: the run annotation is a workflow run id, digits with no leading zero, at most 20; never local", async () => {
+  assert.equal(String(WORKFLOW_RUN_ID), String(/^[1-9][0-9]{0,19}$/));
+  for (const ok of ["40905625954", "1", `9${"0".repeat(19)}`]) assert.ok(WORKFLOW_RUN_ID.test(ok), ok);
+  for (const bad of ["0123", "0", `1${"0".repeat(20)}`, `1${"0".repeat(29)}`, "40000000001x", "x40000000001", "local", "", "4e10"]) assert.ok(!WORKFLOW_RUN_ID.test(bad), bad);
+  const input = await segmentInput();
+  for (const run of ["0123", "local", `1${"0".repeat(20)}`, "40000000001x"]) {
+    assert.throws(
+      () => packManifest({ ...input, run }),
+      (e: unknown) => e instanceof CompactError && e.code === "plan" && /is not a workflow run id/.test(e.message),
+      run,
+    );
+  }
 });

@@ -46,12 +46,12 @@
 // and size, the empty config among them, for the push by
 // scripts/ghcr/push.mjs), and delta.dlbd, the next ledger-delta. --out is
 // checked before anything is read: a file, or a path under a file, is exit 2,
-// and so is an output that cannot be written. It pushes nothing, and no
-// workflow runs it yet; the first live run after an hour closes calls it
-// (DOM-024). ⚠ That run must push the pack before the delta, the delta under
-// the state guard of DOM-024: a delta pushed first would hold the hour's
-// domains, and a re-run would judge them all old and write an empty pack
-// under the hour's write-once tag.
+// and so is an output that cannot be written. It pushes nothing:
+// scripts/state/hours.mjs, in the job push of ingest-live.yml, runs it for
+// each closed hour (DOM-024). ⚠ That script pushes the pack before the delta,
+// the delta under the state guard of DOM-024: a delta pushed first would
+// hold the hour's domains, and a re-run would judge them all old and write an
+// empty pack under the hour's write-once tag.
 //
 // Usage:
 //   node scripts/compact/hour.mjs --hour YYYYMMDDHH --filter FILE --delta FILE --out DIR (--segments DIR | --obs-tags TAG,...) [flags]
@@ -82,7 +82,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { buildHour, CompactError, DELTA_TITLE, EMPTY_CONFIG, hourOf, membershipOf, packManifest, planHour, tagDecision } from '@domains/compact';
+import { buildHour, CompactError, DELTA_TITLE, EMPTY_CONFIG, hourOf, membershipOf, packManifest, planHour, tagDecision, WORKFLOW_RUN_ID } from '@domains/compact';
 import { DirPartsSink, fileDigest, titlesOf } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
 import { checkRef, GhcrError, LayoutError, LEDGER_DELTA_TAG, packageOfDataset, repoOf } from '@domains/ghcr';
@@ -126,7 +126,7 @@ function parse(argv, env) {
   if ((a.segments === undefined) === (a['obs-tags'] === undefined)) throw new UsageError('give the segments once: --segments DIR or --obs-tags TAG,...');
   checkOutDir(a.out, '--out');
   const run = a.run ?? env.GITHUB_RUN_ID;
-  if (run === undefined || !/^[1-9][0-9]{0,19}$/.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
+  if (run === undefined || !WORKFLOW_RUN_ID.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
   let obsTags;
   if (a['obs-tags'] !== undefined) {
     obsTags = a['obs-tags'].split(',');

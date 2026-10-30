@@ -23,7 +23,8 @@
 // `buildSha256` is refused (usage), so a caller cannot skip a read by
 // accident. Without opts.sha256 the answer is the one above.
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { LayoutError, nextTierTag, parseTierTag, type Tier, type TierDataset, tierTag } from "@domains/ghcr";
 import { CompactError } from "./errors.ts";
 

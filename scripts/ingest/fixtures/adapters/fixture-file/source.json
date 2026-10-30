@@ -1,0 +1,33 @@
+{
+  "format": "domains.source.v1",
+  "sources": [
+    {
+      "id": "isc-new",
+      "bit": 8,
+      "family": "isc",
+      "datasets": [
+        "domains"
+      ],
+      "precision": "day",
+      "kind": "claimed_new",
+      "basis": [
+        "nrd-list"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "bytes",
+        "min": 0.4,
+        "max": 2.5,
+        "relative": true
+      },
+      "urls": [
+        "https://files.example.test/{date}.txt"
+      ],
+      "retention": "unknown",
+      "parser": "fixture-file/1",
+      "failure_modes": [
+        "Synthetic: a day is not published yet (404)."
+      ]
+    }
+  ]
+}

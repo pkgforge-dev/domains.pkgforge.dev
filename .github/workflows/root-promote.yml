@@ -25,6 +25,16 @@
 # builds a new root (root_seq still grows) that names an older root's packs.
 # Nothing here deletes anything from GHCR (AGENTS.md absolute 13).
 #
+# partial (default false) passes --partial to promote.mjs: it adds the packs
+# of add that the root's live-set rule allows, prints each other one as
+# `waiting PKG:TAG: <the rule's message>` and adds it no more in this run, and
+# ends `unchanged` when every one waits and nothing else changes. The job
+# `promote` of ingest-live.yml passes true, since the packs state owes may
+# leave a hole until a later pack covers it. false keeps the promotion whole:
+# a root the rule refuses is exit 1, nothing written. Only the rule's refusal
+# of an addition waits; a replacement, a missing or quarantined pack and
+# every other fault are refused as with false. rollback_to takes no partial.
+#
 # The first run creates the root package with this job's own GITHUB_TOKEN (ruling
 # 6): no root exists, so it writes root_seq 1 with no previous and no pack, and
 # names the pinned PSL given as `psl`. Verifying the packs a caller adds is the
@@ -55,10 +65,15 @@ on:
         required: false
         default: ""
       rollback_to:
-        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it, and partial false
         type: string
         required: false
         default: ""
+      partial:
+        description: Add the packs of add that the live-set rule allows, and leave each other one waiting; false refuses the whole promotion
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       add:
@@ -77,10 +92,15 @@ on:
         required: false
         default: ""
       rollback_to:
-        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it, and partial false
         type: string
         required: false
         default: ""
+      partial:
+        description: Add the packs of add that the live-set rule allows, and leave each other one waiting; false refuses the whole promotion
+        type: boolean
+        required: false
+        default: false
 
 permissions: {}
 
@@ -152,6 +172,7 @@ jobs:
           REPLACE: ${{ inputs.replace }}
           PSL: ${{ inputs.psl }}
           ROLLBACK_TO: ${{ inputs.rollback_to }}
+          PARTIAL: ${{ inputs.partial }}
         run: |
           set -uo pipefail
           # Split on spaces, tabs and newlines alike: a caller may pass a job
@@ -159,9 +180,13 @@ jobs:
           read -r -d '' -a adds <<< "$ADD" || true
           read -r -d '' -a replaces <<< "$REPLACE" || true
           rc=0
-          if [ -n "$ROLLBACK_TO" ]; then
-            if [ "${#adds[@]}" -gt 0 ] || [ "${#replaces[@]}" -gt 0 ] || [ -n "$PSL" ]; then
-              echo "::error::rollback_to takes no add, replace or psl"
+          # A boolean input reaches env as true or false; anything else runs nothing.
+          if [ "$PARTIAL" != true ] && [ "$PARTIAL" != false ]; then
+            echo "::error::partial is not true or false"
+            rc=2
+          elif [ -n "$ROLLBACK_TO" ]; then
+            if [ "${#adds[@]}" -gt 0 ] || [ "${#replaces[@]}" -gt 0 ] || [ -n "$PSL" ] || [ "$PARTIAL" = true ]; then
+              echo "::error::rollback_to takes no add, replace, psl or partial"
               rc=2
             else
               node scripts/root/rollback.mjs --to "$ROLLBACK_TO" || rc=$?
@@ -171,6 +196,7 @@ jobs:
             for a in "${adds[@]}"; do args+=(--add "$a"); done
             for r in "${replaces[@]}"; do args+=(--replace "$r"); done
             if [ -n "$PSL" ]; then args+=(--psl "$PSL"); fi
+            if [ "$PARTIAL" = true ]; then args+=(--partial); fi
             node scripts/root/promote.mjs "${args[@]}" || rc=$?
           fi
           echo "rc=$rc" >> "$GITHUB_OUTPUT"

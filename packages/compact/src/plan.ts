@@ -49,7 +49,8 @@
 // still replaces it, so its rows leave the feed. In names, domains and rev it
 // is an input like any other: its names are served.
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { LayoutError, type TierDataset, tierTag } from "@domains/ghcr";
 import { isoOf, msOf, type PackEntry, type RootTier, rankOf, tierEnd } from "@domains/root";
 import { CompactError } from "./errors.ts";

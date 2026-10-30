@@ -6,6 +6,9 @@
 //   packFacts(reader, 'PKG:TAG')  the root's entry for a pack: its manifest and its index head, and its time index head when it has a time copy (one range read each)
 //   missingPacks(reader, root)    every pack the root names that GHCR does not hold, by a HEAD by digest
 //   publish({ root, layers, expected, live, rollback }, ctx)   the dated push, the guard, the move, the read-back
+//   login(work, deps), fetchTag(ctx, tag, repoRef)   the job's token: a registry config, and a tag read with it
+//   tagAs(ctx, { ref, from, digest, tag, expected })  `oras tag` of a pushed manifest as a moving tag; the
+//                                 one move of root:latest and of the moving tags of state (DOM-024)
 //
 // The move, in this order (TODO/storage.md DOM-020, Decision):
 //   1. the guard: root:latest, read with the job's token (oras manifest
@@ -23,7 +26,8 @@
 // latest moves only here, and only in the concurrency group root-writer
 // (.github/workflows/root-promote.yml, ruling 18). Nothing here deletes
 // anything from GHCR (AGENTS.md absolute 13).
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { artifactType, GhcrError, LATEST, MANIFEST_LIMIT_BYTES, NAMESPACE, REGISTRY_HOST, repoOf, rootTag, sha256Digest } from '@domains/ghcr';
 import { IDX_TITLE, PackIndex, TIME_IDX_TITLE } from '@domains/pack';
@@ -53,6 +57,18 @@ export class UsageError extends Error {
   constructor(message) {
     super(message);
     this.name = 'UsageError';
+  }
+}
+
+// A new temporary directory PREFIX-XXXXXX under `base` (RUNNER_TEMP), else the
+// system's. A base that is no usable directory is UsageError, exit 2: the
+// environment, not a defect of the script.
+export function tempDir(base, prefix) {
+  const at = base ?? tmpdir();
+  try {
+    return mkdtempSync(join(at, prefix));
+  } catch (e) {
+    throw new UsageError(`the temporary directory ${at} (RUNNER_TEMP) cannot be used: ${e.message}`);
   }
 }
 // A refusal or a failure after the arguments were accepted: exit 1.
@@ -235,13 +251,15 @@ export async function login(work, deps) {
   }
 }
 
-// The manifest a root tag holds, read with the job's token, so a private
-// package counts too: { digest, bytes }, or null when the tag is absent.
-export async function fetchTag(ctx, tag) {
+// The manifest a tag holds, read with the job's token, so a private package
+// counts too: { digest, bytes }, or null when the tag is absent. `repoRef` is
+// the full ghcr.io/<namespace>/<package> reference: the root's by default, the
+// state's for scripts/state/ (DOM-024).
+export async function fetchTag(ctx, tag, repoRef = ROOT_REF) {
   const { deps, config, work } = ctx;
-  const ref = `${ROOT_REF}:${tag}`;
+  const ref = `${repoRef}:${tag}`;
   for (let attempt = 1; ; attempt++) {
-    const out = join(work, `fetch-${tag}-${attempt}.json`);
+    const out = join(work, `fetch-${repoRef.slice(repoRef.lastIndexOf('/') + 1)}-${tag}-${attempt}.json`);
     rmSync(out, { force: true });
     const r = await orasCall(`read ${ref}`, ['manifest', 'fetch', '--registry-config', config, '--output', out, ref], { timeoutMs: READ_TIMEOUT_S * 1000 }, RATE_CAPS_S.manifest, deps);
     if (r.code === 0) {
@@ -273,6 +291,30 @@ export async function liveRoot(reader, ctx) {
 }
 
 // ---------------------------------------------------------------- the move
+
+// `oras tag` the manifest `digest` of `ref` (ghcr.io/<namespace>/<package>),
+// pushed under the write-once tag `from`, as the moving `tag`, with the job's
+// token. A failed call is followed by a read of `tag`: one that holds `digest`
+// landed; one that holds neither it nor `expected` (the digest the caller's
+// guard read, or null for an absent tag) was moved by another writer, a Fault
+// naming what it holds; otherwise the call is tried again, ATTEMPTS in all.
+// publish moves root:latest through it, and scripts/state/lib.mjs moveTag the
+// moving tags of state (DOM-024).
+export async function tagAs(ctx, { ref, from, digest, tag, expected }) {
+  const { deps } = ctx;
+  const source = `${ref}@${digest}`;
+  for (let attempt = 1; ; attempt++) {
+    const r = await orasCall(`oras tag ${from} as ${tag}`, ['tag', '--registry-config', ctx.config, source, tag], { timeoutMs: READ_TIMEOUT_S * 1000 }, RATE_CAPS_S.tag, deps);
+    if (r.code === 0) return;
+    const now = (await fetchTag(ctx, tag, ref))?.digest ?? null;
+    if (now === digest) {
+      deps.log(`oras tag: attempt ${attempt} exited ${r.code}, and ${tag} holds ${digest}: it landed`);
+      return;
+    }
+    if (now !== expected) throw new Fault(`oras tag failed (${excerpt(r.stderr)}), and ${ref}:${tag} now holds ${now ?? 'nothing'}: another writer moved it`);
+    await retryOr(`oras tag ${from} as ${tag}`, attempt, r, deps);
+  }
+}
 
 // The guard of steps 1 and 3: latest holds `expected` (null: nothing), and
 // `next` is above `live`. A refusal is a Fault naming what latest holds. The
@@ -342,23 +384,13 @@ export async function publish({ root, layers, expected, live, rollback = false }
   if (m === null) throw new Fault(`scripts/ghcr/push.mjs exited 0 and printed no digest: ${said.join(' ')}`);
   const digest = m[1];
   // The dated root is this root: its root.json is the one built. Defence in
-  // depth: push.mjs's own layout check refuses other bytes before this, and no
-  // test reaches the refusal below through the CLI.
+  // depth: push.mjs's own layout check and read back refuse other bytes before
+  // this, so a test reaches the refusal below only with a planted reader
+  // (scripts/root/promote.test.mjs).
   const dated = await readRoot(reader, digest, deps);
   if (canonical(dated.root) !== canonical(root)) throw new Fault(`${ROOT_REF}@${digest} holds another root.json than this run built`);
   await guard();
-  const source = `${ROOT_REF}@${digest}`;
-  for (let attempt = 1; ; attempt++) {
-    const r = await orasCall(`oras tag ${tag} as ${LATEST}`, ['tag', '--registry-config', ctx.config, source, LATEST], { timeoutMs: READ_TIMEOUT_S * 1000 }, RATE_CAPS_S.tag, deps);
-    if (r.code === 0) break;
-    const now = (await fetchTag(ctx, LATEST))?.digest ?? null;
-    if (now === digest) {
-      deps.log(`oras tag: attempt ${attempt} exited ${r.code}, and latest holds ${digest}: it landed`);
-      break;
-    }
-    if (now !== expected) throw new Fault(`oras tag failed (${excerpt(r.stderr)}), and ${ROOT_REF}:${LATEST} now holds ${now ?? 'nothing'}: another writer moved it`);
-    await retryOr(`oras tag ${tag} as ${LATEST}`, attempt, r, deps);
-  }
+  await tagAs(ctx, { ref: ROOT_REF, from: tag, digest, tag: LATEST, expected });
   // The read a consumer makes, with no credential. The digest decides; the
   // root.json compare after it is defence in depth (one digest, one content).
   for (let attempt = 1; ; attempt++) {

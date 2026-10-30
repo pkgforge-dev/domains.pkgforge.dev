@@ -108,6 +108,15 @@ export const ID_GRAMMAR = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // (DOM-024's tag shapes), is the id plus 38 characters; 63 keeps it under
 // GHCR's 128-character reference.
 export const MAX_ID = 63;
+// No source id starts with this: it begins the raw lane's tags of obs
+// (rawTag of @domains/ghcr, RAW_PREFIX there), so a segment of one source
+// never takes the raw lane tag of another. An adapter directory may.
+export const RAW_ID_PREFIX = "raw-";
+// The most characters of a source's urls joined by one space: a segment
+// carries them as its annotation dev.pkgforge.domains.url, and the push tool
+// takes a value of at most ANNOTATION_MAX_CHARS of @domains/ghcr, which a
+// test of scripts/ingest holds equal to this.
+export const MAX_URLS_CHARS = 1024;
 // docs/architecture.md section 3.5: at most 64 sources carry a bit.
 export const MAX_BIT = 63;
 export const MAX_CURSOR_BYTES = 4096;
@@ -210,6 +219,10 @@ function checkId(c: Collector, field: string, v: unknown): v is string {
   }
   if (!ID_GRAMMAR.test(v) || v.length > MAX_ID) {
     c.add(field, "grammar", `${JSON.stringify(v)} is not lowercase letters and digits in hyphen-joined words of at most ${MAX_ID} characters`);
+    return false;
+  }
+  if (v.startsWith(RAW_ID_PREFIX)) {
+    c.add(field, "grammar", `${JSON.stringify(v)} starts ${RAW_ID_PREFIX}, which begins the raw lane's tags: no source id takes it`);
     return false;
   }
   return true;
@@ -351,6 +364,10 @@ function sourceProblems(json: unknown, bits: SourceBits, at: string): Problem[] 
   }
   if (has(json, "band")) checkBandField(c, json.band);
   c.list(json, "urls", (v, field) => checkUrl(c, field, v));
+  if (Array.isArray(json.urls) && json.urls.every((u) => typeof u === "string")) {
+    const joined = (json.urls as string[]).join(" ").length;
+    if (joined > MAX_URLS_CHARS) c.add("urls", "range", `the urls joined by a space are ${joined} characters, over ${MAX_URLS_CHARS}: a segment carries them as one annotation`);
+  }
   if (has(json, "retention")) {
     const r = json.retention;
     const ok = typeof r === "string" && ((RETENTION_WORDS as readonly string[]).includes(r) || (parseDuration(r) ?? 0) > 0);

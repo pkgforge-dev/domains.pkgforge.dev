@@ -9,6 +9,10 @@
 //     docker-content-digest GHCR sends, and 404 MANIFEST_UNKNOWN otherwise;
 //   - a blob answers the world's 307 to its signed URL, and the signed URL
 //     answers a Range with 206 from the bytes held by digest;
+//   - a tag list (GET /v2/<repo>/tags/list) answers one page of the
+//     package's tags from w.manifests, in the order each was first written,
+//     and 404 NAME_UNKNOWN for a package that holds no manifest, so listTags
+//     and buildTags of scripts/compact/plan.mjs run against the double;
 //   - oras (the four verbs push.mjs runs, and `tag`) reads and writes the same
 //     maps: `login` writes the registry config, `push --oci-layout` writes a
 //     real OCI layout, `manifest fetch` writes the manifest or says not found,
@@ -103,6 +107,16 @@ export function registry({ t0 } = {}) {
   w.intercept = (url, init) => {
     const headers = init.headers ?? {};
     if (url.startsWith(`${REGISTRY}/`)) {
+      // The tag list of a package, one page: its tags (never its digests) in
+      // the order they were first written. A package that holds no manifest
+      // answers 404 NAME_UNKNOWN, as GHCR answers a package that does not exist.
+      const list = /^(.+)\/tags\/list$/.exec(url.slice(REGISTRY.length + 1).split('?')[0]);
+      if (list !== null) {
+        const keys = [...w.manifests.keys()].filter((k) => k.startsWith(`${list[1]}:`));
+        if (keys.length === 0) return w.response(404, '{"errors":[{"code":"NAME_UNKNOWN","message":"repository name not known to registry"}]}', { 'content-type': 'application/json' }, { url });
+        const tags = keys.map((k) => k.slice(list[1].length + 1)).filter((t) => !t.startsWith('sha256:'));
+        return w.response(200, JSON.stringify({ name: `${NAMESPACE}/${list[1]}`, tags }), { 'content-type': 'application/json' }, { url });
+      }
       const m = /^(.+)\/manifests\/(.+)$/.exec(url.slice(REGISTRY.length + 1));
       if (m === null) return undefined;
       const body = w.manifests.get(`${m[1]}:${decodeURIComponent(m[2] ?? '')}`);
@@ -184,6 +198,8 @@ export function registry({ t0 } = {}) {
       }
       case 'tag': {
         if (!authed()) return unauthorized;
+        // A move names its manifest by digest, never by a tag that may move under it.
+        if (!/@sha256:[0-9a-f]{64}$/.test(pos[0])) return { code: 2, stdout: '', stderr: `Error: the fixture oras tags a manifest named by its digest, not ${pos[0]}\n` };
         const source = keyOf(pos[0]);
         const body = w.manifests.get(source);
         if (body === undefined) return { code: 1, stdout: '', stderr: `Error: ${pos[0]}: not found\n` };

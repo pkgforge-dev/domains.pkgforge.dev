@@ -408,9 +408,12 @@ parent.
 manifest of a pack, and `writePackFiles` returns them. The push tool of DOM-019
 (`scripts/ghcr/push.mjs`) sets only `org.opencontainers.image.source` and
 `org.opencontainers.image.created` itself: a caller passes each of these with
-one `--annotation`. The one workflow that calls the push tool,
-`ref-refresh.yml`, pushes reference files, not packs, so no caller passes them
-yet.
+one `--annotation`. The callers that push packs pass them from the manifest
+that `packManifest` of `packages/compact` built: the steps "Push the pack" of
+the four compaction workflows, and `pushFiles` of `scripts/ingest/pack.mjs`,
+which `scripts/ingest/run.mjs` (a segment) and `scripts/state/hours.mjs` (an
+hour pack) run in their own process. `ref-refresh.yml` pushes reference
+files, not packs.
 
 | Annotation | Value |
 | --- | --- |
@@ -938,13 +941,12 @@ was built, `DLBD`. Neither is a pack. The reference code is
 | Object | Tag of the package `state` | File and layer title | Written by |
 | --- | --- | --- | --- |
 | The filter | `ledger-filter-YYYYMMDD`, write-once: the table through the end of that day | `filter.dlbf` | `scripts/compact/day.mjs` |
-| The delta | `ledger-delta`, which moves | `delta.dlbd` | `scripts/compact/day.mjs` (rebased) and `scripts/compact/hour.mjs` (each hour's new domains added) |
+| The delta | `ledger-delta`, which moves under the `state` guard (section 17.2) to a write-once run tag `ledger-delta-YYYYMMDDtHHMMSSz` | `delta.dlbd` | `scripts/compact/hour.mjs` (each hour's new domains added), and `scripts/state/move.mjs` and `scripts/state/hours.mjs` (the live delta rebased onto a newer filter) |
 
-The scripts write the files and print the tags, and push nothing. A
-workflow pushes the filter and does not push the delta (READ
-`.github/workflows/compact-daily.yml`, the job `push`, and
-`grep -rn hour.mjs .github/workflows`, which finds nothing,
-2026-10-30T04:08:07Z):
+The scripts of `scripts/compact/` write the files and print the tags, and
+push nothing. Two workflows push them, each from a job in the group
+`root-writer` (READ `.github/workflows/compact-daily.yml` and
+`.github/workflows/ingest-live.yml`, the job `push` of each):
 
 - The step "Push the ledger filters" of the job `push` of
   `compact-daily.yml` pushes each day's `state:ledger-filter-YYYYMMDD` once,
@@ -956,12 +958,37 @@ workflow pushes the filter and does not push the delta (READ
   and whose leg of `assemble` wrote no replacement: a filter is written
   once, and one built beside a pack that failed its checks would never be
   replaced.
-- No workflow pushes `ledger-delta`. The next step, "Move ledger-delta (a
-  no-op until DOM-024)", moves nothing and fails the job when a filter that
-  the job pushed came with a delta, until the `state` guard of DOM-024
-  replaces it.
-- No workflow runs `scripts/compact/hour.mjs`, so no workflow adds an hour's
-  new domains to the delta.
+- The next step, "Move ledger-delta", runs
+  `scripts/state/move.mjs ledger-delta --onto` the newest filter that the
+  step before pushed or found present. It reads the live delta inside
+  `root-writer` and rebases it onto that filter (`HashDelta.rebase`), so the
+  hours that `ingest-live.yml` added to the delta after the day leg read it
+  stay in it. With no live delta, it moves the empty delta of the filter. A
+  live delta that pairs with the filter already is left as it is
+  (`present`), and one that pairs with a newer filter refuses the move. The
+  `delta.dlbd` that `scripts/compact/day.mjs` writes is not pushed.
+- The step "Build the closed hours" of the job `push` of `ingest-live.yml`
+  runs `scripts/state/hours.mjs`. For each closed hour that it builds, oldest
+  first, it runs `scripts/compact/hour.mjs` on the newest filter and the live
+  delta, pushes `feed:feed-h-HOUR`, and then moves `ledger-delta` to the
+  delta that `hour.mjs` wrote, under the guard, against the delta digest
+  that the hour read. A delta moved first would hold the hour's own domains,
+  and a re-run would then write an empty pack under the hour's write-once
+  tag. A live delta that is absent, or that pairs with an older filter, is
+  healed first: the empty delta of the newest filter, or the live delta
+  rebased onto it. With no `ledger-filter-` tag, no hour is built.
+- When an hour's pack is `present`, `hour.mjs` writes no delta, and the delta
+  does not move. If the run that pushed the pack failed before its delta
+  moved, later hours judge that hour's domains new again, until the day's
+  exact join corrects the rows of the day (the verdicts are `provisional`,
+  `docs/architecture.md` section 5.8 step 5).
+- Each move of `ledger-delta` first pushes the delta under its run tag: the
+  artifact type `application/vnd.pkgforge.domains.state.v1`, the one layer
+  `delta.dlbd` (`application/octet-stream`), `created` the time of the move,
+  and the annotations `dev.pkgforge.domains.sha256` (of the file),
+  `dev.pkgforge.domains.run` and `dev.pkgforge.domains.filter` (the
+  `ledger-filter-YYYYMMDD` tag of the filter it pairs with, the day whose
+  end is the filter's `as_of`).
 
 ### 15.1 The hash
 
@@ -1114,3 +1141,134 @@ order, and the layer is compact JSON with one final newline, so one day gives
 one byte string. The example above is the summary of the test
 `daily: the day pack holds the domains the exact join keeps with since` of
 `packages/compact/test/daily.test.ts`, whose keys and sources are synthetic.
+
+## 17. The state, `state.json`
+
+`state:latest` holds the state of the ingest: the cursor of each adapter, the
+volume history of each source, and the packs that the state owes to the root
+(`docs/architecture.md` section 5.4). Neither it nor its file is a pack. The
+reference code is `packages/state` (`@domains/state`): `validateState`,
+`parseState` and `encodeState` hold the rules below, and `advance`, `settle`
+and `guard` move the state. It imports nothing from `node:` and is type-checked as Worker code; no test runs it in workerd.
+
+The file is canonical JSON (`canonicalJson` of `@domains/adapter`: the keys
+of every object sorted, no space) with one final newline. It is at most
+1 MiB (`STATE_MAX_BYTES`), and a reader compares the size before it parses.
+An example, with the lines broken and the keys in the order of the table
+below for reading, and with synthetic values:
+
+```json
+{
+  "format": "domains.state.v1",
+  "updated": "2026-10-30T08:30:12Z",
+  "cursors": { "oi-cs": { "through": "2026-10-30T08:10:00Z" } },
+  "moved": { "oi-cs": { "at": "2026-10-30T08:30:12Z", "run": "40000000001" } },
+  "history": { "isc-new": [ { "day": "2026-10-29", "count": 1203, "quarantined": false } ] },
+  "owed": [
+    { "ref": "obs:oi-cs.20261030t080000z.20261030t081000z-d", "digest": "sha256:<64 hex>", "dataset": "domains",
+      "tier": "seg", "start": "2026-10-30T08:00:00Z", "end": "2026-10-30T08:10:00Z", "since": "2026-10-30T08:30:12Z" }
+  ]
+}
+```
+
+| Field | Value |
+| --- | --- |
+| `format` | `domains.state.v1`. A reader refuses another format. |
+| `updated` | The time of the last change, ISO 8601 UTC to the second. A move that changes nothing keeps it. |
+| `cursors` | One cursor for each adapter, keyed by the adapter's directory name (`ID_GRAMMAR` of `@domains/adapter`, at most 63 characters). A cursor is any JSON value of at most 4 KiB (`checkCursor` of `@domains/adapter`). Its shape belongs to the adapter. A cursor that a segment carries, in its annotations `cursor.before` and `cursor.after`, is at most 1024 characters of canonical JSON with no control character (`annotationProblem` of `@domains/ghcr`, `ANNOTATION_MAX_CHARS`): the writer of `scripts/ingest/run.mjs` refuses another, and `run.mjs` refuses such a cursor returned by a live run before it proposes it. |
+| `moved` | Exactly the keys of `cursors`, each `{ at, run }`: the time and the run of the last proposal accepted for the adapter, a backfill's among them, which keeps the cursor. `run` is a workflow run id, digits with no leading zero and at most 20 of them (`WORKFLOW_RUN_ID` of `@domains/ghcr`), or `local`. |
+| `history` | For each source id, the volume of its verified days: `{ day, count, quarantined }`, sorted by day, each day once (`checkHistory` of `@domains/adapter`), the newest 90 kept (`HISTORY_DAYS`). `count` is in the metric of the source's band. A day verified again replaces its item. A source of `day` precision writes one item for each verified day of one whole UTC day: the names segment's when the day has one, else the domains segment's, its `quarantined` that segment's verdict. A source of `second` precision writes none. `scripts/verify-pack.mjs --history` reads one source's list for the volume check (`docs/architecture.md` section 5.8 step 3). |
+| `owed` | The packs that the state is past and the root does not hold yet: `{ ref, digest, dataset, tier, start, end, since }`, sorted by `start`, then `ref`, each `ref` once. `ref` is `obs:TAG` (tier `seg`, dataset `names` or `domains`) or `feed:TAG` (tier `h`, dataset `feed`). `digest` is `sha256:` and 64 hex digits. `start` is before `end`. `since` is the time the pack became owed. A quarantined segment is never owed. Before a state moves, `settle` drops each owed pack that the live root names, covers or withdrew, and each owed more than 7 days (`OWED_DAYS`): `expired`. |
+
+`validateState` refuses a break of these rules with `StateError`: the code
+`format` for another format, and `schema` for a missing or extra key or a
+value out of its rule. `parseState` first refuses a file over the limit with
+`size`, before it parses, and bytes that are not UTF-8 JSON with `format`;
+`encodeState` refuses a state whose file would pass the limit with `size`.
+
+The limit bounds `owed`: an owed domains segment of a stream source takes
+262 bytes, and a state with nothing else holds at most 3,986 of them
+(MEASURED 2026-10-30T16:32:56Z: `encodeState` over synthetic owed segments
+of oi-cs, 1,048,427 bytes at 3,986). One stream source of a 10-minute
+window that writes names and domains owes 288 segments a day, so two such
+sources whose promotion fails for 7 days pass the limit before `expired`
+drops their oldest. `scripts/state/advance.mjs` then exits 1 and names the packs owed
+and the oldest `since`; nothing is written, and the cursors stay where they
+are until the root takes owed packs or they expire. No bound below the
+limit is set: that is an open item of DOM-024.
+
+### 17.1 The manifests and the tags
+
+A state is pushed under its write-once run tag `state-YYYYMMDDtHHMMSSz`,
+whose time is its `updated` (`stateRunTag` of `packages/ghcr`). The artifact type is
+`application/vnd.pkgforge.domains.state.v1`, the one layer is `state.json`
+(`application/json`), `created` is `updated`, and the annotations are
+`dev.pkgforge.domains.sha256` (the SHA-256 of the file) and
+`dev.pkgforge.domains.run`. `state:latest` then moves to that manifest. A
+re-run of a move writes a new run tag, which is harmless: the guard decides.
+
+The snapshot `state-YYYYMMDD` is the first state moved in each UTC day of
+its `updated`. `scripts/state/move.mjs` tags it with `oras tag` when the tag
+is absent, and never again. A day with no move has no snapshot. Every state
+stays under its run tag, so the snapshot is a name for a restore point, not
+the only copy.
+
+### 17.2 The guard
+
+`state:latest` and `state:ledger-delta` move only through `moveTag` of
+`scripts/state/lib.mjs`, in a job of the group `root-writer`. It reads the
+tag with the job's token and compares its digest with the one that the run
+read (`guard` of `packages/state`). It pushes the new object under its run
+tag with `scripts/ghcr/push.mjs`, reads the tag again and compares again,
+then moves the tag with `oras tag`. Last, it reads the tag back with no
+credential: its digest is the one pushed, and its layer hashes to the file.
+A digest that changed refuses the move, exit 1, with the line:
+
+```text
+refused state:TAG holds X, and this run read Y: another writer moved it. The live one is kept
+```
+
+A state that is equal to the live one in everything but `updated`
+(`sameState`) is `unchanged`, and nothing is written.
+
+## 18. The raw lane object, and `members.json`
+
+A source that streams (Kafka, names tiles) keeps the bytes it read in the
+raw lane of the package `obs` (`docs/architecture.md` section 3.4): one
+object for each source and window in a run, pushed before the segment that
+names it in its annotation `dev.pkgforge.domains.raw`. A source that fetches
+a file keeps the file in its segment's own layer `raw` instead, at most
+1 GiB.
+
+| Part | Value |
+| --- | --- |
+| Tag | `raw-<source>.<start>.<end>` (`rawTag` of `packages/ghcr`), the window's times as `YYYYMMDDtHHMMSSz` |
+| Artifact type | `application/vnd.pkgforge.domains.raw.v1` |
+| Layers | `raw.000`, `raw.001` and up (`application/octet-stream`): the bytes as received, concatenated in member order, each layer at most 1 GiB; then `members.json` (`application/json`) |
+| Annotations | under `dev.pkgforge.domains.`: `source`, `span.start`, `span.end`, `bytes` (all the raw bytes), `sha256` (the hex SHA-256 of all the raw bytes in member order), `members` (their count), `adapter`, `parser`, `url`, `fetched` and `run`. `created` is the end of the window. |
+
+A second push of one window finds the object `present` by the same
+`sha256`, artifact type and layers (section 8), and names the digest that
+the tag holds.
+
+`members.json` is one JSON object, canonical JSON with its keys sorted as
+in section 17, and one final newline. An example, the file's bytes, with
+synthetic values:
+
+```json
+{"end":"2026-10-30T08:10:00Z","format":"domains.raw-members.v1","members":[{"length":77594624,"offset":0,"sha256":"<64 hex>"}],"source":"oi-cs","start":"2026-10-30T08:00:00Z"}
+```
+
+| Field | Value |
+| --- | --- |
+| `format` | `domains.raw-members.v1`. A reader refuses another format. |
+| `source`, `start`, `end` | The source and the window, as the annotations name them. |
+| `members` | One item for each member, in offset order: `offset` into the concatenation of `raw.000` and up, `length`, and `sha256`, the hex SHA-256 of the member's bytes. The members are contiguous and cover every byte. |
+
+A reader ignores a field of a member that it does not know. The stream
+adapters add the fields of their source: a Kafka topic, partition and
+offsets, or a tile's log and number. The writer contract of
+`packages/adapter` carries no such field yet, so `members.json` holds one
+member for each source and window: the window's bytes as the adapter gave
+them. A second raw input of the window must be the same bytes, and adds no
+member.

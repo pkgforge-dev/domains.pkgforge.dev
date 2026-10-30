@@ -38,7 +38,8 @@
 // re-run of this day (`present`), later is a day compacted out of order
 // (refused, plan).
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { buildFeedDay, type CarryStats, type FeedPack, newCarryStats, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
 import { ledgerFilterTag, tierTag } from "@domains/ghcr";
 import { BloomFilter, buildFilter, type ExactStats, exactNew, HashDelta, newExactStats, ProvisionalFilter } from "@domains/ledger";

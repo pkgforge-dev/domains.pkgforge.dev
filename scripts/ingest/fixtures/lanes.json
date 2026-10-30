@@ -1,0 +1,13 @@
+{
+  "format": "domains.lanes.v1",
+  "comment": "Synthetic: the lanes of the tests of scripts/ingest/, over the fixture adapters.",
+  "lanes": {
+    "kafka": [
+      "fixture-stream"
+    ],
+    "tiles": [],
+    "feeds": [
+      "fixture-file"
+    ]
+  }
+}

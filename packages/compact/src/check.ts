@@ -18,7 +18,8 @@
 // checkRange is the same pass over one range's part, over the keys that part
 // holds (below).
 //
-// Runs in Node and in workerd alike: it imports nothing from `node:`.
+// It imports nothing from `node:` and is type-checked as Worker code
+// (tsconfig.worker.json); no test runs it in workerd.
 import { ByteWriter, type DatasetCodec } from "@domains/pack";
 import { CompactError } from "./errors.ts";
 

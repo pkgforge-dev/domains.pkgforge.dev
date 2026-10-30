@@ -51,12 +51,21 @@
 #             newest ledger-filter-YYYYMMDD of state and ledger-delta; one of
 #             the day or later builds none), then scripts/compact/day.mjs
 #             --day DAY on the pinned root. A state that reads and holds no
-#             ledger-filter tag is the first ledger. A state that does not read
-#             with no credential is absent or private, which answer alike: the
-#             leg fails, unless the run was dispatched with first-ledger for a
-#             state that no run has pushed. A private state taken as the first
-#             ledger would drop the live delta. It writes the day packs and the
-#             ledger files on the runner, and pushes nothing.
+#             ledger-filter tag is the first ledger. A newest filter with no
+#             ledger-delta beside it fails the leg: the delta's first move
+#             failed, and the first push job of ingest-live.yml that builds an
+#             hour writes it (scripts/state/hours.mjs); none runs before an
+#             adapter exists (DOM-026). A state that does not read with no
+#             credential is absent or private, which answer alike: the leg
+#             fails, unless the run was dispatched with first-ledger for a
+#             state that no run has pushed. A package that a workflow pushed
+#             first is made public by that workflow (TODO/RULES.md section 5),
+#             which is assumed until the first push of state is read back with
+#             no credential (docs/architecture.md section 4.7 rule 7), so once
+#             ingest-live.yml or the job push below has pushed state, exit 4
+#             is a private state. A private state taken as the
+#             first ledger would drop the live delta. The leg writes the day
+#             packs and the ledger files on the runner, and pushes nothing.
 #   assemble  one leg per unit. A names unit is assembled by assemble.mjs; a
 #             domains or feed unit is taken from the day leg's files. Then each
 #             is verified on the local files (scripts/verify-pack.mjs
@@ -70,11 +79,15 @@
 #             ledger-filter-YYYYMMDD, written once, when the day's domains pack
 #             verified and pushed in this run (its leg wrote a replacement) or
 #             was live before it. A filter is written once, so one built beside
-#             a pack that failed its checks would never be replaced. It does
-#             not push ledger-delta: that move needs the state guard of
-#             DOM-024, which is not built. Until it is, the next step moves
-#             nothing and fails the job when a filter it pushed came with a
-#             delta (docs/format.md section 15).
+#             a pack that failed its checks would never be replaced. Then it
+#             moves ledger-delta under the state guard (scripts/state/move.mjs
+#             ledger-delta --onto): it reads the live delta inside root-writer
+#             and rebases it onto the newest filter it pushed, so the hours
+#             that ingest-live.yml added to the delta after the day leg read it
+#             stay in it. The move is refused, and fails the job, when another
+#             writer moved the delta after the read or a newer filter's delta
+#             is live. day.mjs's own delta.dlbd is not pushed
+#             (docs/format.md section 15).
 #   promote   only calls root-promote.yml with them; it holds no concurrency
 #             group (ruling 18). It needs assemble, the job that verified.
 #
@@ -469,10 +482,14 @@ jobs:
           scripts/install-oras "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      # LEDGER: the flags of day.mjs. A state that reads with no credential
-      # and holds no ledger-filter tag is the first ledger; a live filter of
-      # the day or later builds none (day.mjs refuses a filter newer than the
-      # day); else the newest filter and ledger-delta, read with no credential.
+      # LEDGER: the flags of day.mjs. The tags of state that start ledger-:
+      # the filters, ledger-delta and its write-once run tags
+      # ledger-delta-YYYYMMDDtHHMMSSz, which are not the delta. A state that
+      # reads with no credential and holds no ledger-filter tag is the first
+      # ledger; a live filter of the day or later builds none (day.mjs refuses
+      # a filter newer than the day); a newest filter with no ledger-delta
+      # beside it fails the leg; else the newest filter and ledger-delta, read
+      # with no credential.
       - name: Read the live ledger
         id: ledger
         timeout-minutes: 10
@@ -484,26 +501,30 @@ jobs:
           L="$RUNNER_TEMP/ledger-live"
           mkdir -p "$L"
           rc=0
-          node scripts/ghcr/tags.mjs state --prefix ledger-filter- > "$L/tags.txt" || rc=$?
+          node scripts/ghcr/tags.mjs state --prefix ledger- > "$L/tags.txt" || rc=$?
           # 4: state does not read with no credential. An absent package and a private one
           # answer alike, and only the dispatch can say that no run has pushed state.
           if [ "$rc" -eq 4 ] && [ "$FIRST_LEDGER" = true ]; then
             echo "state does not read with no credential, and the run was dispatched with first-ledger: no run has pushed it"
             : > "$L/tags.txt"
           elif [ "$rc" -eq 4 ]; then
-            echo "::error::state does not read with no credential (scripts/ghcr/tags.mjs exited 4): it is absent or private, which answer alike. If no run has pushed state, dispatch with first-ledger. A private state is not taken as no ledger, since its live delta would be lost."
+            echo "::error::state does not read with no credential (scripts/ghcr/tags.mjs exited 4): it is absent or private, which answer alike. Once a run has pushed state it is private. If no run has pushed state, dispatch with first-ledger. A private state is not taken as no ledger, since its live delta would be lost."
             exit 4
           elif [ "$rc" -ne 0 ]; then
             echo "::error::scripts/ghcr/tags.mjs exited $rc listing state (2 could not run, 70 an internal error)"
             exit "$rc"
           fi
           newest="$(awk '/^ledger-filter-[0-9]{8}$/ && $0 > m { m = $0 } END { print m }' "$L/tags.txt")"
+          delta="$(awk '$0 == "ledger-delta" { n++ } END { print n + 0 }' "$L/tags.txt")"
           if [ -z "$newest" ]; then
             echo "state holds no ledger-filter tag: the first ledger"
             echo "LEDGER=--first-ledger" >> "$GITHUB_ENV"
           elif [[ ! "${newest#ledger-filter-}" < "${DAY//-/}" ]]; then
             echo "the live filter $newest is of $DAY or later: no ledger is built for $DAY"
             echo "LEDGER=--no-ledger" >> "$GITHUB_ENV"
+          elif [ "$delta" -eq 0 ]; then
+            echo "::error::state holds $newest and no ledger-delta: the delta's first move failed; the first push job of ingest-live.yml that builds an hour writes it (hours.mjs of scripts/state), and none runs before an adapter exists"
+            exit 1
           else
             oras pull "ghcr.io/pkgforge-dev/domains.pkgforge.dev/state:$newest" -o "$L"
             oras pull "ghcr.io/pkgforge-dev/domains.pkgforge.dev/state:ledger-delta" -o "$L"
@@ -878,7 +899,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --omit=dev --ignore-scripts --no-audit --no-fund
-          node --input-type=module -e "await import('@domains/ghcr');"
+          node --input-type=module -e "await import('@domains/ghcr'); await import('@domains/state'); await import('@domains/ledger');"
 
       - name: Install oras
         run: |
@@ -902,12 +923,14 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/replace
 
-      # The only step that holds the job's token (scripts/ghcr/push.mjs). Each
-      # day's ledger-filter-YYYYMMDD, day by day in order, written once: its
-      # created is the day's end, and its sha256 the file's. A day whose
-      # domains unit this run planned and whose leg wrote no replacement
-      # pushes no filter: a filter is written once, and one built beside a
-      # pack that failed its checks could never be replaced.
+      # Each day's ledger-filter-YYYYMMDD, day by day in order, written once
+      # (scripts/ghcr/push.mjs): its created is the day's end, and its sha256
+      # the file's. A day whose domains unit this run planned and whose leg
+      # wrote no replacement pushes no filter: a filter is written once, and
+      # one built beside a pack that failed its checks could never be
+      # replaced. The output newest is the latest day whose filter push exited
+      # 0 (pushed, or present already), or empty: the filter the next step
+      # rebases the live delta onto.
       - name: Push the ledger filters
         id: filters
         timeout-minutes: 20
@@ -917,7 +940,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          moves=0
+          newest=""
           for dir in "$RUNNER_TEMP"/days/day.*; do
             if [ ! -f "$dir/ledger/filter.dlbf" ]; then
               continue
@@ -943,21 +966,41 @@ jobs:
               echo "::error::scripts/ghcr/push.mjs exited $rc for state:$tag (1 a fault, 2 could not run, 3 the tag holds another manifest, 4 not public, 70 an internal error)"
               exit "$rc"
             fi
-            if [ -f "$dir/ledger/delta.dlbd" ]; then
-              moves=$(( moves + 1 ))
+            if [[ "$day" > "$newest" ]]; then
+              newest="$day"
             fi
           done
-          echo "moves=$moves" >> "$GITHUB_OUTPUT"
+          echo "newest=$newest" >> "$GITHUB_OUTPUT"
 
-      # ⚠ A no-op that fails the job. DOM-024 builds the state guard (read the
-      # live tag, push the new one, move it only when the live one is the one
-      # read) and replaces this step with it. It moves nothing today.
-      - name: Move ledger-delta (a no-op until DOM-024)
-        if: steps.filters.outputs.moves != '0'
-        timeout-minutes: 2
+      # The state guard of DOM-024 (scripts/state/move.mjs). The live
+      # ledger-delta is read in this job, inside root-writer, and rebased onto
+      # the newest filter this job pushed: the hours ingest-live.yml added to
+      # it since the day leg read it stay in it. It moves only while the live
+      # delta is the one this step read; a refusal keeps the live delta, warns
+      # and fails the job. day.mjs's own delta.dlbd is not pushed.
+      - name: Move ledger-delta
+        id: delta
+        if: steps.filters.outputs.newest != ''
+        timeout-minutes: 10
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          NEWEST: ${{ steps.filters.outputs.newest }}
         run: |
-          echo "::error::ledger-delta moves under the state guard of DOM-024, which is not built; this step moves nothing and fails the job."
-          exit 1
+          set -uo pipefail
+          filter="$RUNNER_TEMP/days/day.$NEWEST/ledger/filter.dlbf"
+          if [ ! -f "$filter" ]; then
+            echo "::error::no filter file for $NEWEST, though its filter was pushed"
+            exit 1
+          fi
+          rc=0
+          node scripts/state/move.mjs ledger-delta --onto "$filter" || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning::state:ledger-delta was not moved: another writer moved it, or a newer filter's delta is live (scripts/state/move.mjs exited 1); the live delta is kept"
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/move.mjs exited $rc moving state:ledger-delta (1 refused or a fault, 2 could not run, 4 not public, 70 an internal error)"
+          fi
+          exit "$rc"
 
   # Ruling 18: this job only calls root-promote.yml, which holds the group root-writer.
   promote:

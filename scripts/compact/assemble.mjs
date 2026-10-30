@@ -68,7 +68,21 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { assembleRanges, bindFault, CompactError, checkMerged, codecOf, EMPTY_CONFIG, hashParts, packManifest, rangesOf, sortTimeCopy, tagDecision, timeCodecFor } from '@domains/compact';
+import {
+  assembleRanges,
+  bindFault,
+  CompactError,
+  checkMerged,
+  codecOf,
+  EMPTY_CONFIG,
+  hashParts,
+  packManifest,
+  rangesOf,
+  sortTimeCopy,
+  tagDecision,
+  timeCodecFor,
+  WORKFLOW_RUN_ID,
+} from '@domains/compact';
 import { DirPartsSink, fileDigest, filesSource, readIdxFile, titlesOf } from '@domains/compact/node';
 import { GhcrError, packageOfDataset } from '@domains/ghcr';
 import { DEFAULT_CODEC, IDX_TITLE, PackError, PackReader, TIME_IDX_TITLE } from '@domains/pack';
@@ -97,7 +111,7 @@ function parse(argv, env) {
   if (a._.length > 0) throw new UsageError(`${JSON.stringify(a._[0])} is not a flag`);
   for (const k of ['plan', 'dir', 'out']) if (a[k] === undefined) throw new UsageError(`--${k} is needed`);
   const run = a.run ?? env.GITHUB_RUN_ID;
-  if (run === undefined || !/^[1-9][0-9]{0,19}$/.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
+  if (run === undefined || !WORKFLOW_RUN_ID.test(run)) throw new UsageError(`the run ${JSON.stringify(run ?? null)} is not a workflow run id: give --run or GITHUB_RUN_ID`);
   if (a.psl !== undefined && !/^[0-9a-f]{64}$/.test(a.psl)) throw new UsageError('--psl is not 64 lowercase hex digits');
   if (a.precision !== undefined && a.precision !== 'day' && a.precision !== 'second') throw new UsageError('--precision is day or second');
   return { planPath: a.plan, dir: a.dir, out: a.out, tags: a.tags, rebuild: a.rebuild === true, run, psl: a.psl, precision: a.precision, inputs: a.inputs };

@@ -14,14 +14,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { artifactType, refTag, rootTag } from '@domains/ghcr';
-import { buildRoot, EMPTY_COVERAGE, layerBytes, SOURCES_LAYER_FORMAT } from '@domains/root';
+import { artifactType, refTag, repoOf, rootTag } from '@domains/ghcr';
+import { buildRoot, EMPTY_COVERAGE, layerBytes, RootError, SOURCES_LAYER_FORMAT } from '@domains/root';
 import { pack as entry } from '../../packages/root/test/helpers.ts';
 import { ROOT } from '../files.mjs';
 import { anonymousReader } from '../ghcr/check-public.mjs';
 import { depsFor, PSL_LIVE, PSL_TAG, registry, runFixture, sha } from './fixture.mjs';
 import { Fault, guardLatest, readRoot } from './lib.mjs';
-import { EXIT, main, parsePromoteArgs } from './promote.mjs';
+import { EXIT, keepLiveSet, main, parsePromoteArgs } from './promote.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./promote.mjs', import.meta.url));
 // The synthetic registry of the verifier's fixtures: thc-ct (bit 0) and ct-le (bit 5).
@@ -321,6 +321,192 @@ test('promote: the 24 hour packs of a day replaced by its day pack keep as_of, a
     assert.match(absent.text, /names names:names-h-2026102600, which is not a live names pack/);
   }));
 
+test('promote: --partial adds the packs the live-set rule allows, before and after the live ones and in passes both ways, and prints each other one as waiting; without it the same promotion is refused whole', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const day = async (d) =>
+      (await reg.seedPack('names', `names-d-202610${d}`, { tier: 'd', start: `2026-10-${d}T00:00:00Z`, end: `2026-10-${String(Number(d) + 1).padStart(2, '0')}T00:00:00Z` })).ref;
+    assert.equal((await promote(reg, tmp, ['--add', await day('26'), '--sources', REG], { now: '2026-10-29T09:10:00Z' })).code, EXIT.ok);
+    const two = rootAt(reg, 'latest');
+    const tags = () => verbs(reg).filter((v) => v === 'tag').length;
+    const [d24, d25, d27, d28, d29] = [await day('24'), await day('25'), await day('27'), await day('28'), await day('29')];
+    const hole = (from, to) => `datasets.names: a hole from 2026-10-${from}T00:00:00Z to 2026-10-${to}T00:00:00Z: no pack covers it`;
+
+    // Without --partial a pack across a hole refuses the whole promotion.
+    const whole = await promote(reg, tmp, ['--add', d28, '--add', d29, '--sources', REG], { now: '2026-10-29T09:20:00Z' });
+    assert.equal(whole.code, EXIT.fault, whole.text);
+    assert.ok(whole.text.includes(hole('27', '28')), whole.text);
+    assert.doesNotMatch(whole.text, /^waiting /m);
+    assert.equal(rootAt(reg, 'latest').digest, two.digest);
+
+    // With it, both wait and nothing else changes: unchanged, nothing written.
+    const t0 = tags();
+    const wait = await promote(reg, tmp, ['--add', d28, '--add', d29, '--sources', REG, '--partial'], { now: '2026-10-29T09:30:00Z' });
+    assert.equal(wait.code, EXIT.ok, wait.text);
+    assert.deepEqual(
+      wait.out.filter((l) => l.startsWith('waiting ')),
+      [`waiting ${d28}: ${hole('27', '28')}`, `waiting ${d29}: ${hole('27', '29')}`],
+    );
+    assert.match(wait.out.at(-1), /^unchanged root:latest sha256:[0-9a-f]{64} root_seq 2: nothing to promote, nothing written$/);
+    assert.equal(rootAt(reg, 'latest').digest, two.digest);
+    assert.equal(tags(), t0);
+    assert.equal(reg.w.manifests.has(`root:${rootTag('2026-10-29T09:30:00Z')}`), false);
+
+    // Given out of order: 27 closes the hole 28 and 29 need, 25 and then 24
+    // extend the corpus back (24 joins on the pass against span order), and
+    // an hour pack of the live day overlaps it and waits.
+    const h = (await reg.seedPack('names', 'names-h-2026102605', { tier: 'h', start: '2026-10-26T05:00:00Z', end: '2026-10-26T06:00:00Z' })).ref;
+    const some = await promote(reg, tmp, ['--add', d29, '--add', h, '--add', d24, '--add', d28, '--add', d27, '--add', d25, '--sources', REG, '--partial'], { now: '2026-10-29T09:40:00Z' });
+    assert.equal(some.code, EXIT.ok, some.text);
+    assert.deepEqual(
+      some.out.filter((l) => l.startsWith('waiting ')),
+      [
+        `waiting ${h}: datasets.names: names:names-d-20261026 (d, 2026-10-26T00:00:00Z to 2026-10-27T00:00:00Z) and names:names-h-2026102605 (h, 2026-10-26T05:00:00Z to 2026-10-26T06:00:00Z) overlap; two compacted packs never do`,
+      ],
+    );
+    assert.ok(some.out.findIndex((l) => l.startsWith('waiting ')) < some.out.findIndex((l) => l.startsWith('built ')), some.text);
+    const three = rootAt(reg, 'latest');
+    assert.equal(three.root.root_seq, 3);
+    assert.equal(three.root.previous, two.digest);
+    assert.deepEqual(
+      three.root.datasets.names.map((p) => p.tag),
+      ['names-d-20261024', 'names-d-20261025', 'names-d-20261026', 'names-d-20261027', 'names-d-20261028', 'names-d-20261029'],
+    );
+    assert.equal(three.root.corpus_since.names, '2026-10-24T00:00:00Z');
+    assert.equal(three.root.as_of, '2026-10-30T00:00:00Z');
+  }));
+
+test('promote: --partial defers only the live-set refusal: a quarantined pack, a pack GHCR does not hold and a refused replacement still exit 1, and a promotion the rule allows whole is the one without it', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const seedDay = (d, extra = {}) =>
+      reg.seedPack('names', `names-d-202610${d}`, { tier: 'd', start: `2026-10-${d}T00:00:00Z`, end: `2026-10-${String(Number(d) + 1).padStart(2, '0')}T00:00:00Z`, extra });
+    const [d19, d20] = [await seedDay('19'), await seedDay('20')];
+    const both = await promote(reg, tmp, ['--add', d19.ref, '--add', d20.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:10:00Z' });
+    assert.equal(both.code, EXIT.ok, both.text);
+    assert.doesNotMatch(both.text, /^waiting /m);
+    assert.deepEqual(
+      rootAt(reg, 'latest').root.datasets.names.map((p) => p.tag),
+      ['names-d-20261019', 'names-d-20261020'],
+    );
+    const live = rootAt(reg, 'latest').digest;
+    // A quarantined manifest, beside a pack that would wait.
+    const q = await seedDay('22', { 'dev.pkgforge.domains.quarantine': '1' });
+    const d23 = await seedDay('23');
+    const quarantined = await promote(reg, tmp, ['--add', q.ref, '--add', d23.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:20:00Z' });
+    assert.equal(quarantined.code, EXIT.fault, quarantined.text);
+    assert.match(quarantined.text, /carries dev\.pkgforge\.domains\.quarantine="1": a quarantined pack joins no root/);
+    // A replacement the live-set rule refuses (the week of 19 overlaps the day
+    // 20 it does not replace) is refused whole, not deferred.
+    const week = await reg.seedPack('names', 'names-w-2026w43', { tier: 'w', start: '2026-10-19T00:00:00Z', end: '2026-10-26T00:00:00Z' });
+    const replaced = await promote(reg, tmp, ['--replace', `${d19.ref}=${week.ref}`, '--add', d23.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:30:00Z' });
+    assert.equal(replaced.code, EXIT.fault, replaced.text);
+    assert.match(
+      replaced.text,
+      /datasets\.names: names:names-w-2026w43 \(w, 2026-10-19T00:00:00Z to 2026-10-26T00:00:00Z\) and names:names-d-20261020 \(d, .+\) overlap; two compacted packs never do/,
+    );
+    assert.doesNotMatch(replaced.text, /^waiting /m);
+    assert.equal(rootAt(reg, 'latest').digest, live);
+    // A pack the next root names and GHCR does not hold: the live root's own,
+    // its manifest gone from the double.
+    reg.w.manifests.delete(`names:${d20.digest}`);
+    const d21 = await seedDay('21');
+    const missing = await promote(reg, tmp, ['--add', d21.ref, '--add', d23.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:40:00Z' });
+    assert.equal(missing.code, EXIT.fault, missing.text);
+    assert.ok(missing.out.includes(`waiting ${d23.ref}: datasets.names: a hole from 2026-10-22T00:00:00Z to 2026-10-23T00:00:00Z: no pack covers it`), missing.text);
+    assert.match(missing.text, /the next root names 1 pack\(s\) GHCR does not hold, so latest is left as it is: names:names-d-20261020 sha256:[0-9a-f]{64}/);
+    assert.equal(rootAt(reg, 'latest').digest, live);
+  }));
+
+test('promote: keepLiveSet returns the additions as given when the root with all of them passes, keeps the rest in the order given, and holds a manifest the root names already as a live-set refusal', () => {
+  const d = (day) => entry('names', 'd', `2026-10-${day}T00:00:00Z`);
+  const liveRoot = buildRoot({ live: null, psl: PSL_LIVE, now: '2026-10-29T08:00:00Z', add: [d('26')] });
+  const input = (add, replace = []) => ({ live: { root: liveRoot, digest: `sha256:${'a'.repeat(64)}` }, add, replace, psl: PSL_LIVE, now: '2026-10-29T09:00:00Z', gaps: {} });
+  const all = [d('27'), d('28')];
+  const whole = keepLiveSet(input(all));
+  assert.equal(whole.add, all, 'the same list, untouched');
+  assert.deepEqual(whole.waiting, []);
+  const given = [d('28'), d('24'), d('30'), d('25'), d('27'), d('26')];
+  const r = keepLiveSet(input(given));
+  assert.deepEqual(
+    r.add.map((np) => np.pack.tag),
+    ['names-d-20261028', 'names-d-20261024', 'names-d-20261025', 'names-d-20261027'],
+  );
+  assert.deepEqual(r.waiting, [
+    { ref: 'names:names-d-20261030', message: 'datasets.names: a hole from 2026-10-29T00:00:00Z to 2026-10-30T00:00:00Z: no pack covers it' },
+    { ref: 'names:names-d-20261026', message: `datasets.names: names:names-d-20261026 names the manifest ${liveRoot.datasets.names[0].manifest}, which the root names already` },
+  ]);
+  // The root the caller builds with the kept ones passes whole.
+  assert.equal(buildRoot({ ...input(r.add) }).datasets.names.length, 5);
+  // One PKG:TAG given twice is kept once, and no copy waits on the other.
+  const d29 = d('29');
+  const hole = d('31');
+  const twice = keepLiveSet(input([d29, d('27'), d29, d('28'), hole]));
+  assert.deepEqual(
+    twice.add.map((np) => np.pack.tag),
+    ['names-d-20261029', 'names-d-20261027', 'names-d-20261028'],
+  );
+  assert.deepEqual(
+    twice.waiting.map((w) => w.ref),
+    ['names:names-d-20261031'],
+  );
+  // Two refs of one manifest are two additions: the second waits on the first, kept.
+  const alias = { ...d29, pack: { ...d29.pack, tag: 'names-d-20261029-r2' } };
+  const two = keepLiveSet(input([d('27'), d('28'), d29, alias]));
+  assert.deepEqual(
+    two.waiting.map((w) => [w.ref, w.message]),
+    [['names:names-d-20261029-r2', `datasets.names: names:names-d-20261029-r2 names the manifest ${d29.pack.manifest}, which the root names already`]],
+  );
+  // A refusal of another code is thrown, as buildRoot throws it.
+  assert.throws(
+    () => keepLiveSet(input([d('28')], [{ old: [`sha256:${'b'.repeat(64)}`], new: d('27') }])),
+    (e) => e instanceof RootError && e.code === 'replace',
+  );
+  // An addition the live root withdrew is refused for itself, never kept by the pass that tries the additions one at a time.
+  const d27 = d('27');
+  const withdrew = { ...liveRoot, withdrawn: [{ manifest: d27.pack.manifest, at: '2026-10-29T08:00:00Z' }] };
+  assert.throws(
+    () => keepLiveSet({ ...input([d27, d('28')]), live: { root: withdrew, digest: `sha256:${'a'.repeat(64)}` } }),
+    (e) => e instanceof RootError && e.code === 'withdrawn' && e.message.startsWith('the addition names:names-d-20261027 '),
+  );
+});
+
+test('promote: a dated root that reads back as another root.json is refused, and latest does not move', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const live = rootAt(reg, 'latest');
+    const d19 = await reg.seedPack('names', 'names-d-20261019', { tier: 'd', start: '2026-10-19T00:00:00Z', end: '2026-10-20T00:00:00Z' });
+    // Planted: a root read by a digest other than the live one answers the live
+    // root, from the second read of that digest on. The first read is push.mjs's
+    // own read back, which refuses another manifest before publish reads it.
+    const real = anonymousReader();
+    const ROOT_REPO = repoOf('root');
+    const reads = new Map();
+    const planted = (repo, ref) => {
+      if (repo !== ROOT_REPO || !ref.startsWith('sha256:') || ref === live.digest) return ref;
+      reads.set(ref, (reads.get(ref) ?? 0) + 1);
+      return reads.get(ref) >= 2 ? live.digest : ref;
+    };
+    const reader = new Proxy(real, {
+      get: (target, key) => {
+        if (key === 'getManifest') return (repo, ref, opts) => target.getManifest(repo, planted(repo, ref), opts);
+        const v = target[key];
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const out = [];
+    const err = [];
+    const code = await main(['--add', d19.ref, '--sources', REG], { ...depsFor(reg, { now: '2026-10-29T09:10:00Z', tmp, out: (l) => out.push(l), err: (l) => err.push(l) }), reader });
+    const text = `${out.join('\n')}\n${err.join('\n')}`;
+    assert.equal(code, EXIT.fault, text);
+    assert.match(text, /root@sha256:[0-9a-f]{64} holds another root\.json than this run built/);
+    assert.equal(rootAt(reg, 'latest').digest, live.digest);
+    assert.ok(reg.w.manifests.has(`root:${rootTag('2026-10-29T09:10:00Z')}`), 'the dated root was pushed, and latest left');
+  }));
+
 test('promote: a dated tag that holds another manifest is exit 3, and latest does not move', () =>
   inRegistry(async (reg, tmp) => {
     reg.seedPsl();
@@ -610,6 +796,9 @@ test('promote: bad arguments and a missing token are exit 2 before anything is r
     [['--gap', 'thc-ct=2026-10'], /is not SOURCE=YYYY-MM-DD/],
     [['--psl', PSL_TAG, '--psl', PSL_TAG], /--psl is given twice/],
     [['--fixture', 'stale', '--psl', PSL_TAG], /--fixture NAME takes no other flag/],
+    [['--fixture', 'stale', '--partial'], /--fixture NAME takes no other flag/],
+    [['--partial=true'], /--partial takes no value/],
+    [['--partial', '--partial'], /--partial is given twice/],
     [['names:a'], /is not a flag/],
   ]) {
     assert.throws(() => parsePromoteArgs(argv), re, argv.join(' '));
@@ -638,6 +827,16 @@ test('promote: a malformed GITHUB_RUN_ATTEMPT is exit 2 before anything is read,
     }
     assert.equal(reg.calls.length, calls, 'no oras call: not even the login');
     assert.equal(reg.w.manifests.has(`root:${rootTag('2026-10-29T09:10:00Z')}`), false);
+  }));
+
+test('promote: a RUNNER_TEMP that cannot be used is exit 2 before the login, and latest is not read', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    const r = await promote(reg, join(tmp, 'no-such-dir'), ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' });
+    assert.equal(r.code, EXIT.usage, r.text);
+    assert.match(r.text, /the temporary directory .*no-such-dir \(RUNNER_TEMP\) cannot be used/);
+    assert.deepEqual(reg.calls, [], 'no oras call: not even the login');
+    assert.equal(reg.w.manifests.has('root:latest'), false);
   }));
 
 test('promote: as a process, --fixture stale exits 1 and writes nothing to the network', () => {

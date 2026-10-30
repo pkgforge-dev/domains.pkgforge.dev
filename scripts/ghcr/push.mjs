@@ -67,7 +67,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } fr
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ARTIFACT_KINDS, artifactType, checkPackage, checkTag, LayoutError, REGISTRY_HOST, repoOf, SOURCE_URL } from '../../packages/ghcr/src/layout.ts';
+import { ANNOTATION_MAX_CHARS, ARTIFACT_KINDS, annotationProblem, artifactType, checkPackage, checkTag, LayoutError, REGISTRY_HOST, repoOf, SOURCE_URL } from '../../packages/ghcr/src/layout.ts';
 import { GhcrError, MANIFEST_LIMIT_BYTES, parseManifest } from '../../packages/ghcr/src/reader.ts';
 import { anonymousReader, isNotPublic, PRIVATE_LINE } from './check-public.mjs';
 import { attemptSeconds, RATE_CAPS_S, RATE_LIMITED, RateLimitError, readPaused, realSleep, underRateLimit } from './rate.mjs';
@@ -85,6 +85,11 @@ export const LOGIN_TIMEOUT_S = 120;
 export const READ_TIMEOUT_S = 120;
 // DOM-006: 256 layers is the largest count both runs accepted; a year pack needs about 100.
 export const MAX_LAYERS = 256;
+// The longest annotation value this tool takes, in characters, and the one
+// rule of a value (annotationProblem of packages/ghcr/src/layout.ts), which
+// packManifest of packages/compact and the disk writer of scripts/ingest/
+// apply before any push.
+export { ANNOTATION_MAX_CHARS };
 // oras's words for an absent tag or package, the only answers that mean absent
 // (READ mirror-archlinux docs/design.md rules; .github/workflows/measure-push.yml).
 export const NOT_FOUND = /not found|manifest unknown|name unknown/i;
@@ -162,7 +167,8 @@ export function parsePushArgs(argv) {
     if (k === CREATED || k === SOURCE) throw new UsageError(`${k} is the tool's own (--created, and this repository)`);
     if (keys.has(k)) throw new UsageError(`the annotation ${k} is given twice`);
     keys.add(k);
-    if (v.length > 1024 || /[\u0000-\u001f\u007f]/.test(v)) throw new UsageError(`the annotation ${k} holds a control character or is over 1024 characters`);
+    const problem = annotationProblem(v);
+    if (problem !== null) throw new UsageError(`the annotation ${k} ${problem}`);
     if (k === SHA256_ANNOTATION && !/^[0-9a-f]{64}$/.test(v)) throw new UsageError(`${SHA256_ANNOTATION} is 64 lowercase hex digits`);
   }
   if (fileArgs.length > MAX_LAYERS) throw new UsageError(`${fileArgs.length} files; one manifest holds at most ${MAX_LAYERS} layers`);
@@ -424,7 +430,10 @@ async function pushIn(work, plan, files, deps) {
   const replaced = (remote) => ({ code: EXIT.replaced, line: `replaced ${plan.ref} holds ${remote.digest}, not ${local.digest}; nothing was written` });
   const before = await readTag();
   const first = decide(local, before);
-  if (first.outcome === 'present') return { code: EXIT.ok, line: `present ${plan.ref} ${local.digest} (${first.why})` };
+  // A present tag is named by the digest it holds: by the sha256 annotation it
+  // may hold another manifest than the one built here (another run, another
+  // fetched), and a reader of the tag finds that one.
+  if (first.outcome === 'present') return { code: EXIT.ok, line: `present ${plan.ref} ${before.digest} (${first.why})` };
   if (first.outcome === 'replaced') return replaced(before);
 
   // 4. The copy up.

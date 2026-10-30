@@ -1206,6 +1206,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The merge used 522,960,896 B of disk, of 90,744,446,976 B free.
   - So a range of about 0.58 GB of input takes about 7.8 minutes on one runner, at about 1.2 CPUs and under 300 MiB: the time is in one thread, and a runner's memory and disk hold it many times over. At that rate a year of THC names, 72 to 84 GB [E], is 16 to 19 runner-hours, about 3 hours at a `max-parallel` of 6 [E].
   - Not in it: the read from GHCR by range (the inputs were local files), a time copy (`names` has none), and the sort of `sortTimeCopy`, so `DEFAULT_SORT_ROWS` stays [E]. The Found of 2026-10-30T08:30Z that says `measure-compact.yml` has not run is answered for the range merge alone.
+- **Found 2026-10-30T19:26Z (DOM-024, the ledger and the hour pack):** the step "Move ledger-delta" of the job `push` of `compact-daily.yml` now moves the tag under the `state` guard: `scripts/state/move.mjs ledger-delta --onto` rebases the delta that is live in that job onto the newest filter, and a second move onto the same filter is `present` (D8 of DOM-024). `delta.dlbd` of `scripts/compact/day.mjs` is no longer moved by any workflow. A present hour derives and pushes no delta again (D7 of DOM-024): the day's exact join corrects the hour's verdicts within about 25 hours. The live Prove of this entry no longer waits on DOM-024's guard, only on DOM-029's backfill.
 
 ## DOM-031 — The R2 cache with a 5 GB guard
 

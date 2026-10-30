@@ -340,6 +340,12 @@ test('day cli: the ledger is named once, and bad arguments are exit 2', () =>
     }
     const bad = await call(main, ['--day', '2026-02-30', '--root', r.rootPath, '--run', '7', '--out', o, '--first-ledger']);
     assert.equal(bad.code, EXIT.usage, bad.text);
+    // A run id off its grammar (WORKFLOW_RUN_ID): a leading zero, 21 digits, a letter, local.
+    for (const run of ['0', '01', '1e3', `1${'0'.repeat(20)}`, 'local']) {
+      const x = await call(main, ['--day', '2026-10-27', '--root', r.rootPath, '--run', run, '--out', o, '--first-ledger']);
+      assert.equal(x.code, EXIT.usage, run);
+      assert.match(x.text, /is not a workflow run id/, run);
+    }
     writeFileSync(join(dir, 'o-file'), 'x');
     const full = await call(main, args(r, dir, ['--first-ledger']));
     assert.equal(full.code, EXIT.usage, full.text);
