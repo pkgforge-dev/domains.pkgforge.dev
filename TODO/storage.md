@@ -1067,7 +1067,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 ## DOM-023 — Compaction: hour, day, week, month and year
 
 - **Status:** partial
-- **Waiting:** until 2026-10-31T06:00:00Z; read the first scheduled run of `compact-daily.yml` on `main` (on a root of no pack every unit waits, so it builds nothing), and dispatch `measure-compact.yml` if no run has, with its `result.json` landing in `docs/research/measure/DOM-023/`, which does not exist yet. Then, once DOM-024's `state` guard moves `ledger-delta` and DOM-029's backfill has promoted THC's segments from 2026-09-01, run the Prove: `gh workflow run compact-daily.yml -f day=2026-10-26`, the anonymous read of `feed:feed-d-20261026`, `node scripts/verify-pack.mjs --repo feed --tag feed-d-20261026`, and close
+- **Waiting:** until 2026-10-31T06:00:00Z; read the first scheduled run of `compact-daily.yml` on `main` (on a root of no pack every unit waits, so it builds nothing), and, once DOM-024's `state` guard moves `ledger-delta` and DOM-029's backfill has promoted THC's segments from 2026-09-01, run the Prove: `gh workflow run compact-daily.yml -f day=2026-10-26`, the anonymous read of `feed:feed-d-20261026`, `node scripts/verify-pack.mjs --repo feed --tag feed-d-20261026`, and close
 - **Priority:** P1
 - **Effort:** L
 - **Source:** design A section 5.2 (the compaction schedule) and section 6.3; design B section 5.1, section 6.1 and section 6.4; `docs/architecture.md` section 4.5 and section 5.3. The operator's ruling 5: nothing is ever deleted, and raw segments stay beside every tier.
@@ -1199,6 +1199,13 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The dispatch of `compact-daily.yml`, the anonymous read of `feed-d-20261026` and its verify wait (the Waiting line).
   - The Prove's addition of 2026-10-29T04:54Z, a pack with its `count` annotation removed: the test `assemble cli: the ranges assemble into the pack one process merges, and the verifier passes it` of `scripts/compact/assemble.test.mjs` runs the verifier on the assembled pack with `--require dataset,length,count,sha256` and the `count` annotation taken out. It exits 1 with `VERDICT unverified (N skipped; required and skipped: count)` (MEASURED 2026-10-30T09:11Z, `node scripts/test.mjs scripts/compact --name "the ranges assemble into the pack one process merges"` exit 0). The verify step of a workflow on GitHub has not run it.
   - Gate part (a): the Measured line of 05:30:42Z. Part (b): nothing is deployed, no compaction has run on GitHub, and the anonymous reads wait with the Prove. Part (c): the three lenses (door sweep, claim audit, guard mutation) ran on the build of 2026-10-29, two fix rounds answered their findings, and a verification planted 86 mutants after the second (the Measured line of the mutants). The counts by lens were not kept. The fix rounds give the findings by area: daily 7, workflows 10, the core F1 to F14, and the rebuild suffix 3. The verification reported 8 problems.
+- **MEASURED 2026-10-30T09:30:53Z (`measure-compact.yml`, run 41032308505 on `main` at c9081dd; `docs/research/measure/DOM-023/result.json`, with `inputs.json`, `plan.json`, `time.count` and `time.write` beside it):** one range of a `names` week on an `ubuntu-24.04` runner of 4 CPUs and 16.8 GB, Node v26.13.0.
+  - The 7 synthetic day packs held 92,402,051 records in 577,765,791 B, and 84,000,000 distinct keys (overlap 0.1). `plan.mjs` planned them as one range.
+  - Stage `count`: 82.71 s wall, 111.30 s user, 137% CPU, a peak RSS of 300,572 KiB, exit 0.
+  - Stage `write`: 382.11 s wall, 438.08 s user, 116% CPU, a peak RSS of 291,136 KiB, exit 0. It wrote 521,953,787 B of part and 997,352 B of index, 84,000,000 records, the inputs' distinct keys.
+  - The merge used 522,960,896 B of disk, of 90,744,446,976 B free.
+  - So a range of about 0.58 GB of input takes about 7.8 minutes on one runner, at about 1.2 CPUs and under 300 MiB: the time is in one thread, and a runner's memory and disk hold it many times over. At that rate a year of THC names, 72 to 84 GB [E], is 16 to 19 runner-hours, about 3 hours at a `max-parallel` of 6 [E].
+  - Not in it: the read from GHCR by range (the inputs were local files), a time copy (`names` has none), and the sort of `sortTimeCopy`, so `DEFAULT_SORT_ROWS` stays [E]. The Found of 2026-10-30T08:30Z that says `measure-compact.yml` has not run is answered for the range merge alone.
 
 ## DOM-031 — The R2 cache with a 5 GB guard
 

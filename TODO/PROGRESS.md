@@ -81,6 +81,7 @@ is the only one.
   - The suffix `-rN` of ruling 25 in `packages/ghcr` and `packages/root`, the carry of the suspect verdicts in `packages/feed`, `docs/format.md` sections 15 and 16, and the half of rule 3 of the workflow check that keeps a job with `packages: write` on `main`.
 - Ran the three lenses on wave 5 and fixed their findings in two rounds. A verification then planted 86 mutants: 79 killed, 2 equivalent, and 5 gaps. A third round answered the gaps with tests or by deleting the clause, and no mutant was planted after it. Decided D1, D2 and D3 under ruling 20, each a Decision of DOM-023: a unit that starts before `corpus_since` is never built, `new-name` has no hour pack, and a rebuild finds the build that already holds its bytes. `npm run gate` exited 0 at 2026-10-30T05:30:42Z with 1,573 tests: 1,570 pass and 3 platform skips of this Windows machine. No compaction has run on GitHub.
 - Recorded what the compaction leaves to other entries, a Found or a Decision in each: DOM-014, DOM-024, DOM-029, DOM-034, DOM-036, DOM-037, DOM-038, DOM-041, DOM-042 and DOM-043.
+- Measured one compaction range on a runner with `measure-compact.yml` (run 41032308505): 0.58 GB of input, 92.4 million records, in 83 s of `count` and 382 s of `write`, under 300 MiB, 0.52 GB of disk (`docs/research/measure/DOM-023/result.json`).
 
 ## What is in progress
 
@@ -104,7 +105,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-012 closes after its 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. Compaction: DOM-023 is partial, built and gated, and has not run on GitHub. After the push, dispatch `measure-compact.yml` and record its result. Its live Prove waits on DOM-024's `state` guard and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
+3. Compaction: DOM-023 is partial, built and gated. `measure-compact.yml` measured one range on 2026-10-30, and no compaction has built a pack on GitHub. Its live Prove waits on DOM-024's `state` guard and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
 4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
 6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
