@@ -2,13 +2,15 @@
 // unchanged in Node and in workerd: it imports nothing from `node:`.
 //   reader.ts  the anonymous reader: manifests, tag lists, ranges through the signed URL
 //   layout.ts  the namespace, the eight packages, the artifact types, the tag builders
+//              (the ledger's two tags of state among them), and the tier tag read back
+//              with its rebuild suffix (ruling 25)
 // The writer is scripts/ghcr/push.mjs, which runs oras on a runner.
 //
 // The reader's low-level parts (send, ghcr, tokenNew, tokenKept, resetTokens,
 // dialer, readCapped) are not exported here: send sends any Authorization to
 // any URL, and a caller reads GHCR through ghcrReader, whose checks they skip.
 // reader.ts's tests and the scripts' tests import resetTokens from reader.ts.
-export type { ArtifactKind, PackageName, RefKind, Tier, TierDataset } from "./layout.ts";
+export type { ArtifactKind, PackageName, RefKind, Tier, TierDataset, TierTagParts } from "./layout.ts";
 export {
   ARTIFACT_KINDS,
   artifactType,
@@ -17,11 +19,15 @@ export {
   fileTag,
   LATEST,
   LayoutError,
+  LEDGER_DELTA_TAG,
+  ledgerFilterTag,
   MAX_SOURCE_ID,
   NAMESPACE,
+  nextTierTag,
   OWNER,
   PACKAGES,
   packageOfDataset,
+  parseTierTag,
   REF_KINDS,
   REGISTRY_HOST,
   rawTag,

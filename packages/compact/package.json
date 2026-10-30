@@ -1,0 +1,12 @@
+{
+  "name": "@domains/compact",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "Compaction (docs/architecture.md section 4.5): the input packs of one tier unit from the live set, the streaming k-way merge of packs with its second-pass check, the cut of a merge into key ranges for an Actions matrix and the assembly of their parts into one pack, the time copy of a feed or new-name tier pack, and the manifest of the result. ./node is the Node-only side: packs on disk.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./node/index.ts"
+  }
+}

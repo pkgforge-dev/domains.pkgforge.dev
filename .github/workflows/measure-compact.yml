@@ -1,0 +1,197 @@
+# DOM-023 (TODO/storage.md, its Measure bullet): the runtime, the peak memory
+# and the disk of one range merge of scripts/compact/range.mjs on a
+# GitHub-hosted runner (docs/architecture.md section 4.5, "Ranges"). Design A
+# listed it as unmeasured (its section 11 step 6).
+#
+# ⚠ Temporary: this file and scripts/compact/measure.mjs are deleted when
+# DOM-023 closes, and the result goes to docs/research/measure/DOM-023/
+# (docs/resources.md, its row).
+#
+# One job, read-only, holding no token: it pushes nothing and reads nothing
+# from GHCR. scripts/compact/measure.mjs writes synthetic input packs on the
+# runner (inputs: the fan-in, 7 day packs of a week, 24 hour packs of a day or
+# 30 day packs of a month; rows: the records of each input; overlap: the share
+# of keys also in a second input), scripts/compact/plan.mjs plans their unit
+# as one range, and range.mjs runs its two stages, count and write, each under
+# /usr/bin/time -v. measure.mjs then prints one JSON line: each stage's wall,
+# user and system time, CPU and peak resident memory, and the bytes free on the
+# work directory before and after the merge. It refuses a stage that did not
+# exit 0 and a merge whose records are not the inputs' distinct keys.
+#
+# The inputs are read from local files (--inputs), not from GHCR by range as a
+# compaction reads them: the network read is not in this measurement. A range
+# of the production plan aims at 536,870,912 B of input (DEFAULT_RANGE_BYTES);
+# the result names the input bytes, so the rows of a run can be set to match.
+#
+#   gh workflow run measure-compact.yml --repo pkgforge-dev/domains.pkgforge.dev -f dataset=names -f inputs=7 -f rows=12000000
+# Then `gh run download RUN --repo pkgforge-dev/domains.pkgforge.dev --name compact-measure` yields result.json.
+name: Measure a compaction range
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: The dataset of the synthetic packs
+        required: true
+        default: names
+        type: choice
+        options: [names, domains, feed, new-name]
+      inputs:
+        description: The fan-in, 7 day packs of a week, 24 hour packs of a day or 30 day packs of a month
+        required: true
+        default: "7"
+        type: choice
+        options: ["7", "24", "30"]
+      rows:
+        description: The records of each input pack (at most 10000000 for feed and new-name)
+        required: true
+        default: "12000000"
+        type: string
+      overlap:
+        description: The share of keys also in a second input, 0 to 1
+        required: true
+        default: "0.1"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: measure-compact
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The scripts import the workspace packages by name (@domains/pack,
+      # @domains/feed, @domains/ghcr, @domains/root). --omit=dev links the
+      # workspaces and installs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/pack'); await import('@domains/feed'); await import('@domains/ghcr'); await import('@domains/root');"
+
+      # GNU time prints the peak resident memory; the shell's own `time` does not.
+      - name: Check /usr/bin/time
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          if [ ! -x /usr/bin/time ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq time
+          fi
+          /usr/bin/time --version
+
+      # The runner's temporary disk is used when it has more room than RUNNER_TEMP.
+      - name: Choose the work directory
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/compact"
+          if mountpoint -q /mnt; then
+            mnt_free="$(node scripts/compact/measure.mjs free --dir /mnt)"
+            tmp_free="$(node scripts/compact/measure.mjs free --dir "$RUNNER_TEMP")"
+            if [ "$mnt_free" -gt "$tmp_free" ]; then
+              sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/compact
+              work=/mnt/compact
+            fi
+          fi
+          mkdir -p "$work"
+          echo "free $(node scripts/compact/measure.mjs free --dir "$work") B on $work"
+          echo "WORK=$work" >> "$GITHUB_ENV"
+
+      - name: Write the synthetic inputs
+        timeout-minutes: 60
+        env:
+          DATASET: ${{ inputs.dataset }}
+          INPUTS: ${{ inputs.inputs }}
+          ROWS: ${{ inputs.rows }}
+          OVERLAP: ${{ inputs.overlap }}
+        run: |
+          set -euo pipefail
+          node scripts/compact/measure.mjs inputs --dataset "$DATASET" --inputs "$INPUTS" --rows "$ROWS" --overlap "$OVERLAP" --out "$WORK/m"
+
+      # One range: the merge of the whole unit is the range a matrix leg runs.
+      - name: Plan the unit as one range
+        timeout-minutes: 10
+        env:
+          DATASET: ${{ inputs.dataset }}
+        run: |
+          set -euo pipefail
+          tier="$(jq -r .tier "$WORK/m/inputs.json")"
+          span="$(jq -r .span "$WORK/m/inputs.json")"
+          node scripts/compact/plan.mjs --dataset "$DATASET" --tier "$tier" --span "$span" --root "$WORK/m/root.json" --inputs "$WORK/m/in" --ranges 1 --out "$WORK/plan.json"
+
+      # Each rc is the exit code of /usr/bin/time, which is the timed command's.
+      - name: Merge the range under /usr/bin/time -v
+        id: merge
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          free_before="$(node scripts/compact/measure.mjs free --dir "$WORK")"
+          count_rc=0
+          /usr/bin/time -v -o "$WORK/time.count" node scripts/compact/range.mjs count --plan "$WORK/plan.json" --range 0 --out "$WORK/out" --inputs "$WORK/m/in" || count_rc=$?
+          cat "$WORK/time.count"
+          write_rc=0
+          if [ "$count_rc" -eq 0 ]; then
+            /usr/bin/time -v -o "$WORK/time.write" node scripts/compact/range.mjs write --plan "$WORK/plan.json" --range 0 --out "$WORK/out" --inputs "$WORK/m/in" || write_rc=$?
+            cat "$WORK/time.write"
+          fi
+          free_after="$(node scripts/compact/measure.mjs free --dir "$WORK")"
+          if [ "$count_rc" -ne 0 ] || [ "$write_rc" -ne 0 ]; then
+            echo "::error::range.mjs exited $count_rc in the count stage and $write_rc in the write stage (1 a fault, 2 could not run, 70 an internal error); no measurement"
+            exit 1
+          fi
+          mkdir -p "$WORK/result"
+          rc=0
+          node scripts/compact/measure.mjs result --inputs "$WORK/m/inputs.json" --plan "$WORK/plan.json" --out-dir "$WORK/out" \
+            --count-time "$WORK/time.count" --write-time "$WORK/time.write" \
+            --free-before "$free_before" --free-after "$free_after" > "$WORK/result/result.json" || rc=$?
+          cat "$WORK/result/result.json"
+          {
+            echo '```json'
+            cat "$WORK/result/result.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Keep the evidence
+        if: always()
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK/result"
+          for f in m/inputs.json plan.json time.count time.write; do
+            if [ -f "$WORK/$f" ]; then cp "$WORK/$f" "$WORK/result/"; fi
+          done
+          echo "RESULT_DIR=$WORK/result" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: compact-measure
+          path: ${{ env.RESULT_DIR }}
+          overwrite: true
+          retention-days: 30
+          if-no-files-found: warn

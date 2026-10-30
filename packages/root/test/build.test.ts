@@ -1,11 +1,11 @@
 // packages/root/src/build.ts: the first root, the next root, replacement,
-// rollback, the forward-only check, the re-run guard, a pack from its
-// manifest, and the sources layer. Each refusal plants one fault that only
-// the guard it names can catch. Every pack, digest, annotation and registry
-// row here is synthetic (helpers.ts).
+// a rebuild of a span under -rN (ruling 25), rollback, the forward-only check,
+// the re-run guard, a pack from its manifest, and the sources layer. Each
+// refusal plants one fault that only the guard it names can catch. Every
+// pack, digest, annotation and registry row here is synthetic (helpers.ts).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { artifactType, repoOf, tierTag } from "@domains/ghcr";
+import { artifactType, nextTierTag, repoOf, tierTag } from "@domains/ghcr";
 import { timeKey } from "@domains/pack";
 import {
   buildRoot,
@@ -263,16 +263,87 @@ test("withdrawn: a re-run's addition or replacement of a withdrawn manifest is r
     /^the addition names:names-d-20261027 \(sha256:[0-9a-f]{64}\) was withdrawn by the rollback of 2026-10-28T03:00:00Z/,
   );
   // Another manifest digest of the same span is not this guard's to refuse: it
-  // joins, and the old one stays listed. GHCR cannot hold it today, since the
-  // span's tier tag is the withdrawn pack's, write-once (docs/architecture.md
-  // section 4.7 rule 2: that conflict is open).
-  const rebuilt = pack("names", "d", "2026-10-27T00:00:00Z", { salt: "rebuilt" });
+  // joins, and the old one stays listed. The span's tag is the withdrawn
+  // pack's, write-once, so the rebuild takes it with -r2 (docs/architecture.md
+  // section 4.7 rule 2, ruling 25).
+  const rebuilt = pack("names", "d", "2026-10-27T00:00:00Z", { rebuild: 2 });
   const five = buildRoot({ live: live(four), psl: PSL_LIVE, now: "2026-10-28T04:00:00Z", replace: [{ old: merge.old, new: rebuilt }] });
   assert.deepEqual(
     five.datasets.names?.map((p) => p.manifest),
     [four.datasets.names?.[0]?.manifest, rebuilt.pack.manifest],
   );
   assert.deepEqual(five.withdrawn, four.withdrawn);
+});
+
+test("rebuild: a pack replaced by its rebuild, the same span and dataset under -rN and another manifest, passes, and so does a rebuild of the rebuild", () => {
+  const day26 = pack("names", "d", "2026-10-26T00:00:00Z");
+  const base = buildRoot({ live: live(first()), psl: PSL_LIVE, now: "2026-10-28T01:00:00Z", add: [day26, pack("names", "d", "2026-10-27T00:00:00Z")] });
+  const r2 = pack("names", "d", "2026-10-26T00:00:00Z", { rebuild: 2 });
+  assert.equal(r2.pack.tag, "names-d-20261026-r2");
+  assert.notEqual(r2.pack.manifest, day26.pack.manifest);
+  const two = buildRoot({ live: live(base), psl: PSL_LIVE, now: "2026-10-28T02:00:00Z", replace: [{ old: [day26.pack.manifest], new: r2 }] });
+  assert.deepEqual(
+    two.datasets.names?.map((p) => p.tag),
+    ["names-d-20261026-r2", "names-d-20261027"],
+  );
+  assert.equal(two.as_of, base.as_of);
+  assert.deepEqual(two.corpus_since, base.corpus_since);
+  // A replacement withdraws nothing: only a rollback lists a manifest.
+  assert.deepEqual(two.withdrawn, []);
+  const r3 = pack("names", "d", "2026-10-26T00:00:00Z", { rebuild: 3 });
+  const three = buildRoot({ live: live(two), psl: PSL_LIVE, now: "2026-10-28T03:00:00Z", replace: [{ old: [r2.pack.manifest], new: r3 }] });
+  assert.deepEqual(
+    three.datasets.names?.map((p) => p.tag),
+    ["names-d-20261026-r3", "names-d-20261027"],
+  );
+  // A re-run of root 2's promotion: the re-run guard drops the replacement the live root names.
+  assert.deepEqual(
+    dropSuperseded(two, [], [{ old: [day26.pack.manifest], new: r2 }]).dropped.map((d) => [d.tag, d.why]),
+    [["names-d-20261026-r2", "the live root names it (datasets.names)"]],
+  );
+  // The rebuild added beside the build it rebuilds, not in its place, is refused: two compacted packs of one span never overlap.
+  refusal(
+    () => buildRoot({ live: live(base), psl: PSL_LIVE, now: "2026-10-28T02:00:00Z", add: [r2] }),
+    "live-set",
+    /names:names-d-20261026 \(d, .*\) and names:names-d-20261026-r2 \(d, .*\) overlap; two compacted packs never do/,
+  );
+});
+
+test("rebuild: after a rollback withdrew names-d-20261026, a promotion that replaces nothing adds names-d-20261026-r2 for the same span, and the withdrawn manifest stays refused", () => {
+  const day25 = pack("names", "d", "2026-10-25T00:00:00Z");
+  const day26 = pack("names", "d", "2026-10-26T00:00:00Z");
+  const two = buildRoot({ live: live(first()), psl: PSL_LIVE, now: "2026-10-28T01:00:00Z", add: [day25] });
+  const three = buildRoot({ live: live(two), psl: PSL_LIVE, now: "2026-10-28T02:00:00Z", add: [day26] });
+  // Root 3's day 26 is found bad: the rollback to root 2 withdraws it.
+  const four = rollbackRoot({ live: live(three), target: two, between: [], psl: PSL_LIVE, now: "2026-10-28T03:00:00Z" });
+  assert.deepEqual(four.withdrawn, [{ manifest: day26.pack.manifest, at: "2026-10-28T03:00:00Z" }]);
+  assert.deepEqual(
+    four.datasets.names?.map((p) => p.tag),
+    ["names-d-20261025"],
+  );
+  // GHCR keeps names-d-20261026, write-once: the rebuild takes the next free tag of the span.
+  const tag = nextTierTag("names", "d", "2026-10-26T00:00:00Z", ["names-d-20261025", "names-d-20261026"]);
+  assert.equal(tag, "names-d-20261026-r2");
+  const r2 = pack("names", "d", "2026-10-26T00:00:00Z", { rebuild: 2 });
+  assert.equal(r2.pack.tag, tag);
+  const five = buildRoot({ live: live(four), psl: PSL_LIVE, now: "2026-10-28T04:00:00Z", add: [r2] });
+  assert.deepEqual(
+    five.datasets.names?.map((p) => [p.tag, p.manifest]),
+    [
+      ["names-d-20261025", day25.pack.manifest],
+      ["names-d-20261026-r2", r2.pack.manifest],
+    ],
+  );
+  assert.equal(five.as_of, "2026-10-27T00:00:00Z");
+  // The withdrawn entry stays, and the root reads back whole.
+  assert.deepEqual(five.withdrawn, four.withdrawn);
+  assert.equal(validateRoot(JSON.parse(JSON.stringify(five))).root_seq, 5);
+  // A re-run of root 3's promotion still cannot put the withdrawn day 26 back.
+  refusal(
+    () => buildRoot({ live: live(five), psl: PSL_LIVE, now: "2026-10-28T05:00:00Z", add: [day26] }),
+    "withdrawn",
+    new RegExp(`^the addition names:names-d-20261026 \\(${day26.pack.manifest}\\) was withdrawn by the rollback of 2026-10-28T03:00:00Z: a re-run cannot put it back`),
+  );
 });
 
 test("withdrawn: every root drops an entry more than 31 days before its created, and the pack it named may then join again", () => {

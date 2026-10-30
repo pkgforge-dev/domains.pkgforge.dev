@@ -21,7 +21,11 @@
 //   1   top-level `permissions: {}`; no `write-all` or `read-all` anywhere
 //   2   no `contents: write`, `pages: write` or `id-token: write` in any job
 //   3   any other write grant only in a job JOB_GRANTS names for it; a job that
-//       calls the local root-promote.yml may hold ROOT_PROMOTE_GRANTS
+//       calls the local root-promote.yml may hold ROOT_PROMOTE_GRANTS. A job
+//       that holds packages: write runs on main alone: its `if:` holds
+//       `github.ref == 'refs/heads/main'` as one operand of a top-level `&&`,
+//       with no top-level `||` (onMainOnly). A job that calls root-promote.yml
+//       is held by the called file's own job, which holds packages: write.
 //   4   `defaults.run.shell: bash`, and no job default that is not bash
 //   5   `timeout-minutes` on every job, except a reusable workflow call
 //   6   a job's `uses:` is ./.github/workflows/<name>.y(a)ml or a pin; a
@@ -134,6 +138,12 @@ const NEVER_WRITE = ['contents', 'pages', 'id-token'];
 // job's last step stands in for; until then no step of the job uses it, so
 // neither the job nor a caller holds it.
 export const ROOT_PROMOTE_GRANTS = ['packages'];
+// Rule 3: the grants a job holds on main alone. packages: write writes GHCR,
+// the only copy of the data (docs/architecture.md section 4), so a dispatch on
+// another branch runs code that main never reviewed against it. A review of
+// 2026-10-30 planted the deletion of `github.ref == 'refs/heads/main'` from the
+// assemble jobs of a copy of the compaction workflows, and every rule passed it.
+export const MAIN_ONLY_GRANTS = ['packages'];
 const RUNNER = 'ubuntu-24.04';
 const ROOT_WRITER = 'root-writer';
 
@@ -141,7 +151,7 @@ export const RULES = {
   parse: 'the file parses as one YAML mapping with a jobs mapping',
   1: 'top-level permissions: {}',
   2: 'no contents, pages or id-token write',
-  3: 'a write grant only in a job JOB_GRANTS names',
+  3: 'a write grant only in a job JOB_GRANTS names, and packages: write on main alone',
   4: 'defaults.run.shell: bash',
   5: 'timeout-minutes on every job',
   6: 'listed pinned actions, checkout without credentials',
@@ -264,6 +274,47 @@ function triggers(on) {
   return [];
 }
 
+// The operands of `op` (`&&` or `||`) at the top level of an expression:
+// outside parentheses and outside single-quoted strings, where GitHub's
+// expressions keep their literals.
+function operands(expr, op) {
+  const out = [];
+  let depth = 0;
+  let quoted = false;
+  let from = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const c = expr[i];
+    if (c === "'") quoted = !quoted;
+    else if (quoted) continue;
+    else if (c === '(') depth += 1;
+    else if (c === ')') depth -= 1;
+    else if (depth === 0 && expr.startsWith(op, i)) {
+      out.push(expr.slice(from, i));
+      from = i + op.length;
+      i += op.length - 1;
+    }
+  }
+  out.push(expr.slice(from));
+  return out.map((s) => s.trim());
+}
+
+// Rule 3: the test that keeps a job on main, either way round, in any case
+// (GitHub compares strings and reads context names without regard to case),
+// in parentheses or not.
+const MAIN_TEST = /^\(*\s*(?:github\.ref\s*==\s*'refs\/heads\/main'|'refs\/heads\/main'\s*==\s*github\.ref)\s*\)*$/i;
+
+// Whether a job's `if:` keeps it on main: with or without ${{ }}, the main test
+// is one operand of the top-level `&&` chain, and the expression has no
+// top-level `||`, which would let another operand run the job anywhere.
+export function onMainOnly(cond) {
+  if (typeof cond !== 'string') return false;
+  let e = cond.trim();
+  const wrapped = e.match(/^\$\{\{([\s\S]*)\}\}$/);
+  if (wrapped) e = wrapped[1].trim();
+  if (operands(e, '||').length > 1) return false;
+  return operands(e, '&&').some((o) => MAIN_TEST.test(o));
+}
+
 const stepsOf = (job) => (Array.isArray(job.steps) ? job.steps.map((s, i) => [i, s]).filter(([, s]) => isObj(s)) : []);
 const runsOf = (job) => stepsOf(job).filter(([, s]) => typeof s.run === 'string');
 
@@ -286,6 +337,8 @@ function checkPermissions(ctx, id, job) {
       ctx.add(3, line, `job ${id} holds ${scope}: write, which JOB_GRANTS gives to no job; add a row with the entry that needs it`);
     } else if (!JOB_GRANTS[s].includes(id) && !(callsRootPromote && ROOT_PROMOTE_GRANTS.includes(s))) {
       ctx.add(3, line, `job ${id} holds ${scope}: write, and JOB_GRANTS names only ${JOB_GRANTS[s].join(', ')}; rename the job or add it with the entry that needs it`);
+    } else if (MAIN_ONLY_GRANTS.includes(s) && !callsRootPromote && !onMainOnly(job.if)) {
+      ctx.add(3, line, `job ${id} holds ${scope}: write and can run off main; give it an if: that holds github.ref == 'refs/heads/main' joined by && at the top level, with no top-level ||`);
     }
   }
 }

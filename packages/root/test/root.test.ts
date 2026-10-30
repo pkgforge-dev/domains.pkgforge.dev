@@ -288,6 +288,43 @@ test("pack: a compacted pack spans its whole tier unit, aligned, under its own t
   refused(rederive(repo), "pack", /a feed pack lives in pkgforge-dev\/domains\.pkgforge\.dev\/feed/);
 });
 
+test("pack: a compacted pack's tag is its span's tag, or a rebuild of it with -rN, N from 2; every other tag is refused", () => {
+  // Feed's day 2026-10-27 of the sample, under `tag`.
+  const plant = (tag: string) => {
+    const j = plain(sample());
+    datasetsOf(j).feed[0] = { ...(datasetsOf(j).feed[0] as PackEntry), tag };
+    return rederive(j);
+  };
+  // A writer and a reader (the Worker's) accept each build of the span alike.
+  for (const strict of [true, false]) {
+    for (const tag of ["feed-d-20261027", "feed-d-20261027-r2", "feed-d-20261027-r3", "feed-d-20261027-r10"]) {
+      assert.equal(validateRoot(plant(tag), { strict }).datasets.feed?.[0]?.tag, tag);
+    }
+  }
+  // The rebuild of another span, tier or dataset, and a tag that is no tier tag.
+  for (const tag of ["feed-d-20261028-r2", "feed-h-2026102700-r2", "new-name-d-20261027-r2", "names-d-20261027-r2", "feed-d-20261027x", "latest"]) {
+    for (const strict of [true, false]) {
+      refused(
+        plant(tag),
+        "pack",
+        new RegExp(`the tag of a feed pack of tier d from 2026-10-27T00:00:00Z is feed-d-20261027, not ${tag}; a rebuild of the span adds -rN to it, N from 2 \\(ruling 25\\)$`),
+        strict,
+      );
+    }
+  }
+  // A suffix of another form: checkTag refuses it before the span is read.
+  refused(plant("feed-d-20261027-r1"), "pack", /feed-d-20261027-r1 carries -r1: a rebuild of a span is -r2, -r3 and up, with no leading zero, and the first build carries no suffix/);
+  refused(plant("feed-d-20261027-r02"), "pack", /feed-d-20261027-r02 carries -r02: a rebuild of a span is -r2/);
+  refused(plant("feed-d-20261027-r0"), "pack", /feed-d-20261027-r0 carries -r0: a rebuild of a span is -r2/);
+  refused(plant("feed-d-20261027-r2-r3"), "pack", /carries the rebuild suffix -r3, which only a tier tag takes/);
+  // A segment keeps its own form: a rebuild suffix on its tag is refused.
+  const j = plain(sample());
+  const seg = pack("names", "seg", "2026-10-28T05:00:00Z", { sources: ["thc-ct"] }).pack;
+  const names = datasetsOf(j).names;
+  names.splice(names.findIndex((p) => p.tag === "names-h-2026102805") + 1, 0, { ...seg, tag: `${seg.tag}-r2` });
+  refused(rederive(j), "pack", /thc-ct\.20261028t050000z\.20261028t051000z-r2 carries the rebuild suffix -r2, which only a tier tag takes/);
+});
+
 test("pack: a week, a month and a year span their calendar unit, written here as literals, never computed", () => {
   // One pack of `tier` from `start` to `end`, alone in a first root.
   const one = (tier: "w" | "m" | "y", start: string, end: string) => {
@@ -322,6 +359,34 @@ test("pack: a segment lives in the obs package, and its span ends after it start
   assert.equal(validateRoot(plant({})).counts.names?.packs, 27);
   refused(plant({ repo: "pkgforge-dev/domains.pkgforge.dev/names" }), "pack", /a segment lives in pkgforge-dev\/domains\.pkgforge\.dev\/obs, not pkgforge-dev\/domains\.pkgforge\.dev\/names/);
   refused(plant({ span: { start: "2026-10-28T05:00:00Z", end: "2026-10-28T05:00:00Z" } }), "pack", /span 2026-10-28T05:00:00Z to 2026-10-28T05:00:00Z does not end after it starts/);
+});
+
+test("pack: a tag that is not a string is refused, a segment's as a compacted pack's, by a writer and a reader alike", () => {
+  // A segment's tag meets checkTag alone: no tier tag is compared with it.
+  const segment = (tag: unknown) => {
+    const j = plain(sample());
+    const s = { ...pack("names", "seg", "2026-10-28T05:00:00Z", { sources: ["thc-ct"] }).pack, tag };
+    const names = datasetsOf(j).names;
+    names.splice(names.findIndex((p) => p.tag === "names-h-2026102805") + 1, 0, s as PackEntry);
+    return rederive(j);
+  };
+  const day = (tag: unknown) => {
+    const j = plain(sample());
+    datasetsOf(j).feed[0] = { ...(datasetsOf(j).feed[0] as PackEntry), tag } as PackEntry;
+    return rederive(j);
+  };
+  const seg = "thc-ct.20261028t050000z.20261028t051000z";
+  // A RegExp would read each of these as a string that matches the tag
+  // grammar: "null", "12", "true", and the one tag the list holds.
+  for (const strict of [true, false]) {
+    assert.equal(validateRoot(segment(seg), { strict }).counts.names?.packs, 27);
+    refused(segment(null), "pack", /^datasets\.names\[\d+\]: null is not a tag/, strict);
+    refused(segment(12), "pack", /^datasets\.names\[\d+\]: 12 is not a tag/, strict);
+    refused(segment(true), "pack", /^datasets\.names\[\d+\]: true is not a tag/, strict);
+    refused(segment([seg]), "pack", /^datasets\.names\[\d+\]: \["thc-ct\.20261028t050000z\.20261028t051000z"\] is not a tag/, strict);
+    refused(day(null), "pack", /^datasets\.feed\[0\]: null is not a tag/, strict);
+    refused(day(["feed-d-20261027"]), "pack", /^datasets\.feed\[0\]: \["feed-d-20261027"\] is not a tag/, strict);
+  }
 });
 
 test("pack: its bytes, its key bounds and its sources are held to their rules", () => {

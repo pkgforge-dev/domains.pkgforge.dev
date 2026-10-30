@@ -6,7 +6,7 @@ is the only one.
 
 ## State
 
-- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), is the commit that carries this record.
+- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), is the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 25 on 2026-10-29), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 40 open, 6 partial, 0 blocked, 16 done.**
+**62 items. 39 open, 7 partial, 0 blocked, 16 done.**
 
 ## What this session did
 
@@ -75,10 +75,16 @@ is the only one.
 - Asked the operator three design questions from wave 4's findings and recorded the answers as rulings 23 to 25: a quarantined day is served but never as new (DOM-029); a day no source covers is a hole named in `gaps`, not an empty pack (DOM-029); a rebuilt tier pack takes the suffix `-rN` on its tag (DOM-023).
 - Moved biome to 2.6.4 (Renovate #1); its new rule `useMathMinMax` flags four string reductions, each now carrying a `biome-ignore` with its reason. Moved Node to 26.13.0 and `@types/node` to 26.6.6 (#2); the local gate ran on Node 26.7.0, and `ci.yml` runs the new version. Closed #3 (`@cloudflare/workers-types` 5.20261029.1) under ruling 20 with its reason: the types stay at 5.20261013.1, the compatibility date the pinned workerd runs, and DOM-030 moves wrangler, the date and the types together.
 - Closed DOM-011 on 2026-10-30 from the chain's 9 runs: `PASS`, 48 of 48 slots, Geomys never throttled with the contact User-Agent, and a reliable set of 12 shards (Sycamore, Willow, Tuscolo and Gouda, 2026h2 to 2027h2) growing by 67.2 million entries a day. THC's day holds 91% to 94% of the four logs' names and Kafka about half, so the tiles are a source of their own. DOM-037 carries the reliable set; DOM-012 carries the chain's short tail runs as a Found.
+- Built the fifth wave on 2026-10-29 and 2026-10-30, the compaction (DOM-023), now partial:
+  - `packages/compact/` and the CLIs of `scripts/compact/`: the plan of a tier unit, the merge by key ranges in a matrix, the assembly, the hour pack of `feed`, and the day job that builds the `domains` and `feed` day packs and the ledger filter.
+  - The four compaction workflows, `compact-daily.yml` to `compact-yearly.yml`, and `measure-compact.yml`.
+  - The suffix `-rN` of ruling 25 in `packages/ghcr` and `packages/root`, the carry of the suspect verdicts in `packages/feed`, `docs/format.md` sections 15 and 16, and the half of rule 3 of the workflow check that keeps a job with `packages: write` on `main`.
+- Ran the three lenses on wave 5 and fixed their findings in two rounds. A verification then planted 86 mutants: 79 killed, 2 equivalent, and 5 gaps. A third round answered the gaps with tests or by deleting the clause, and no mutant was planted after it. Decided D1, D2 and D3 under ruling 20, each a Decision of DOM-023: a unit that starts before `corpus_since` is never built, `new-name` has no hour pack, and a rebuild finds the build that already holds its bytes. `npm run gate` exited 0 at 2026-10-30T05:30:42Z with 1,573 tests: 1,570 pass and 3 platform skips of this Windows machine. No compaction has run on GitHub.
+- Recorded what the compaction leaves to other entries, a Found or a Decision in each: DOM-014, DOM-024, DOM-029, DOM-034, DOM-036, DOM-037, DOM-038, DOM-041, DOM-042 and DOM-043.
 
 ## What is in progress
 
-Six entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Seven entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
@@ -88,6 +94,7 @@ Six entries are partial. Each one's Waiting line names the instant its result is
 | DOM-007 | the `/range` deploy, the cache check and the single reads now; the loads at 20, 50 and 100 requests a second after `crons = []` |
 | DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
+| DOM-023 | the first scheduled run of `compact-daily.yml` and one run of `measure-compact.yml` after the push; then its live Prove, once DOM-024's `state` guard moves `ledger-delta` and DOM-029's backfill has put THC's days in the root |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
 
@@ -97,7 +104,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-012 closes after its 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
-3. Compaction: DOM-023, with its Decision of 2026-10-29T15:18Z (a rebuild suffix on tier tags) and the duties its Found of 2026-10-29T15:30Z lists.
+3. Compaction: DOM-023 is partial, built and gated, and has not run on GitHub. After the push, dispatch `measure-compact.yml` and record its result. Its live Prove waits on DOM-024's `state` guard and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
 4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
 6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
@@ -124,7 +131,9 @@ DOM-062's zone rule is settled: the operator applied the exclusion of `domains.p
 
 Former Operator actions 1 (a wrangler login: present, on the operator's account (its name is not recorded: it carries the workers.dev subdomain), R2 enabled, MEASURED 2026-10-28T10:19:05Z) and 3 (the default workflow permission: `read` since 2026-10-28T10:18:52Z) are settled. The deletion of the probe Worker and its bucket is the agent's under ruling 14 (DOM-056).
 
-**Design questions:** none. The two of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence. The questions of wave 4 were decided on 2026-10-29 under ruling 20, each in its entry: the time copy in place of `tidx` (DOM-022), no overlapping packs in `feed` and `new-name` and the `withdrawn` list (DOM-020), and the conflict of a rebuilt tier pack with its write-once tag, decided as a rebuild suffix on tier tags that DOM-023 builds (DOM-023's Decision of 2026-10-29T15:18Z, `docs/architecture.md` section 4.7 rule 2).
+**Design questions:** none. DOM-029's question, whether a sighting by a quarantined source stops a later sighting of the domain being new, was decided on 2026-10-30 under ruling 20: yes, as `basePacks` and `rebuildLedger` of `packages/compact/src/daily.ts` do today (DOM-029's Decision of 2026-10-30T09:12Z).
+
+The two design questions of 2026-10-28 and 2026-10-29 were answered on 2026-10-29 (`TODO/RULES.md` §5, rulings 18 and 19): the group `root-writer` lives in `root-promote.yml`, and an RDAP creation date before 2026 sets `suspect` and is not stored as evidence. The questions of wave 4 were decided on 2026-10-29 under ruling 20, each in its entry: the time copy in place of `tidx` (DOM-022), no overlapping packs in `feed` and `new-name` and the `withdrawn` list (DOM-020), and the conflict of a rebuilt tier pack with its write-once tag, decided as a rebuild suffix on tier tags that DOM-023 builds (DOM-023's Decision of 2026-10-29T15:18Z, `docs/architecture.md` section 4.7 rule 2). The other questions of wave 5 were decided on 2026-10-30 under ruling 20: D1, D2 and D3 of DOM-023, and the domains segments of the live CT sources (DOM-036, DOM-037).
 
 **Rulings asked for:** none. The four open points of 2026-10-27 were answered on 2026-10-28 (`TODO/RULES.md` §5, rulings 14 to 17), and the questions of 2026-10-29 the same day (rulings 18 to 22, then 23 to 25 on wave 4's findings).
 

@@ -35,7 +35,8 @@
 // The live-set rule of section 4.5, as this package holds it, per dataset:
 //   - a compacted pack (tier h, d, w, m or y) spans exactly its tier unit,
 //     aligned (an hour, a day, an ISO week from Monday, a month, a year), and
-//     its tag is tierTag(dataset, tier, start);
+//     its tag is tierTag(dataset, tier, start), or that tag with -rN, N from
+//     2, for a rebuild of the span (ruling 25: a tag is write-once);
 //   - two compacted packs never overlap;
 //   - two packs that share a source never overlap: a merge that left the packs
 //     it replaced in the set is refused here;
@@ -48,7 +49,7 @@
 //     repository and tag, and no manifest digest appears twice in the root.
 //
 // Runs in Node and in workerd alike: it imports nothing from `node:`.
-import { checkTag, LayoutError, MAX_SOURCE_ID, NAMESPACE, PACKAGES, packageOfDataset, repoOf, SOURCE_ID, TIER_DATASETS, TIERS, type TierDataset, tierTag } from "@domains/ghcr";
+import { checkTag, LayoutError, MAX_SOURCE_ID, NAMESPACE, PACKAGES, packageOfDataset, parseTierTag, repoOf, SOURCE_ID, TIER_DATASETS, TIERS, type TierDataset, tierTag } from "@domains/ghcr";
 import { DATASET_FEED_TIME, DATASET_NEW_NAME_TIME, IDX_HEADER_BYTES, PART_HEADER_BYTES } from "@domains/pack";
 import { RootError } from "./errors.ts";
 
@@ -271,7 +272,16 @@ export function validatePack(dataset: TierDataset, v: unknown, at: string, stric
       throw e;
     }
     if (end !== tierEnd(tier, start)) throw fail(`a pack of tier ${tier} spans one unit: ${isoOf(start)} to ${isoOf(tierEnd(tier, start))}, not to ${isoOf(end)}`);
-    if (v.tag !== tag) throw fail(`the tag of a ${dataset} pack of tier ${tier} from ${isoOf(start)} is ${tag}, not ${v.tag}`);
+    // The span's tag, or a rebuild of the span: that tag with -rN, N from 2
+    // (ruling 25). checkTag above refused a suffix of another form.
+    let given: string | null;
+    try {
+      given = parseTierTag(v.tag).base;
+    } catch (e) {
+      if (!(e instanceof LayoutError)) throw e;
+      given = null;
+    }
+    if (given !== tag) throw fail(`the tag of a ${dataset} pack of tier ${tier} from ${isoOf(start)} is ${tag}, not ${v.tag}; a rebuild of the span adds -rN to it, N from 2 (ruling 25)`);
   }
   if (typeof v.manifest !== "string" || !DIGEST.test(v.manifest)) throw fail("manifest is not a sha256: digest");
   if (!isObj(v.pack) || typeof v.pack.sha256 !== "string" || !HEX64.test(v.pack.sha256) || !isWhole(v.pack.bytes)) {

@@ -735,7 +735,9 @@ Without `time`, the rows stream to the key copy, none is held, and a
 each pack of the tiers `d`, `w`, `m` and `y` of `feed` and `new-name`, and
 `readFeed` refuses such a pack without one (section 14.4). The memory an
 in-memory sort of a `w`, `m` or `y` pack takes is not measured, nor is the size
-of an hour pack, which is read from its key copy and a sort.
+of an hour pack of `feed`, which is read from its key copy and a sort.
+`new-name` has no hour pack: it enters only through the exact day pack of
+DOM-041 (`docs/architecture.md` section 4.5).
 
 ### 14.4 A read in time order
 
@@ -922,3 +924,193 @@ the time copy is 0.982 to 1.104 of the key copy's bytes, so a pack with both is
 1.982 to 2.104 times the key copy alone. These are bytes a row of a day pack
 of the sizes measured; the rows a day of `feed` and `new-name` are not
 measured.
+
+## 15. The provisional filter, DLBF, and its delta, DLBD
+
+The hourly job asks one question of each registrable domain it meets: did any
+source see it before? The `domains` packs answer exactly, and the daily job
+asks them (`exactNew` of `packages/ledger`). The hourly job asks two smaller
+objects instead: a Bloom filter of every domain of the table, `DLBF`, and an
+exact sorted set of the hashes of the domains first seen since the filter
+was built, `DLBD`. Neither is a pack. The reference code is
+`packages/ledger/src/filter.ts`; its reader runs in Node and in workerd.
+
+| Object | Tag of the package `state` | File and layer title | Written by |
+| --- | --- | --- | --- |
+| The filter | `ledger-filter-YYYYMMDD`, write-once: the table through the end of that day | `filter.dlbf` | `scripts/compact/day.mjs` |
+| The delta | `ledger-delta`, which moves | `delta.dlbd` | `scripts/compact/day.mjs` (rebased) and `scripts/compact/hour.mjs` (each hour's new domains added) |
+
+The scripts write the files and print the tags, and push nothing. A
+workflow pushes the filter and does not push the delta (READ
+`.github/workflows/compact-daily.yml`, the job `push`, and
+`grep -rn hour.mjs .github/workflows`, which finds nothing,
+2026-10-30T04:08:07Z):
+
+- The step "Push the ledger filters" of the job `push` of
+  `compact-daily.yml` pushes each day's `state:ledger-filter-YYYYMMDD` once,
+  through `scripts/ghcr/push.mjs`. The artifact type is
+  `application/vnd.pkgforge.domains.state.v1`, the one layer is
+  `filter.dlbf`, `created` is the end of the day, and the annotations are
+  `dev.pkgforge.domains.sha256` and `dev.pkgforge.domains.run`.
+- The step skips the filter of a day whose `domains` unit the run planned
+  and whose leg of `assemble` wrote no replacement: a filter is written
+  once, and one built beside a pack that failed its checks would never be
+  replaced.
+- No workflow pushes `ledger-delta`. The next step, "Move ledger-delta (a
+  no-op until DOM-024)", moves nothing and fails the job when a filter that
+  the job pushed came with a delta, until the `state` guard of DOM-024
+  replaces it.
+- No workflow runs `scripts/compact/hour.mjs`, so no workflow adds an hour's
+  new domains to the delta.
+
+### 15.1 The hash
+
+Both objects store a 64-bit hash of a key, never the key. The key is a
+reversed registrable domain (section 1), as bytes. The hash is the first 8
+bytes of MurmurHash3_x86_128 of the key with seed 0, read as a little-endian
+`u64`: `lo` is the first output word, `hi` the second, and the value is
+`hi * 2^32 + lo` (`hashKey` of `packages/ledger/src/hash.ts`). A test of
+`packages/ledger` holds the function to SMHasher's verification value
+`0xB3ECE62A`. Both headers name the hash by its id, `1`. A reader refuses
+another id, because a filter of one hash answers wrongly for another.
+
+### 15.2 The filter
+
+| Offset | Size | Field | Value |
+| --- | --- | --- | --- |
+| 0 | 4 | magic | `DLBF`: `44 4c 42 46` |
+| 4 | 1 | version | `1` |
+| 5 | 1 | hash id | `1` (section 15.1) |
+| 6 | 1 | `k` | the hashes, and the partitions: 1 to 32 |
+| 7 | 1 | reserved | zero |
+| 8 | 4 | `P` | `u32`, the bits of one partition: a multiple of 64, at least 64 |
+| 12 | 8 | keys | `u64`, the number of adds, at most 2^53 - 1 |
+| 20 | 8 | `as_of` | `u64`, seconds since 2026-01-01T00:00:00Z: the time through which the table the filter was built from is complete |
+| 28 | 4 | bits CRC | the CRC-32 (section 1) of the bits |
+| 32 | 4 | header CRC | the CRC-32 of bytes 0 to 31 |
+| 36 | `k * P / 8` | bits | the partitions, back to back |
+
+Bit `b` of partition `i` is bit `b & 7` of byte `i * P / 8 + (b >>> 3)` of
+the bits. A key of hash `(hi, lo)` sets one bit in each partition: bit
+`(lo + i * hi) mod P` of partition `i`, for `i` from 0 to `k - 1`. The filter
+holds a key when every one of those `k` bits is set. It has no false
+negative. Its false positives are about `(1 - e^(-n/P))^k` for `n` keys. The
+writer of `packages/ledger` takes 10 bits a key and 7 hashes, so
+`P = max(64, ceil(10 * n / 7 / 64) * 64)` for `n` expected keys, and the rate
+is about 0.82%. MEASURED by DOM-021: 8,279 false positives in 1,000,000
+absent keys, and 12,500,076 B for 10,000,000 keys
+(`docs/research/measure/DOM-021/bench-10M.json`, 2026-10-29T01:01:23Z).
+
+### 15.3 The delta
+
+| Offset | Size | Field | Value |
+| --- | --- | --- | --- |
+| 0 | 4 | magic | `DLBD`: `44 4c 42 44` |
+| 4 | 1 | version | `1` |
+| 5 | 1 | hash id | `1` (section 15.1) |
+| 6 | 2 | reserved | zero |
+| 8 | 4 | `n` | `u32`, the hashes |
+| 12 | 8 | filter `as_of` | `u64`, the `as_of` of the filter the delta pairs with |
+| 20 | 4 | filter bits CRC | the bits CRC of that filter |
+| 24 | 4 | hashes CRC | the CRC-32 of the hashes |
+| 28 | 4 | header CRC | the CRC-32 of bytes 0 to 27 |
+| 32 | `8 * n` | hashes | each a `u64` of section 15.1, ascending by value, none twice |
+
+The delta is exact: it holds a hash or it does not. It names the filter it
+pairs with by that filter's `as_of` and bits CRC. `ProvisionalFilter` of
+`packages/ledger` holds a domain when the filter or the delta holds it, and
+refuses a delta that names another filter (`LedgerError` `pair`): a delta of
+an older filter lacks the domains the newer filter's table gained, and a
+delta of a newer one lacks those first seen between the two.
+
+### 15.4 The daily rebuild
+
+The daily job builds a new filter from every `domains` pack through the end
+of its day, with `as_of` that end. It does not empty the delta. It rebases
+it: the new delta pairs with the new filter and keeps each hash the new
+filter does not hold (`HashDelta.rebase`). Those are the domains the hour jobs
+saw after the day ended. A hash the new filter holds leaves the delta: the
+table holds its domain, or the hash is a false positive of the new filter,
+which the filter answers the same way. `scripts/compact/day.mjs` holds the
+live delta to the live filter before it reads a pack, refuses a live filter
+whose `as_of` is after the end of its day, and writes nothing when that
+`as_of` is the end of its day.
+
+### 15.5 What a reader checks
+
+`BloomFilter.decode` and `HashDelta.decode` of `packages/ledger` refuse,
+with `LedgerError`:
+
+| Code | Check |
+| --- | --- |
+| `format` | Fewer bytes than the header, a magic, version or hash id it does not know, a reserved byte that is not zero, `k` outside 1 to 32, a `P` that is not a multiple of 64 of at least 64, a `u64` above 2^53 - 1, a length other than the header gives, or delta hashes that do not ascend. Each length is compared before anything is allocated. |
+| `crc` | The header CRC or the CRC of the bits or the hashes does not match. |
+| `pair` | A delta given with a filter it does not name. |
+
+`scripts/compact/hour.mjs` also refuses a filter whose `as_of` is after the
+start of its hour (`CompactError` `plan`): that filter holds the hour's own
+domains and would judge every one of them old.
+
+### 15.6 A worked example
+
+One filter of one key, `com.example`, as of 2026-10-27T00:00:00Z (`as_of`
+25,833,600), and a delta of one key, `com.fresh-synthetic`, paired with it.
+Both keys are synthetic. MEASURED 2026-10-29T22:24:11Z and 22:24:22Z, Node
+v26.7.0: `BloomFilter.forKeys(1, { asOf: 25833600 })`, one `add` of
+`hashKey("com.example")`, and `encode`; `HashDelta.empty` of that filter, one
+`add` of `hashKey("com.fresh-synthetic")`, and `encode`, each through
+`node --input-type=module -e` with an import of `@domains/ledger`. The hash of
+`com.example` is `441c49c88c09f832`, so `lo` is `0x8c09f832` and `hi` is
+`0x441c49c8`. With `P` 64 and `k` 7 the bits are 50, 58, 2, 10, 18, 26 and 34
+of the partitions 0 to 6. The filter is 92 bytes:
+
+```text
+444c4246 01 01 07 00 40000000 0100000000000000 80308a0100000000 12084740 3a54dabe
+0000000000000400 0000000000000004 0400000000000000 0004000000000000
+0000040000000000 0000000400000000 0000000004000000
+```
+
+The delta is 40 bytes. Its one hash is `df22c50638d2143e`, and its filter
+fields repeat the filter's `as_of` and bits CRC:
+
+```text
+444c4244 01 01 0000 01000000 80308a0100000000 12084740 8aea82ab 09a2fe31
+3e14d23806c522df
+```
+
+The spaces split the fields of sections 15.2 and 15.3. The file holds none.
+
+## 16. The day summary, `summary.json`
+
+A day pack of `feed` carries one more layer, `summary.json`, of media type
+`application/json` (`docs/architecture.md` section 4.2). It counts the rows of
+the pack by suffix and by source, so `GET /v1/suffixes` of DOM-033 sums the
+layers of a window's days and reads no block. `SummaryCounter` of
+`packages/compact/src/daily.ts` writes it, and `scripts/compact/day.mjs` adds
+it to the manifest after the pack's own layers, as an `extra` layer of
+`packManifest` (`packages/compact/src/manifest.ts`), which refuses a title of
+the pack's own layers and a title given twice. A reader of the pack ignores
+it (section 2).
+
+```json
+{"format":"domains.feed-summary.v1","day":"2026-10-27","rows":5,"suffixes":{"com":{"new_registrable":3,"suspect":0,"by_source":{"isc-new":1,"oi-nrd":1,"thc-ct":1}},"com.np":{"new_registrable":1,"suspect":0,"by_source":{"oi-nrd":1,"thc-ct":1}},"net":{"new_registrable":1,"suspect":1,"by_source":{"oi-nrd":1}}}}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `format` | `domains.feed-summary.v1`. A reader refuses a format it does not know. |
+| `day` | The day of the pack, `YYYY-MM-DD`. |
+| `rows` | The rows of the pack: the sum of `new_registrable` over the suffixes. |
+| `suffixes` | One entry for each ICANN public suffix that a row of the pack is under, by its name (`com.np`). |
+| `new_registrable` | The rows under the suffix. A row is one registrable domain, new on the day by the exact join. |
+| `suspect` | The rows under the suffix whose `feed_flags` hold `suspect` (section 5.4). The default feed hides them. |
+| `by_source` | For each source id, the rows under the suffix that carry its bit. A row of two sources counts once under each. |
+
+The suffix of a row is its registrable domain less the first label: the key
+less its last label, as a name. `np.com.example` is `example.com.np`, under
+`com.np`. No list is read, because the key of a `feed` row is a registrable
+domain under the PSL of the pack. Every object holds its keys in ascending
+order, and the layer is compact JSON with one final newline, so one day gives
+one byte string. The example above is the summary of the test
+`daily: the day pack holds the domains the exact join keeps with since` of
+`packages/compact/test/daily.test.ts`, whose keys and sources are synthetic.

@@ -1,0 +1,972 @@
+# DOM-023 (TODO/storage.md): the daily compaction. Each UTC day is built
+# into one pack of tier d for each of the datasets names, domains and feed,
+# which replaces the hour packs and the segments of the day in the live set
+# (docs/architecture.md sections 4.5 and 5.3). Nothing is deleted from GHCR
+# (AGENTS.md absolute 13): the packs it replaces stay, out of the live set.
+#
+# names is merged (plan, count, compact, assemble below, as in
+# compact-weekly.yml). domains and feed are built by scripts/compact/day.mjs:
+# the domains day pack in one process, and the feed day pack by the exact join
+# of the day, since the verdicts of the hour packs are provisional (section
+# 5.8 step 5). day.mjs also rebuilds the ledger: the filter
+# ledger-filter-YYYYMMDD and the delta ledger-delta of the package state
+# (docs/format.md section 15). new-name has no hour pack: it enters only
+# through the exact day pack of DOM-041, which this workflow does not build yet
+# (docs/architecture.md section 4.5).
+#
+#   plan      reads root:latest once with no credential and pins its digest,
+#             then plans each unit with scripts/compact/plan.mjs: the day
+#             dispatched (day), or else the last LOOKBACK days, so a day of a
+#             run that GitHub dropped, or one that was not whole, is taken by a
+#             later run. A day waits only on the sources of its own packs: one
+#             whose live packs end before the day ends. planTier cannot see a
+#             source with no pack in the day. So at 01:35 a day whose hour
+#             packs come from one lane and whose THC segment is not promoted
+#             yet is ready, and its packs are built without THC, while
+#             ingest-thc.yml retries until 06:20. A THC segment promoted after
+#             its day pack stays beside it in names and domains until the week
+#             or the month merges it, and never enters feed. A rule that waits
+#             on THC until the last retry of ingest-thc.yml is an open duty of
+#             DOM-029 (docs/architecture.md section 5.3, "Late sources").
+#             A unit that waits (exit 3: not whole, an empty corpus among
+#             the causes) is printed and left; present and skip are printed too.
+#             A unit that starts before its dataset's corpus_since waits and is
+#             never built (docs/architecture.md section 4.5, "Before
+#             corpus_since").
+#             The run fails on a fault (1), a GHCR error (2), a root that does
+#             not read publicly (4) or a defect (70). A ready names unit makes
+#             one leg per range, at most MAX_LEGS legs in all; one whose inputs
+#             were built under several PSL lists takes the list the root pins.
+#             A day whose domains unit is ready, or live, makes a leg of the
+#             job day; its feed unit is kept when it is ready or waits on hour
+#             packs, since day.mjs builds the feed from the join and not from
+#             them. A ready domains unit whose inputs were built under more
+#             than one PSL list is held, with its feed: printed with a warning,
+#             and given no leg, since day.mjs refuses it with exit 1 (ruling
+#             22). The step still exits 0 when no other unit faulted. The
+#             recompute under one list is an open duty of DOM-023.
+#   count     stage 1 of each range of a unit cut into more than one range.
+#   compact   stage 2 of each range: its part, checked against the inputs.
+#   day       one leg per day: reads the live ledger with no credential (the
+#             newest ledger-filter-YYYYMMDD of state and ledger-delta; one of
+#             the day or later builds none), then scripts/compact/day.mjs
+#             --day DAY on the pinned root. A state that reads and holds no
+#             ledger-filter tag is the first ledger. A state that does not read
+#             with no credential is absent or private, which answer alike: the
+#             leg fails, unless the run was dispatched with first-ledger for a
+#             state that no run has pushed. A private state taken as the first
+#             ledger would drop the live delta. It writes the day packs and the
+#             ledger files on the runner, and pushes nothing.
+#   assemble  one leg per unit. A names unit is assembled by assemble.mjs; a
+#             domains or feed unit is taken from the day leg's files. Then each
+#             is verified on the local files (scripts/verify-pack.mjs
+#             --require ...) and pushed by scripts/ghcr/push.mjs under its
+#             write-once tag, and the leg writes its replacement OLD,...=NEW,
+#             each pack named in its own package, or an addition when the pack
+#             replaces no pack.
+#   gather    joins the replacements and additions of the legs that wrote one.
+#   push      after assemble, in the group root-writer (ruling 18; rule 13 of
+#             scripts/check-workflows.mjs): pushes each day's
+#             ledger-filter-YYYYMMDD, written once, when the day's domains pack
+#             verified and pushed in this run (its leg wrote a replacement) or
+#             was live before it. A filter is written once, so one built beside
+#             a pack that failed its checks would never be replaced. It does
+#             not push ledger-delta: that move needs the state guard of
+#             DOM-024, which is not built. Until it is, the next step moves
+#             nothing and fails the job when a filter it pushed came with a
+#             delta (docs/format.md section 15).
+#   promote   only calls root-promote.yml with them; it holds no concurrency
+#             group (ruling 18). It needs assemble, the job that verified.
+#
+# READ scripts/compact/day.mjs's header for its contract: --out DIR/domains
+# and DIR/feed (each layer a file named by its title, manifest.json and
+# blobs.json), DIR/ledger/filter.dlbf and delta.dlbd, DIR/day.json, and a line
+# `wrote PACKAGE:TAG ...` or `present PACKAGE:TAG ...` for each pack.
+#
+# Every compaction workflow runs in the one group `compact`, so a weekly run
+# plans against the root that the daily run of the same morning promoted.
+#
+#   gh workflow run compact-daily.yml --repo pkgforge-dev/domains.pkgforge.dev -f day=2026-10-26
+#   node scripts/root/show.mjs --ref latest
+name: Compact the days
+
+on:
+  schedule:
+    - cron: "35 1 * * *"
+  workflow_dispatch:
+    inputs:
+      day:
+        description: The day to compact, YYYY-MM-DD; empty takes the last LOOKBACK days
+        required: false
+        default: ""
+        type: string
+      rebuild:
+        description: Build a unit again under its next -rN tag when a build of it is in the package (ruling 25)
+        required: false
+        default: false
+        type: boolean
+      first-ledger:
+        description: No run has pushed the package state yet, so a state that does not read with no credential is no ledger; never for a private state
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: compact
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+  TIER: d
+  DATASETS: names domains feed
+  DAY_DATASETS: domains feed
+  LOOKBACK: "7"
+  MAX_LEGS: "256"
+
+jobs:
+  plan:
+    # Only main's code compacts: a dispatch on another branch plans nothing.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+      units: ${{ steps.plan.outputs.units }}
+      legs: ${{ steps.plan.outputs.legs }}
+      counts: ${{ steps.plan.outputs.counts }}
+      counted: ${{ steps.plan.outputs.counted }}
+      merged: ${{ steps.plan.outputs.merged }}
+      dayed: ${{ steps.plan.outputs.dayed }}
+      days: ${{ steps.plan.outputs.days }}
+      root: ${{ steps.plan.outputs.root }}
+      psl: ${{ steps.plan.outputs.psl }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The scripts import the workspace packages by name. --omit=dev links the
+      # workspaces and installs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/root'); await import('@domains/ghcr'); await import('@domains/pack');"
+
+      - name: Plan the units
+        id: plan
+        timeout-minutes: 20
+        env:
+          SPAN: ${{ inputs.day }}
+        run: |
+          set -euo pipefail
+          W="$RUNNER_TEMP/plan"
+          mkdir -p "$W/plans"
+          # The units: the one dispatched, or the last LOOKBACK days that have closed, oldest first.
+          starts=()
+          if [ -n "$SPAN" ]; then
+            if ! [[ "$SPAN" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::the day input is not YYYY-MM-DD"
+              exit 2
+            fi
+            starts+=("${SPAN}T00:00:00Z")
+          else
+            for n in $(seq "$LOOKBACK" -1 1); do
+              starts+=("$(date -u -d "today - $n days" +%Y-%m-%d)T00:00:00Z")
+            done
+          fi
+          # One root for every plan of the run: root:latest read once, pinned by its digest.
+          rc=0
+          node scripts/root/show.mjs --ref latest > "$W/root.txt" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/root/show.mjs exited $rc reading root:latest (1 the root does not validate, 2 could not run, 4 not public, 70 an internal error)"
+            exit "$rc"
+          fi
+          root="$(awk 'NR == 1 { print $3 }' "$W/root.txt")"
+          if ! [[ "$root" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::root:latest read with no digest"
+            exit 1
+          fi
+          # The list the root pins: a names pack whose inputs were built under several lists takes it (assemble.mjs --psl).
+          pin="$(awk '$1 == "psl" { print $2 }' "$W/root.txt")"
+          if ! [[ "$pin" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::root:latest read with no pinned PSL hash"
+            exit 1
+          fi
+          echo "root $root, pinned PSL $pin"
+          faults=0
+          held=0
+          for start in "${starts[@]}"; do
+            # DATASETS names domains before feed: the feed of a day is built
+            # by day.mjs when the day's domains are ready or live already.
+            domains=none
+            for dataset in $DATASETS; do
+              rc=0
+              node scripts/compact/plan.mjs --dataset "$dataset" --tier "$TIER" --span "$start" --ref "$root" --out "$W/one.json" > "$W/one.txt" || rc=$?
+              cat "$W/one.txt"
+              if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
+                echo "::error::scripts/compact/plan.mjs exited $rc for $dataset $TIER $start (1 a fault, 2 could not run, 4 not public, 70 an internal error)"
+                faults=$(( faults + 1 ))
+                continue
+              fi
+              verdict="$(jq -r .verdict "$W/one.json")"
+              # day.mjs builds the feed under the list of the domains inputs, and refuses inputs built under several (ruling 22: their recompute is not built).
+              if [ "$dataset" = domains ] && [ "$verdict" = ready ]; then
+                lists="$(jq -r '.psl | length' "$W/one.json")"
+                if [ "$lists" -gt 1 ]; then
+                  echo "held $(jq -r .tag "$W/one.json") and the feed of its day: its inputs were built under $lists PSL lists, and the recompute of domains under one list is not built"
+                  echo "::warning::the day $start is held: its domains inputs were built under $lists PSL lists ($(jq -r '.psl | join(" ")' "$W/one.json"))"
+                  held=$(( held + 1 ))
+                  verdict=held
+                fi
+              fi
+              if [ "$dataset" = domains ]; then
+                domains="$verdict"
+              fi
+              keep=false
+              if [ "$dataset" = feed ]; then
+                if { [ "$domains" = ready ] || [ "$domains" = present ]; } && { [ "$verdict" = ready ] || [ "$verdict" = wait ]; }; then
+                  keep=true
+                fi
+              elif [ "$verdict" = ready ]; then
+                keep=true
+              fi
+              if [ "$keep" = true ]; then
+                tag="$(jq -r .tag "$W/one.json")"
+                if ! [[ "$tag" =~ ^[a-z0-9][a-z0-9.-]*$ ]]; then
+                  echo "::error::the plan of $dataset $TIER $start names a tag that is not lowercase letters, digits, dots and hyphens"
+                  exit 1
+                fi
+                mv "$W/one.json" "$W/plans/$tag.json"
+              fi
+            done
+          done
+          if [ "$faults" -gt 0 ]; then
+            echo "::error::$faults unit(s) could not be planned; nothing is compacted in this run"
+            exit 1
+          fi
+          if [ "$held" -gt 0 ]; then
+            echo "$held day(s) held: built under more than one PSL list"
+          fi
+          # The matrices, at most MAX_LEGS legs in all: a unit that would pass it waits for a later run.
+          shopt -s nullglob
+          units='[]'
+          legs='[]'
+          counts='[]'
+          total=0
+          days='[]'
+          for p in "$W"/plans/*.json; do
+            unit="$(basename "$p" .json)"
+            if [[ " $DAY_DATASETS " == *" $(jq -r .dataset "$p") "* ]]; then
+              day="$(jq -r '.span.start[0:10]' "$p")"
+              units="$(jq -c --arg u "$unit" --arg d "$day" '. + [{unit: $u, kind: "day", day: $d}]' <<< "$units")"
+              days="$(jq -c --arg d "$day" '. + [{day: $d}] | unique' <<< "$days")"
+              echo "unit $unit: the day pack of $day, by scripts/compact/day.mjs"
+              continue
+            fi
+            n="$(jq -r .key.ranges "$p")"
+            if [ $(( total + n )) -gt "$MAX_LEGS" ]; then
+              echo "deferred $unit: its $n range(s) would pass $MAX_LEGS legs in this run; a later run takes it"
+              rm "$p"
+              continue
+            fi
+            total=$(( total + n ))
+            units="$(jq -c --arg u "$unit" '. + [{unit: $u, kind: "merge", day: ""}]' <<< "$units")"
+            legs="$(jq -c --arg u "$unit" --argjson n "$n" '. + [range(0; $n) | {unit: $u, range: ., of: $n}]' <<< "$legs")"
+            if [ "$n" -gt 1 ]; then
+              counts="$(jq -c --arg u "$unit" --argjson n "$n" '. + [range(0; $n) | {unit: $u, range: .}]' <<< "$counts")"
+            fi
+            echo "unit $unit: $n range(s)"
+          done
+          {
+            if [ "$units" != '[]' ]; then echo "ready=true"; else echo "ready=false"; fi
+            if [ "$counts" != '[]' ]; then echo "counted=true"; else echo "counted=false"; fi
+            echo "units=$(jq -c '{include: .}' <<< "$units")"
+            echo "legs=$(jq -c '{include: .}' <<< "$legs")"
+            echo "counts=$(jq -c '{include: .}' <<< "$counts")"
+            if [ "$legs" != '[]' ]; then echo "merged=true"; else echo "merged=false"; fi
+            if [ "$days" != '[]' ]; then echo "dayed=true"; else echo "dayed=false"; fi
+            echo "days=$(jq -c '{include: .}' <<< "$days")"
+            echo "root=$root"
+            echo "psl=$pin"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$units" = '[]' ]; then
+            echo "nothing to compact: no unit is ready"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.plan.outputs.ready == 'true'
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plan/plans/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+
+  count:
+    needs: plan
+    if: needs.plan.outputs.counted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.counts) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plans
+
+      # Stage 1: the distinct keys of the range, which every range's window needs.
+      - name: Count the range
+        timeout-minutes: 110
+        env:
+          UNIT: ${{ matrix.unit }}
+          RANGE: ${{ matrix.range }}
+        run: |
+          set -euo pipefail
+          node scripts/compact/range.mjs count --plan "$RUNNER_TEMP/plans/$UNIT.json" --range "$RANGE" --out "$RUNNER_TEMP/count"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: count.${{ matrix.unit }}.${{ matrix.range }}
+          path: ${{ runner.temp }}/count/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+
+  compact:
+    needs: [plan, count]
+    # count is skipped when no unit has more than one range. A leg whose
+    # unit's counts are missing fails alone: range.mjs refuses its window.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.merged == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.legs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plans
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.of > 1
+        with:
+          pattern: count.${{ matrix.unit }}.*
+          merge-multiple: true
+          path: ${{ runner.temp }}/counts
+
+      # Stage 2: the part the range owns, written and checked against the inputs.
+      - name: Write the range
+        timeout-minutes: 170
+        env:
+          UNIT: ${{ matrix.unit }}
+          RANGE: ${{ matrix.range }}
+          OF: ${{ matrix.of }}
+        run: |
+          set -euo pipefail
+          args=(write --plan "$RUNNER_TEMP/plans/$UNIT.json" --range "$RANGE" --out "$RUNNER_TEMP/range")
+          if [ "$OF" -gt 1 ]; then
+            args+=(--counts "$RUNNER_TEMP/counts")
+          fi
+          node scripts/compact/range.mjs "${args[@]}"
+
+      # The parts are compressed blocks already.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: range.${{ matrix.unit }}.${{ matrix.range }}
+          path: ${{ runner.temp }}/range/
+          overwrite: true
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  # The day packs of domains and feed, and the ledger, of each day with a
+  # ready domains unit or a feed unit to build. It reads GHCR with no
+  # credential, writes on the runner, and pushes nothing.
+  day:
+    needs: plan
+    if: needs.plan.outputs.dayed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.days) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # LEDGER: the flags of day.mjs. A state that reads with no credential
+      # and holds no ledger-filter tag is the first ledger; a live filter of
+      # the day or later builds none (day.mjs refuses a filter newer than the
+      # day); else the newest filter and ledger-delta, read with no credential.
+      - name: Read the live ledger
+        id: ledger
+        timeout-minutes: 10
+        env:
+          DAY: ${{ matrix.day }}
+          FIRST_LEDGER: ${{ inputs.first-ledger }}
+        run: |
+          set -euo pipefail
+          L="$RUNNER_TEMP/ledger-live"
+          mkdir -p "$L"
+          rc=0
+          node scripts/ghcr/tags.mjs state --prefix ledger-filter- > "$L/tags.txt" || rc=$?
+          # 4: state does not read with no credential. An absent package and a private one
+          # answer alike, and only the dispatch can say that no run has pushed state.
+          if [ "$rc" -eq 4 ] && [ "$FIRST_LEDGER" = true ]; then
+            echo "state does not read with no credential, and the run was dispatched with first-ledger: no run has pushed it"
+            : > "$L/tags.txt"
+          elif [ "$rc" -eq 4 ]; then
+            echo "::error::state does not read with no credential (scripts/ghcr/tags.mjs exited 4): it is absent or private, which answer alike. If no run has pushed state, dispatch with first-ledger. A private state is not taken as no ledger, since its live delta would be lost."
+            exit 4
+          elif [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ghcr/tags.mjs exited $rc listing state (2 could not run, 70 an internal error)"
+            exit "$rc"
+          fi
+          newest="$(awk '/^ledger-filter-[0-9]{8}$/ && $0 > m { m = $0 } END { print m }' "$L/tags.txt")"
+          if [ -z "$newest" ]; then
+            echo "state holds no ledger-filter tag: the first ledger"
+            echo "LEDGER=--first-ledger" >> "$GITHUB_ENV"
+          elif [[ ! "${newest#ledger-filter-}" < "${DAY//-/}" ]]; then
+            echo "the live filter $newest is of $DAY or later: no ledger is built for $DAY"
+            echo "LEDGER=--no-ledger" >> "$GITHUB_ENV"
+          else
+            oras pull "ghcr.io/pkgforge-dev/domains.pkgforge.dev/state:$newest" -o "$L"
+            oras pull "ghcr.io/pkgforge-dev/domains.pkgforge.dev/state:ledger-delta" -o "$L"
+            echo "the live ledger: $newest and ledger-delta"
+            echo "LEDGER=live" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build the day packs and the ledger
+        id: day
+        timeout-minutes: 150
+        env:
+          DAY: ${{ matrix.day }}
+          ROOT_REF: ${{ needs.plan.outputs.root }}
+          REBUILD: ${{ inputs.rebuild }}
+        run: |
+          set -euo pipefail
+          args=(--day "$DAY" --out "$RUNNER_TEMP/day" --ref "$ROOT_REF")
+          if [ "$LEDGER" = live ]; then
+            args+=(--filter "$RUNNER_TEMP/ledger-live/filter.dlbf" --delta "$RUNNER_TEMP/ledger-live/delta.dlbd")
+          else
+            args+=("$LEDGER")
+          fi
+          if [ "$REBUILD" = true ]; then
+            args+=(--rebuild domains,feed)
+          fi
+          rc=0
+          node scripts/compact/day.mjs "${args[@]}" > "$RUNNER_TEMP/day.txt" || rc=$?
+          cat "$RUNNER_TEMP/day.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/compact/day.mjs exited $rc for $DAY (3 wait though the plan was ready, 1 a fault, 2 could not run, 4 not public, 70 an internal error)"
+            exit "$rc"
+          fi
+          mkdir -p "$RUNNER_TEMP/day"
+          cp "$RUNNER_TEMP/day.txt" "$RUNNER_TEMP/day/day.txt"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: day.${{ matrix.day }}
+          path: ${{ runner.temp }}/day/
+          overwrite: true
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  # A leg whose unit lacks a range fails alone: assemble.mjs refuses a missing range.
+  assemble:
+    needs: [plan, compact, day]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' && needs.plan.outputs.ready == 'true' && (needs.compact.result != 'skipped' || needs.day.result != 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.units) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # A job that holds packages: write runs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/root'); await import('@domains/ghcr'); await import('@domains/pack'); await import('@domains/adapter'); await import('@domains/names');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plans
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.kind == 'merge'
+        with:
+          pattern: range.${{ matrix.unit }}.*
+          merge-multiple: true
+          path: ${{ runner.temp }}/ranges
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.kind == 'day'
+        with:
+          name: day.${{ matrix.day }}
+          path: ${{ runner.temp }}/day
+
+      # OUTCOME is assembled (a pack in pack/ and its manifest.json) or present
+      # (a build of the unit is in the package, and nothing is written).
+      - name: Assemble the pack
+        id: assemble
+        if: matrix.kind == 'merge'
+        timeout-minutes: 120
+        env:
+          UNIT: ${{ matrix.unit }}
+          REBUILD: ${{ inputs.rebuild }}
+          PIN_PSL: ${{ needs.plan.outputs.psl }}
+        run: |
+          set -euo pipefail
+          plan="$RUNNER_TEMP/plans/$UNIT.json"
+          out="$RUNNER_TEMP/assembled"
+          args=(--plan "$plan" --dir "$RUNNER_TEMP/ranges" --out "$out")
+          # Inputs built under several PSL lists: a merge unit is names, whose keys do not depend on the list.
+          if [ "$(jq -r '.psl | length' "$plan")" -ne 1 ]; then
+            if ! [[ "$PIN_PSL" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::the plan job gave no pinned PSL hash for $UNIT, whose inputs were built under several lists"
+              exit 1
+            fi
+            args+=(--psl "$PIN_PSL")
+          fi
+          # A pack of one source states the source's precision, from the registry.
+          if [ "$(jq -r '.sources | length' "$plan")" -eq 1 ]; then
+            src="$(jq -r '.sources[0]' "$plan")"
+            precision="$(jq -r --arg s "$src" '[.sources[] | select(.id == $s) | .precision] | if length == 1 then .[0] else "none" end' config/sources.json)"
+            if [ "$precision" != day ] && [ "$precision" != second ]; then
+              echo "::error::the one source $src of $UNIT has no precision in config/sources.json"
+              exit 1
+            fi
+            args+=(--precision "$precision")
+          fi
+          if [ "$REBUILD" = true ]; then
+            args+=(--rebuild)
+          fi
+          rc=0
+          node scripts/compact/assemble.mjs "${args[@]}" > "$RUNNER_TEMP/assemble.txt" || rc=$?
+          cat "$RUNNER_TEMP/assemble.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/compact/assemble.mjs exited $rc for $UNIT (1 a fault, 2 could not run, 70 an internal error)"
+            exit "$rc"
+          fi
+          line="$(awk '$1 == "present" || $1 == "assembled" { print $1, $2 }' "$RUNNER_TEMP/assemble.txt")"
+          if ! [[ "$line" =~ ^(present|assembled)\ ([a-z-]+):([a-z0-9][a-z0-9.-]*)$ ]]; then
+            echo "::error::scripts/compact/assemble.mjs printed no present or assembled line for $UNIT"
+            exit 1
+          fi
+          outcome="${BASH_REMATCH[1]}"
+          if [ "$outcome" = assembled ]; then
+            # Every layer in one directory, named by its title, as scripts/ghcr/push.mjs takes them.
+            mkdir -p "$RUNNER_TEMP/pack"
+            jq -r '.[] | select(.file != null) | "\(.title)\t\(.file)"' "$out/blobs.json" > "$RUNNER_TEMP/blobs.tsv"
+            while IFS=$'\t' read -r title file; do
+              mv "$file" "$RUNNER_TEMP/pack/$title"
+            done < "$RUNNER_TEMP/blobs.tsv"
+            cp "$out/manifest.json" "$RUNNER_TEMP/manifest.json"
+          fi
+          {
+            echo "OUTCOME=$outcome"
+            echo "PKG=${BASH_REMATCH[2]}"
+            echo "TAG=${BASH_REMATCH[3]}"
+          } >> "$GITHUB_ENV"
+
+      # A domains or feed unit: the pack day.mjs wrote for it in DIR/<dataset>/
+      # (assembled), or a build of it in the package (present).
+      - name: Take the day pack
+        id: take
+        if: matrix.kind == 'day'
+        timeout-minutes: 10
+        env:
+          UNIT: ${{ matrix.unit }}
+        run: |
+          set -euo pipefail
+          dataset="$(jq -r .dataset "$RUNNER_TEMP/plans/$UNIT.json")"
+          line="$(awk -v u="$UNIT" '$1 == "present" || $1 == "wrote" { sub(/:$/, "", $2); split($2, a, ":"); if (a[2] == u || a[2] ~ ("^" u "-r[0-9]+$")) print $1, $2 }' "$RUNNER_TEMP/day/day.txt")"
+          if ! [[ "$line" =~ ^(present|wrote)\ ([a-z-]+):([a-z0-9][a-z0-9.-]*)$ ]]; then
+            echo "::error::scripts/compact/day.mjs printed no wrote or present line for $UNIT"
+            exit 1
+          fi
+          outcome=present
+          if [ "${BASH_REMATCH[1]}" = wrote ]; then
+            outcome=assembled
+            mv "$RUNNER_TEMP/day/$dataset" "$RUNNER_TEMP/pack"
+            mv "$RUNNER_TEMP/pack/manifest.json" "$RUNNER_TEMP/manifest.json"
+            rm "$RUNNER_TEMP/pack/blobs.json"
+          fi
+          {
+            echo "OUTCOME=$outcome"
+            echo "PKG=${BASH_REMATCH[2]}"
+            echo "TAG=${BASH_REMATCH[3]}"
+          } >> "$GITHUB_ENV"
+
+      # Before the push: --require names every check that must compare, so a
+      # check with nothing to compare fails the step instead of passing it.
+      # The PSL is the list the pack names, read from the ref package with no
+      # credential and held to its hash.
+      - name: Verify the pack
+        id: verify
+        if: env.OUTCOME == 'assembled'
+        timeout-minutes: 60
+        env:
+          UNIT: ${{ matrix.unit }}
+        run: |
+          set -euo pipefail
+          m="$RUNNER_TEMP/manifest.json"
+          psl="$(jq -r '.annotations["dev.pkgforge.domains.psl"]' "$m")"
+          if ! [[ "$psl" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::the manifest of $UNIT names no PSL hash"
+            exit 1
+          fi
+          oras pull "ghcr.io/pkgforge-dev/domains.pkgforge.dev/ref:psl-${psl:0:12}" -o "$RUNNER_TEMP/psl"
+          sum="$(sha256sum "$RUNNER_TEMP/psl/public_suffix_list.dat")"
+          if [ "${sum%% *}" != "$psl" ]; then
+            echo "::error::ref:psl-${psl:0:12} does not hash to $psl"
+            exit 1
+          fi
+          jq '.annotations' "$m" > "$RUNNER_TEMP/annotations.json"
+          jq -r '.layers[].annotations["org.opencontainers.image.title"] | select(test("^(time[.])?(part[.][0-9]{3,}|idx)$"))' "$m" > "$RUNNER_TEMP/verify.titles"
+          files=()
+          while IFS= read -r t; do
+            files+=("$RUNNER_TEMP/pack/$t")
+          done < "$RUNNER_TEMP/verify.titles"
+          require=dataset,length,count,sha256,psl,sources,precision
+          dataset="$(jq -r .dataset "$RUNNER_TEMP/plans/$UNIT.json")"
+          count="$(jq -r '.annotations["dev.pkgforge.domains.count"]' "$m")"
+          if { [ "$dataset" = feed ] || [ "$dataset" = new-name ]; } && [ "$count" != 0 ]; then
+            require="$require,time"
+          fi
+          rc=0
+          node scripts/verify-pack.mjs --annotations "$RUNNER_TEMP/annotations.json" --psl "$RUNNER_TEMP/psl/public_suffix_list.dat" \
+            --sources config/sources.json --require "$require" "${files[@]}" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/verify-pack.mjs exited $rc for $UNIT (1 a check failed or a required check skipped, 2 could not run, 70 an internal error); nothing is pushed"
+          fi
+          exit "$rc"
+
+      # The only step that holds the job's token, which reaches oras on stdin
+      # (scripts/ghcr/push.mjs). The tag is written once: push.mjs reads it
+      # first, and a tag that holds another pack exits 3 and writes nothing.
+      - name: Push the pack
+        id: push
+        if: env.OUTCOME == 'assembled'
+        timeout-minutes: 60
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          m="$RUNNER_TEMP/manifest.json"
+          type="$(jq -r .artifactType "$m")"
+          created="$(jq -r '.annotations["org.opencontainers.image.created"]' "$m")"
+          # Every annotation but the two push.mjs sets itself: created (from --created) and source.
+          jq -r '.annotations | to_entries[] | select(.key != "org.opencontainers.image.created" and .key != "org.opencontainers.image.source") | "\(.key)=\(.value)"' "$m" > "$RUNNER_TEMP/push.annotations"
+          jq -r '.layers[] | "\(.annotations["org.opencontainers.image.title"]):\(.mediaType)"' "$m" > "$RUNNER_TEMP/push.layers"
+          args=(--artifact-type "$type" --created "$created")
+          while IFS= read -r a; do
+            args+=(--annotation "$a")
+          done < "$RUNNER_TEMP/push.annotations"
+          while IFS= read -r l; do
+            args+=("$RUNNER_TEMP/pack/$l")
+          done < "$RUNNER_TEMP/push.layers"
+          rc=0
+          node scripts/ghcr/push.mjs "$PKG" "$TAG" "${args[@]}" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ghcr/push.mjs exited $rc for $PKG:$TAG (1 a fault, 2 could not run, 3 the tag holds another manifest, 4 not public, 70 an internal error)"
+          fi
+          exit "$rc"
+
+      # The replacement: every pack of the plan's inputs, and each quarantined
+      # pack it leaves out (ruling 23), by the pack that replaces them. A pack
+      # that replaces no pack (a day of feed whose hours have no pack) is an
+      # addition. One line: `replace OLD,...=NEW` or `add NEW`. Each pack is
+      # named in its own package, read from its repo: a quarantined segment
+      # lives in obs, not in the package of the output.
+      - name: Write the replacement
+        id: replace
+        timeout-minutes: 2
+        env:
+          UNIT: ${{ matrix.unit }}
+        run: |
+          set -euo pipefail
+          plan="$RUNNER_TEMP/plans/$UNIT.json"
+          if [ "$(jq '[.inputs[], .excluded[] | select((.repo | type) != "string")] | length' "$plan")" -ne 0 ]; then
+            echo "::error::the plan of $UNIT names a pack with no repo, so its package is not known; no replacement is written"
+            exit 1
+          fi
+          old="$(jq -r '[(.inputs[], .excluded[]) | "\(.repo | split("/") | last):\(.tag)"] | join(",")' "$plan")"
+          ref='[a-z-]+:[a-z0-9][a-z0-9._-]*'
+          if [ -z "$old" ]; then
+            line="add $PKG:$TAG"
+          else
+            line="replace $old=$PKG:$TAG"
+          fi
+          if ! [[ "$line" =~ ^(add\ $ref|replace\ $ref(,$ref)*=$ref)$ ]]; then
+            echo "::error::the replacement of $UNIT is not OLD,...=NEW or one addition"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/replace"
+          echo "$line" > "$RUNNER_TEMP/replace/$UNIT.txt"
+          echo "$line"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: replace.${{ matrix.unit }}
+          path: ${{ runner.temp }}/replace/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+
+  # A leg that failed wrote no replacement; the others are promoted, and the run stays red.
+  gather:
+    needs: assemble
+    if: ${{ !cancelled() && needs.assemble.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      add: ${{ steps.gather.outputs.add }}
+      replace: ${{ steps.gather.outputs.replace }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: replace.*
+          merge-multiple: true
+          path: ${{ runner.temp }}/replace
+
+      - name: Join the replacements
+        id: gather
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/replace/*.txt)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no leg wrote a replacement or an addition: nothing to promote"
+            exit 0
+          fi
+          cat "${files[@]}" > "$RUNNER_TEMP/lines.txt"
+          cat "$RUNNER_TEMP/lines.txt"
+          awk '$1 == "add" { print $2 }' "$RUNNER_TEMP/lines.txt" > "$RUNNER_TEMP/add.txt"
+          awk '$1 == "replace" { print $2 }' "$RUNNER_TEMP/lines.txt" > "$RUNNER_TEMP/replace.txt"
+          {
+            echo "add=$(tr '\n' ' ' < "$RUNNER_TEMP/add.txt")"
+            echo "replace=$(tr '\n' ' ' < "$RUNNER_TEMP/replace.txt")"
+          } >> "$GITHUB_OUTPUT"
+
+  # Ruling 18: every job that moves state runs in root-writer itself, ordered
+  # after day and assemble with needs (TODO/storage.md, DOM-023's Found of
+  # 2026-10-29T15:30Z). A day's filter waits on its domains pack's leg.
+  push:
+    needs: [plan, day, assemble]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.day.result == 'success' && needs.assemble.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: root-writer
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/ghcr');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: day.*
+          path: ${{ runner.temp }}/days
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plans
+          path: ${{ runner.temp }}/plans
+
+      # One file for each leg of assemble that verified and pushed its pack, or found it present.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: replace.*
+          merge-multiple: true
+          path: ${{ runner.temp }}/replace
+
+      # The only step that holds the job's token (scripts/ghcr/push.mjs). Each
+      # day's ledger-filter-YYYYMMDD, day by day in order, written once: its
+      # created is the day's end, and its sha256 the file's. A day whose
+      # domains unit this run planned and whose leg wrote no replacement
+      # pushes no filter: a filter is written once, and one built beside a
+      # pack that failed its checks could never be replaced.
+      - name: Push the ledger filters
+        id: filters
+        timeout-minutes: 20
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          LEDGER_TYPE: application/vnd.pkgforge.domains.state.v1
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          moves=0
+          for dir in "$RUNNER_TEMP"/days/day.*; do
+            if [ ! -f "$dir/ledger/filter.dlbf" ]; then
+              continue
+            fi
+            tag="$(jq -r .ledger.tag "$dir/day.json")"
+            day="$(jq -r .day "$dir/day.json")"
+            if ! [[ "$tag" =~ ^ledger-filter-[0-9]{8}$ ]] || ! [[ "$day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::$dir/day.json names no ledger-filter-YYYYMMDD tag or no day"
+              exit 1
+            fi
+            unit="domains-d-${day//-/}"
+            if [ -f "$RUNNER_TEMP/plans/$unit.json" ] && [ ! -f "$RUNNER_TEMP/replace/$unit.txt" ]; then
+              echo "::warning::$tag is not pushed: the leg of $unit wrote no replacement, so its pack did not verify and push in this run"
+              continue
+            fi
+            created="$(date -u -d "$day + 1 day" +%Y-%m-%d)T00:00:00Z"
+            sum="$(sha256sum "$dir/ledger/filter.dlbf")"
+            rc=0
+            node scripts/ghcr/push.mjs state "$tag" --artifact-type "$LEDGER_TYPE" --created "$created" \
+              --annotation "dev.pkgforge.domains.sha256=${sum%% *}" --annotation "dev.pkgforge.domains.run=$GITHUB_RUN_ID" \
+              "$dir/ledger/filter.dlbf:application/octet-stream" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::scripts/ghcr/push.mjs exited $rc for state:$tag (1 a fault, 2 could not run, 3 the tag holds another manifest, 4 not public, 70 an internal error)"
+              exit "$rc"
+            fi
+            if [ -f "$dir/ledger/delta.dlbd" ]; then
+              moves=$(( moves + 1 ))
+            fi
+          done
+          echo "moves=$moves" >> "$GITHUB_OUTPUT"
+
+      # ⚠ A no-op that fails the job. DOM-024 builds the state guard (read the
+      # live tag, push the new one, move it only when the live one is the one
+      # read) and replaces this step with it. It moves nothing today.
+      - name: Move ledger-delta (a no-op until DOM-024)
+        if: steps.filters.outputs.moves != '0'
+        timeout-minutes: 2
+        run: |
+          echo "::error::ledger-delta moves under the state guard of DOM-024, which is not built; this step moves nothing and fails the job."
+          exit 1
+
+  # Ruling 18: this job only calls root-promote.yml, which holds the group root-writer.
+  promote:
+    needs: [assemble, gather]
+    if: ${{ !cancelled() && needs.gather.result == 'success' && (needs.gather.outputs.add != '' || needs.gather.outputs.replace != '') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/root-promote.yml
+    with:
+      add: ${{ needs.gather.outputs.add }}
+      replace: ${{ needs.gather.outputs.replace }}

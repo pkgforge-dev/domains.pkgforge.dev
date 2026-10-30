@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { ACTION_PINS, checkScript, checkText, defaultFiles, isShell, JOB_GRANTS, ROOT_PROMOTE_GRANTS, RULES, scriptFiles } from './check-workflows.mjs';
+import { ACTION_PINS, checkScript, checkText, defaultFiles, isShell, JOB_GRANTS, MAIN_ONLY_GRANTS, onMainOnly, ROOT_PROMOTE_GRANTS, RULES, scriptFiles } from './check-workflows.mjs';
 import { ROOT } from './files.mjs';
 
 const SCRIPT = join(ROOT, 'scripts', 'check-workflows.mjs');
@@ -34,24 +34,25 @@ const refusedByAll = (text, rules) => assert.deepEqual(rulesOf(checkText(text)).
 
 // Each planted fixture: its rule and the line of its first finding.
 const PLANTED = [
-  ['parse.yml', 'parse', 47],
+  ['parse.yml', 'parse', 48],
   ['top-permissions.yml', '1', 17],
-  ['contents-write.yml', '2', 32],
-  ['grant-outside-table.yml', '3', 58],
+  ['contents-write.yml', '2', 33],
+  ['grant-outside-table.yml', '3', 59],
+  ['grant-off-main.yml', '3', 34],
   ['shell.yml', '4', 23],
-  ['timeout.yml', '5', 54],
-  ['unpinned.yml', '6', 49],
-  ['checkout-credentials.yml', '6', 36],
-  ['run-expression.yml', '7', 43],
+  ['timeout.yml', '5', 55],
+  ['unpinned.yml', '6', 50],
+  ['checkout-credentials.yml', '6', 37],
+  ['run-expression.yml', '7', 44],
   ['trigger.yml', '8', 7],
-  ['secret.yml', '9', 42],
-  ['delete-package.yml', '10', 43],
-  ['runner.yml', '11', 55],
+  ['secret.yml', '9', 43],
+  ['delete-package.yml', '10', 44],
+  ['runner.yml', '11', 56],
   ['schedule-dispatch.yml', '12', 6],
   ['queue.yml', '13', 21],
-  ['root-writer.yml', '13', 66],
-  ['upload-overwrite.yml', '14', 48],
-  ['if-bang.yml', '15', 47],
+  ['root-writer.yml', '13', 67],
+  ['upload-overwrite.yml', '14', 49],
+  ['if-bang.yml', '15', 48],
 ];
 
 test('workflow policy: clean.yml keeps every rule', () => {
@@ -145,6 +146,45 @@ test('workflow policy: rule 3 lets a job that calls root-promote.yml hold its gr
   const other = checkText(CALLER('./.github/workflows/other.yml'));
   assert.deepEqual(rulesOf(other), ['3']);
   assert.equal(other.length, 1, 'packages');
+});
+
+test('workflow policy: rule 3 keeps a job that holds packages: write on main, by an if: whose top-level && holds the main test and no || joins', () => {
+  assert.deepEqual(MAIN_ONLY_GRANTS, ['packages']);
+  for (const cond of [
+    "github.ref == 'refs/heads/main'",
+    "${{ github.ref == 'refs/heads/main' }}",
+    "'refs/heads/main' == github.ref",
+    "(github.ref == 'refs/heads/main')",
+    "GITHUB.REF == 'refs/heads/main'",
+    "${{ !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' && (needs.a.result != 'skipped' || needs.b.result != 'skipped') }}",
+    "needs.plan.outputs.tag == 'a && b' && github.ref == 'refs/heads/main'",
+    // An || inside a string literal joins nothing.
+    "github.ref == 'refs/heads/main' && needs.plan.outputs.note != 'a || b'",
+  ])
+    assert.equal(onMainOnly(cond), true, cond);
+  for (const cond of [
+    undefined,
+    true,
+    'true',
+    "github.ref != 'refs/heads/main'",
+    "github.ref == 'refs/heads/mainline'",
+    "github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'",
+    "github.event_name == 'schedule' || github.ref == 'refs/heads/main'",
+    // && binds tighter than ||: (main && x) || y runs off main when y holds.
+    "github.ref == 'refs/heads/main' && needs.plan.result == 'success' || github.event_name == 'workflow_dispatch'",
+    "(github.ref == 'refs/heads/main' || true)",
+    "contains(github.ref, 'main')",
+    "needs.plan.outputs.ref == 'x && github.ref == ''refs/heads/main'''",
+  ])
+    assert.equal(onMainOnly(cond), false, String(cond));
+  // measure-push of clean.yml holds packages: write; promote holds it too, with the bare form.
+  refusedBy(plant("    if: ${{ github.ref == 'refs/heads/main' }}\n", ''), '3');
+  refusedBy(plant("    if: ${{ github.ref == 'refs/heads/main' }}\n", "    if: ${{ github.ref == 'refs/heads/main' || inputs.day != '' }}\n"), '3');
+  refusedBy(plant("    if: github.ref == 'refs/heads/main'\n", "    if: needs.measure-push.result == 'success'\n"), '3');
+  accepted(plant("    if: github.ref == 'refs/heads/main'\n", "    if: ${{ !cancelled() && 'refs/heads/main' == github.ref }}\n"));
+  // A job with no write grant needs no if:, and a job that calls root-promote.yml is held by the called file's job.
+  accepted(plant('    timeout-minutes: 5\n', "    if: github.event_name == 'schedule'\n    timeout-minutes: 5\n"));
+  accepted(CALLER('./.github/workflows/root-promote.yml'));
 });
 
 test('workflow policy: rule 3 refuses issues: write on a job that calls root-promote.yml until DOM-034 adds the issue script', () => {
@@ -253,7 +293,8 @@ test('workflow policy: rule 9 refuses a Cloudflare name, a deploy, the wrangler 
   refusedBy(plant(API, 'npx wrangler@4.150.0 \\\n            --config x.toml \\\n            deploy'), '9');
   refusedByAll(plant(`uses: actions/upload-artifact@${PIN} # v7.0.2`, `uses: cloudflare/wrangler-action@${PIN} # v3.14.1`), ['6', '9']);
   refusedBy(CLEAN.concat('\n  call:\n    permissions:\n      contents: read\n    secrets: inherit\n    uses: ./.github/workflows/other.yml\n'), '9');
-  refusedBy(plant("    if: github.ref == 'refs/heads/main'\n", "    if: secrets.TOKEN != ''\n"), '9');
+  // On measure-chain, which holds no packages: write, so rule 3 stays quiet.
+  refusedBy(plant('    timeout-minutes: 5\n', "    if: secrets.TOKEN != ''\n    timeout-minutes: 5\n"), '9');
 });
 
 test('workflow policy: rule 10 refuses each way of deleting from GHCR, and passes a DELETE away from the registry', () => {
@@ -532,7 +573,7 @@ test('workflow policy: rule 14 refuses overwrite: false and accepts the string t
 });
 
 test('workflow policy: rule 15 refuses a job-level unquoted if: ! and accepts the quoted form', () => {
-  refusedBy(plant("    if: github.ref == 'refs/heads/main'\n", '    if: !cancelled()\n'), '15');
+  refusedBy(plant('    timeout-minutes: 5\n', '    if: !cancelled()\n    timeout-minutes: 5\n'), '15');
   accepted(plant('        if: ${{ !cancelled() }}\n', "        if: '!cancelled()'\n"));
 });
 
@@ -553,7 +594,7 @@ const cli = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { cwd: R
 test('workflow policy: the command line exits 1 and prints FILE:LINE: rule on delete-package.yml, and 0 on clean.yml', () => {
   const bad = cli('scripts/fixtures/workflows/delete-package.yml');
   assert.equal(bad.status, 1, bad.stdout + bad.stderr);
-  assert.match(bad.stderr, /^scripts\/fixtures\/workflows\/delete-package\.yml:43: rule 10: a deletion of GHCR content/m);
+  assert.match(bad.stderr, /^scripts\/fixtures\/workflows\/delete-package\.yml:44: rule 10: a deletion of GHCR content/m);
   const good = cli('scripts/fixtures/workflows/clean.yml');
   assert.equal(good.status, 0, good.stdout + good.stderr);
   assert.match(good.stdout, /1 workflow file\(s\) keep the 15 rules/);

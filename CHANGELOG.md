@@ -2,6 +2,11 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-10-30
+
+- Compaction (DOM-023, partial): `packages/compact`, the CLIs of `scripts/compact/` and the workflows `compact-daily.yml` to `compact-yearly.yml`. They merge the packs of an hour, a day, a week, a month or a year into one pack of the tier above, which replaces them in the root; nothing is deleted from GHCR. The day job builds the `feed` day pack by the exact join and the ledger filter, and a rebuilt pack takes the tag suffix `-rN` (ruling 25). No deploy, and no compaction has run on GitHub yet: the root holds no pack to compact until THC's backfill (DOM-029).
+- The names tiles measured over 24 hours (DOM-011, closed in commit 60accca): a reliable set of 12 shards, Sycamore, Willow, Tuscolo and Gouda from 2026h2 to 2027h2. THC's day holds 91% to 94% of their names and Kafka about half, so the tiles are a source of their own. No deploy.
+
 ## 2026-10-29
 
 - `root:latest` in `ghcr.io/pkgforge-dev/domains.pkgforge.dev/root`, the one object every reader reads first, written by `root-promote.yml` alone and read with no credential. It holds `root_seq` 1 and no pack yet (DOM-020).

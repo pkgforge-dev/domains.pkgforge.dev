@@ -358,8 +358,9 @@ export function buildRoot(input: BuildInput): RootJson {
   // A manifest a rollback took out comes back through a rollback to a root
   // that names it, or once its entry leaves the list; a re-run of an older
   // promotion that names it is refused here. A pack of the same span under
-  // another manifest digest is not refused here, and a rebuilt tier pack has
-  // no tag to take yet (docs/architecture.md section 4.7 rule 2).
+  // another manifest digest is not refused here: a rebuilt tier pack takes the
+  // span's tag with -rN, N from 2 (docs/architecture.md section 4.7 rule 2,
+  // ruling 25), and joins as an addition or a replacement like any pack.
   const withdrawn = new Map(carryWithdrawn(live?.root.withdrawn ?? [], nowMs(input.now)).map((w) => [w.manifest, w.at]));
   for (const [what, np] of [...(input.add ?? []).map((np) => ["addition", np] as const), ...(input.replace ?? []).map((r) => ["replacement", r.new] as const)]) {
     const at = withdrawn.get(np.pack.manifest);

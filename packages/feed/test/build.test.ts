@@ -18,6 +18,7 @@ import {
   type FeedRecord,
   MAX_TIME_FIRST_SEEN,
   MemorySink,
+  mergePacks,
   NEW_NAME_CODEC,
   NEW_NAME_TIME_CODEC,
   PackError,
@@ -27,6 +28,7 @@ import {
   writePack,
 } from "@domains/pack";
 import { nodeCompress } from "@domains/pack/node";
+import { CARRIED_FLAGS, newCarryStats } from "../src/build.ts";
 import { buildFeedDay, buildFeedHour, compareRows, type DomainEvent, describeRow, FeedError, feedRowOf, rowPrecision, writeFeedPack } from "../src/index.ts";
 import {
   BIT,
@@ -205,6 +207,120 @@ test("build: writeFeedPack writes the key copy and the time copy: the same rows,
   const nn = await writeFeedPack(rows, { codec: NEW_NAME_CODEC, compress: nodeCompress, sink: new MemorySink(), time: { sink: new MemorySink() } });
   assert.equal(nn.time?.dataset, NEW_NAME_TIME_CODEC.id);
   assert.equal((await writeFeedPack(rows, { compress: nodeCompress, sink: new MemorySink() })).time, null);
+});
+
+// ---- the carry of the hour packs' suspect verdicts into the day pack
+
+// The hour rows of the day 2026-10-27 as two hour packs give them: each
+// written, read back, and merged by key with FEED_CODEC, as the daily job
+// merges the hour packs of its day.
+async function hourRowsOf(...packs: FeedRecord[][]): Promise<FeedRecord[]> {
+  const readers: PackReader<FeedRecord>[] = [];
+  for (const rows of packs) {
+    const pack = await writeFeed(rows, { time: false });
+    readers.push(await PackReader.open(pack.summary.idx, partsSource(pack.parts), FEED_CODEC));
+  }
+  return collect(mergePacks(readers, FEED_CODEC));
+}
+
+const hourRow = (key: string, at: number, feedFlags: number): FeedRecord => row(key, D27 * DAY + at, { feedFlags: FEED_PROVISIONAL | feedFlags });
+
+test("build: carry: the day row takes the suspect bit and its reasons from the hour rows of its key, and no other bit", async () => {
+  const records = day27();
+  const keys = ["com.onlinendib", "com.thc-synthetic", "com.tuningledger", "net.tinifb"];
+  // net.tinifb: two hour packs saw it, one with each reason; their merge ORs
+  // the bits. com.tuningledger: an hour row that is corroborated and not
+  // suspect: corroborated and provisional are not carried.
+  const hours = await hourRowsOf(
+    [hourRow("com.tuningledger", 5 * HOUR, FEED_CORROBORATED), hourRow("net.tinifb", 5 * HOUR, FEED_SUSPECT | FEED_SUSPECT_CERT)],
+    [hourRow("net.tinifb", 6 * HOUR, FEED_SUSPECT | FEED_SUSPECT_RDAP)],
+  );
+  assert.deepEqual(
+    hours.map((r) => [r.key, r.feedFlags]),
+    [
+      ["com.tuningledger", FEED_PROVISIONAL | FEED_CORROBORATED],
+      ["net.tinifb", FEED_PROVISIONAL | FEED_SUSPECT | FEED_SUSPECT_CERT | FEED_SUSPECT_RDAP],
+    ],
+  );
+  const stats = newCarryStats();
+  const rows = await collect(buildFeedDay(records, keys, { table, window: day(D27), carry: hours, carryStats: stats }));
+  const plain = await collect(buildFeedDay(records, keys, { table, window: day(D27) }));
+  assert.deepEqual(
+    rows.map((r) => [r.key, r.feedFlags]),
+    [
+      ["com.onlinendib", FEED_CORROBORATED],
+      ["com.thc-synthetic", 0],
+      ["com.tuningledger", 0],
+      ["net.tinifb", FEED_SUSPECT | FEED_SUSPECT_CERT | FEED_SUSPECT_RDAP],
+    ],
+  );
+  // Every other field is the row the exact join gives with no carry.
+  assert.deepEqual(
+    rows.map(({ feedFlags: _, ...rest }) => rest),
+    plain.map(({ feedFlags: _, ...rest }) => rest),
+  );
+  assert.deepEqual(stats, { hourRows: 2, matched: 2, carried: 1, retracted: 0 });
+  assert.equal(CARRIED_FLAGS, FEED_SUSPECT | FEED_SUSPECT_CERT | FEED_SUSPECT_RDAP);
+  // The carried rows keep the reason rule: the day pack writes and reads them back.
+  const pack = await writeFeed(rows);
+  assert.deepEqual(await collect((await PackReader.open(pack.summary.idx, partsSource(pack.parts), FEED_CODEC)).scan()), rows);
+  assert.deepEqual(describeRow(rows[3], table).reasons, ["cert-age", "rdap-before-2026"]);
+});
+
+test("build: carry: an hour row the exact join did not keep is counted as retracted, and gives no day row", async () => {
+  const records = day27();
+  // The join keeps com.tuningledger alone; net.tinifb was provisional and is retracted.
+  const hours = [hourRow("com.tuningledger", 5 * HOUR, 0), hourRow("net.tinifb", 5 * HOUR, FEED_SUSPECT | FEED_SUSPECT_CERT)];
+  const stats = newCarryStats();
+  const rows = await collect(buildFeedDay(records, ["com.tuningledger"], { table, window: day(D27), carry: hours, carryStats: stats }));
+  assert.deepEqual(
+    rows.map((r) => [r.key, r.feedFlags]),
+    [["com.tuningledger", 0]],
+  );
+  assert.deepEqual(stats, { hourRows: 2, matched: 1, carried: 0, retracted: 1 });
+});
+
+test("build: carry: an hour row of a key the day's records lack, of another day, or out of order is refused", async () => {
+  const records = day27();
+  const keys = ["com.tuningledger"];
+  const w = day(D27);
+  // A key below every record, between two records, and above the last.
+  for (const k of ["aaa.synthetic", "com.p-synthetic", "zzz.synthetic"]) {
+    await assert.rejects(
+      collect(buildFeedDay(records, keys, { table, window: w, carry: [hourRow(k, 5 * HOUR, 0)] })),
+      (e: unknown) => e instanceof FeedError && e.code === "usage" && /has no record among the day's records/.test(e.message),
+      k,
+    );
+  }
+  // An hour row of the day before, and one at the next day's first second.
+  for (const at of [-1, DAY]) {
+    await assert.rejects(
+      collect(buildFeedDay(records, keys, { table, window: w, carry: [hourRow("com.tuningledger", at, 0)] })),
+      (e: unknown) => e instanceof FeedError && e.code === "window" && /an hour pack of another day/.test(e.message),
+      String(at),
+    );
+  }
+  // The day's last second is inside.
+  assert.equal((await collect(buildFeedDay(records, keys, { table, window: w, carry: [hourRow("com.tuningledger", DAY - 1, 0)] }))).length, 1);
+  await assert.rejects(
+    collect(buildFeedDay(records, ["com.tuningledger", "net.tinifb"], { table, window: w, carry: [hourRow("net.tinifb", 5 * HOUR, 0), hourRow("com.tuningledger", 5 * HOUR, 0)] })),
+    (e: unknown) => e instanceof FeedError && e.code === "order",
+  );
+});
+
+test("build: carry: a build that stops early closes the hour rows' iterator", async () => {
+  let closed = false;
+  async function* hours(): AsyncGenerator<FeedRecord> {
+    try {
+      yield hourRow("com.onlinendib", 0, 0);
+      yield hourRow("net.tinifb", 5 * HOUR, 0);
+    } finally {
+      closed = true;
+    }
+  }
+  const keys = ["com.onlinendib", "com.thc-synthetic", "com.tuningledger", "net.tinifb"];
+  for await (const _ of buildFeedDay(day27(), keys, { table, window: day(D27), carry: hours() })) break;
+  assert.equal(closed, true);
 });
 
 // A sink that counts its writes, so a test sees whether any byte reached it.

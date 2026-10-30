@@ -1,7 +1,7 @@
 // packages/feed/src/build.ts — the rows of the feed, and the pack that holds
 // them with its time copy.
 //
-//   for await (const row of buildFeedDay(dayDomains, exactNewKeys, { table, window: day })) ...
+//   for await (const row of buildFeedDay(dayDomains, exactNewKeys, { table, window: day, carry: hourRows })) ...
 //   for await (const row of buildFeedHour(hourDomains, provisionalFilter, { table, window: hour })) ...
 //   const { summary, time } = await writeFeedPack(rows, { compress, sink, time: { sink: timeSink } });
 //
@@ -15,7 +15,16 @@
 // outside its span would come out of order.
 //
 // buildFeedDay keeps the day's domain records that the exact join of DOM-021
-// (exactNew) yielded; their rows are not provisional. buildFeedHour asks the
+// (exactNew) yielded; their rows are not provisional. A domain record holds
+// neither a certificate age nor an RDAP date (EventFacts), so the suspect
+// verdicts the hour packs of the day made from the facts of their events are
+// carried into the day rows (`carry`): the suspect bit with its reason bits 4
+// and 5 of the hour row of a key are ORed into the day row of that key, and
+// no other bit. An hour row whose key the exact join did not keep is a
+// provisional verdict the join retracts (reconcile.ts of @domains/ledger),
+// and is counted. An hour row whose key is not among the day's records at
+// all, or whose first_seen lies outside the day, is refused: the hour packs
+// and the records are then of two different days or inputs. buildFeedHour asks the
 // hourly membership of DOM-021 (provisionalNew, the one rule of the hourly
 // verdict) about each record and keeps the ones it did not hold, each
 // `provisional`. Both take records in ascending key order, one a key, as a merge
@@ -41,6 +50,8 @@ import {
   type DomainRecord,
   FEED_CODEC,
   FEED_PROVISIONAL,
+  FEED_SUSPECT,
+  FEED_SUSPECT_REASONS,
   type FeedRecord,
   MAX_TIME_FIRST_SEEN,
   type PackSink,
@@ -98,17 +109,130 @@ async function* ascending(records: Iterable<DomainEvent> | AsyncIterable<DomainE
   }
 }
 
+// The bits of an hour row that its day row takes: the suspect flag and its
+// reasons (docs/format.md section 5.4). An OR of two rows that each keep the
+// rule "suspect exactly when a reason is set" keeps it.
+export const CARRIED_FLAGS = FEED_SUSPECT | FEED_SUSPECT_REASONS;
+
+// What the carry of the hour rows into a day pack did.
+export interface CarryStats {
+  // Hour rows read.
+  hourRows: number;
+  // Day rows whose key an hour row holds.
+  matched: number;
+  // Day rows that took from their hour row a bit of CARRIED_FLAGS they did not hold.
+  carried: number;
+  // Hour rows whose key the day's records hold and the exact join did not keep.
+  retracted: number;
+}
+
+export const newCarryStats = (): CarryStats => ({ hourRows: 0, matched: 0, carried: 0, retracted: 0 });
+
+export interface DayContext extends BuildContext {
+  // The rows of the day's hour packs, ascending by key, one a key: their
+  // merge by key (mergePacks with FEED_CODEC of @domains/pack, which ORs the
+  // suspect bits of two rows of one key).
+  readonly carry?: Iterable<FeedRecord> | AsyncIterable<FeedRecord>;
+  // Filled as the build runs.
+  readonly carryStats?: CarryStats;
+}
+
+const shownKey = (k: string): string => JSON.stringify(k.slice(0, 80));
+
+// The hour rows, one a key in ascending order, each inside the day.
+class CarryCursor {
+  readonly #rows: AsyncIterator<FeedRecord> | Iterator<FeedRecord>;
+  readonly #window: Window;
+  readonly #stats: CarryStats;
+  #head: FeedRecord | null = null;
+  #done = false;
+  #prev: string | null = null;
+
+  constructor(rows: Iterable<FeedRecord> | AsyncIterable<FeedRecord>, window: Window, stats: CarryStats) {
+    this.#rows = Symbol.asyncIterator in rows ? (rows as AsyncIterable<FeedRecord>)[Symbol.asyncIterator]() : (rows as Iterable<FeedRecord>)[Symbol.iterator]();
+    this.#window = window;
+    this.#stats = stats;
+  }
+
+  async #pull(): Promise<void> {
+    const next = await this.#rows.next();
+    if (next.done) {
+      this.#done = true;
+      this.#head = null;
+      return;
+    }
+    const row = next.value;
+    if (this.#prev !== null && !(row.key > this.#prev)) throw new FeedError("order", `buildFeedDay: the hour row ${shownKey(row.key)} is not above the hour row before it`);
+    if (!(row.firstSeen >= this.#window.t0 && row.firstSeen < this.#window.t1))
+      throw new FeedError(
+        "window",
+        `buildFeedDay: the hour row ${shownKey(row.key)} has first_seen ${row.firstSeen}, outside the day [${this.#window.t0}, ${this.#window.t1}): an hour pack of another day`,
+      );
+    this.#prev = row.key;
+    this.#stats.hourRows += 1;
+    this.#head = row;
+  }
+
+  // The hour row of `key`, or null; every hour row below `key` must have had
+  // a day record of its own.
+  async at(key: string): Promise<FeedRecord | null> {
+    if (this.#head === null && !this.#done) await this.#pull();
+    const head = this.#head;
+    if (head === null) return null;
+    if (head.key < key)
+      throw new FeedError("usage", `buildFeedDay: the hour row ${shownKey(head.key)} has no record among the day's records: the hour packs and the records are of two different days or inputs`);
+    if (head.key > key) return null;
+    await this.#pull();
+    return head;
+  }
+
+  // Every hour row left must lie above the last day record: none may.
+  async end(): Promise<void> {
+    if (this.#head === null && !this.#done) await this.#pull();
+    if (this.#head !== null)
+      throw new FeedError("usage", `buildFeedDay: the hour row ${shownKey(this.#head.key)} has no record among the day's records: the hour packs and the records are of two different days or inputs`);
+  }
+
+  // Releases the hour rows when the build ends early, so a reader's scan
+  // closes. Its own error on close adds nothing to the outcome.
+  async close(): Promise<void> {
+    if (this.#done || typeof this.#rows.return !== "function") return;
+    this.#done = true;
+    await Promise.resolve(this.#rows.return()).catch(() => undefined);
+  }
+}
+
 // The rows of a day pack: the day's domain records that the exact join kept.
 // Every key of `exactNewKeys` must be among the records, or the join and the
-// records are of two different days, and the build is refused.
-export async function* buildFeedDay(day: Iterable<DomainEvent> | AsyncIterable<DomainEvent>, exactNewKeys: Iterable<string>, context: BuildContext): AsyncGenerator<FeedRecord> {
-  checkAligned(context.window, DAY_SECONDS, "a day pack");
+// records are of two different days, and the build is refused. With `carry`,
+// each kept row takes the suspect bits of the hour row of its key.
+export async function* buildFeedDay(day: Iterable<DomainEvent> | AsyncIterable<DomainEvent>, exactNewKeys: Iterable<string>, context: DayContext): AsyncGenerator<FeedRecord> {
+  const window = checkAligned(context.window, DAY_SECONDS, "a day pack");
   const wanted = new Set(exactNewKeys);
+  const stats = context.carryStats ?? newCarryStats();
+  const carry = context.carry === undefined ? null : new CarryCursor(context.carry, window, stats);
   let met = 0;
-  for await (const record of ascending(day, "buildFeedDay")) {
-    if (!wanted.has(record.key)) continue;
-    met += 1;
-    yield feedRowOf(record, context, false);
+  try {
+    for await (const record of ascending(day, "buildFeedDay")) {
+      const hour = carry === null ? null : await carry.at(record.key);
+      if (!wanted.has(record.key)) {
+        if (hour !== null) stats.retracted += 1;
+        continue;
+      }
+      met += 1;
+      const row = feedRowOf(record, context, false);
+      if (hour === null) {
+        yield row;
+        continue;
+      }
+      stats.matched += 1;
+      const feedFlags = row.feedFlags | (hour.feedFlags & CARRIED_FLAGS);
+      if (feedFlags !== row.feedFlags) stats.carried += 1;
+      yield { ...row, feedFlags };
+    }
+    if (carry !== null) await carry.end();
+  } finally {
+    if (carry !== null) await carry.close();
   }
   if (met !== wanted.size) throw new FeedError("usage", `buildFeedDay: the exact join names ${wanted.size - met} key(s) that the day's records do not hold`);
 }

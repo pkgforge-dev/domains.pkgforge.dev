@@ -22,6 +22,9 @@ export interface PackOptions {
   end?: string;
   // Makes a second, different manifest of the same span.
   salt?: string;
+  // A rebuild of a compacted pack's span: its tag takes -rN (ruling 25), and
+  // every digest follows the tag, so the manifest is another one.
+  rebuild?: number;
   // Lists a time copy of one part (docs/format.md section 14). By default a
   // pack of feed or new-name of tier d, w, m or y that holds records lists
   // one, as a writer must (TIME_COPY_TIERS); false leaves it out.
@@ -41,7 +44,7 @@ export function pack(dataset: TierDataset, tier: RootTier, start: string, o: Pac
   } else {
     end = new Date(tierEnd(tier, Date.parse(start))).toISOString().replace(".000Z", "Z");
     repo = repoOf(dataset === "feed" || dataset === "new-name" ? "feed" : dataset === "rev" ? "rev" : "names");
-    tag = tierTag(dataset, tier, start);
+    tag = tierTag(dataset, tier, start, o.rebuild);
   }
   const id = `${repo}:${tag}:${o.salt ?? ""}`;
   const count = o.count ?? 10;

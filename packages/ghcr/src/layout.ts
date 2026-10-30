@@ -9,13 +9,24 @@
 //   fileTag("thc-ct", "2026-10-26", SHA256)                "thc-ct.20261026.0232f4df0831"
 //   fileTag("thc-ct", "2026-10-26", SHA256, "d")           "thc-ct.20261026.0232f4df0831-d"
 //   tierTag("names", "w", "2026-10-26T00:00:00Z")          "names-w-2026w44"
+//   tierTag("names", "d", "2026-10-26T00:00:00Z", 2)       "names-d-20261026-r2"
+//   nextTierTag("names", "d", "2026-10-26T00:00:00Z", ["names-d-20261026"])
+//                                                          "names-d-20261026-r2"
+//   parseTierTag("names-d-20261026-r2")                    { base: "names-d-20261026", dataset: "names", tier: "d",
+//                                                            start: "2026-10-26T00:00:00Z", rebuild: 2 }
 //   rootTag("2026-10-29T05:13:00Z")                        "r-20261029t051300z"
 //   stateTag("2026-10-29")                                 "state-20261029"
+//   ledgerFilterTag("2026-10-27")                          "ledger-filter-20261027"
+//   LEDGER_DELTA_TAG                                       "ledger-delta"
 //   refTag("psl", SHA256)                                  "psl-0232f4df0831"
 //
 // Every builder returns a lowercase tag that matches TAG and throws LayoutError
 // otherwise: GHCR resolves tags without regard to case, so two spellings of
-// one tag are one tag, and every tag here is lowercase (section 4.1). A time is
+// one tag are one tag, and every tag here is lowercase (section 4.1). A tag
+// that ends in -r and digits is a rebuild of a tier pack's span (ruling 25,
+// section 4.7 rule 2): checkTag accepts it on a tier tag alone, as -r2 and up
+// with no leading zero, so a segment, a root, a state, a ref or a file
+// variant never takes a tag that reads as a rebuild. A time is
 // an ISO 8601 UTC string `YYYY-MM-DDTHH:MM:SSZ` or a Date, and must fall on a
 // whole second: a tag has second precision, so two windows that differ below
 // it would share a tag. TODO/ingest.md DOM-024 fixes the time form
@@ -76,9 +87,18 @@ export const STATE = "state";
 
 const isOneOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === "string" && (list as readonly string[]).includes(v);
 
-// `tag` when it is a tag of this project, else LayoutError.
+const notTag = (tag: unknown): LayoutError => new LayoutError(`${JSON.stringify(tag)} is not a tag: lowercase letters, digits, _ . and -, at most 128 characters, not starting with . or -`);
+
+// The rebuild suffix of ruling 25, as a tag ends in it: the tag before it and
+// the digits. Only a tier tag takes it (parseTierTag).
+const REBUILD = /^(.+)-r([0-9]+)$/;
+
+// `tag` when it is a tag of this project, else LayoutError. A tag that ends
+// in the rebuild suffix is held to parseTierTag: a tier tag of a valid span,
+// with -r2 and up.
 export function checkTag(tag: unknown): string {
-  if (typeof tag !== "string" || !TAG.test(tag)) throw new LayoutError(`${JSON.stringify(tag)} is not a tag: lowercase letters, digits, _ . and -, at most 128 characters, not starting with . or -`);
+  if (typeof tag !== "string" || !TAG.test(tag)) throw notTag(tag);
+  if (REBUILD.test(tag)) parseTierTag(tag);
   return tag;
 }
 
@@ -190,10 +210,24 @@ function isoWeek(monday: Date): [number, number] {
   return [year, Math.floor((thursday.getTime() - jan1) / 86_400_000 / 7) + 1];
 }
 
+// The suffix of build `rebuild` of a span (ruling 25): none for the first
+// build (no number, or 1), `-rN` for a rebuild, N from 2.
+function rebuildSuffix(rebuild: unknown): string {
+  if (rebuild === undefined || rebuild === 1) return "";
+  if (typeof rebuild !== "number" || !Number.isSafeInteger(rebuild) || rebuild < 2) {
+    const shown = typeof rebuild === "number" ? String(rebuild) : JSON.stringify(rebuild);
+    throw new LayoutError(`the rebuild ${shown} is not a whole number from 2: the first build of a span carries no suffix (give none, or 1), and its rebuilds take -r2, -r3 and up (ruling 25)`);
+  }
+  return `-r${rebuild}`;
+}
+
 // `<dataset>-<tier>-<span>` (sections 4.1 and 4.5): `names-h-2026102608`,
 // `names-d-20261026`, `names-w-2026w44`, `rev-m-202609`, `names-y-2026`. `start`
-// is the first second of the span.
-export function tierTag(dataset: TierDataset, tier: Tier, start: Date | string): string {
+// is the first second of the span. `rebuild` names a rebuild of the span:
+// with 2 and up the tag ends in `-rN`, `names-d-20261026-r2`, since a tag is
+// write-once and nothing is deleted from GHCR (section 4.7 rules 1 and 2,
+// ruling 25); with none, or 1, it is the first build's tag.
+export function tierTag(dataset: TierDataset, tier: Tier, start: Date | string, rebuild?: number): string {
   packageOfDataset(dataset);
   if (!isOneOf(TIERS, tier)) throw new LayoutError(`${JSON.stringify(tier)} is not a tier: ${TIERS.join(", ")}`);
   const d = instant(start, "the span start");
@@ -224,7 +258,132 @@ export function tierTag(dataset: TierDataset, tier: Tier, start: Date | string):
       span = pad(d.getUTCFullYear(), 4);
       break;
   }
-  return checkTag(`${dataset}-${tier}-${span}`);
+  return checkTag(`${dataset}-${tier}-${span}${rebuildSuffix(rebuild)}`);
+}
+
+// A tier tag read back: the tag its span gives (`base`), the dataset, the
+// tier, the span's first second, and the build of the span (`rebuild`: 1 for
+// the first build, which carries no suffix, N for `-rN`).
+export interface TierTagParts {
+  readonly base: string;
+  readonly dataset: TierDataset;
+  readonly tier: Tier;
+  readonly start: string;
+  readonly rebuild: number;
+}
+
+// The span of each tier as its tag writes it, read back to the span's start.
+const SPAN_FORMS: Readonly<Record<Tier, RegExp>> = Object.freeze({
+  h: /^(\d{4})(\d{2})(\d{2})(\d{2})$/,
+  d: /^(\d{4})(\d{2})(\d{2})$/,
+  w: /^(\d{4})w(\d{2})$/,
+  m: /^(\d{4})(\d{2})$/,
+  y: /^(\d{4})$/,
+});
+const TIER_BASE = /^(.+)-([a-z])-([0-9w]+)$/;
+const DAY_MS = 86_400_000;
+
+// The Monday that starts ISO week `week` of ISO week-year `year`: week 1 holds
+// 4 January. A week the year does not have gives another year's tag, which
+// the round trip of parseTierTag refuses.
+function isoWeekStart(year: number, week: number): string {
+  const jan4 = Date.UTC(year, 0, 4);
+  const monday = jan4 - ((new Date(jan4).getUTCDay() + 6) % 7) * DAY_MS + (week - 1) * 7 * DAY_MS;
+  return new Date(monday).toISOString().replace(".000Z", "Z");
+}
+
+// `tag` read as a tier tag, `<dataset>-<tier>-<span>` with an optional
+// `-rN` (N from 2 to 2^53 - 1, no leading zero), or LayoutError. The base
+// must be the tag tierTag gives the span it names, so a span off its boundary
+// or off the calendar (hour 24, 30 February, a week 53 the year lacks) is
+// refused.
+export function parseTierTag(tag: unknown): TierTagParts {
+  if (typeof tag !== "string" || !TAG.test(tag)) throw notTag(tag);
+  const r = REBUILD.exec(tag);
+  const base = r === null ? tag : (r[1] ?? "");
+  const fail = (why: string): LayoutError =>
+    new LayoutError(
+      r === null
+        ? `${tag} is not a tier tag <dataset>-<tier>-<span>: ${why}`
+        : `${tag} carries the rebuild suffix -r${r[2]}, which only a tier tag takes, <dataset>-<tier>-<span>-rN (ruling 25): ${why}`,
+    );
+  const b = TIER_BASE.exec(base);
+  if (b === null) throw fail(`${base} is not <dataset>-<tier>-<span>`);
+  const [, dataset = "", tier = "", span = ""] = b;
+  if (!Object.hasOwn(TIER_DATASETS, dataset)) throw fail(`${JSON.stringify(dataset)} is not a dataset with tiers: ${Object.keys(TIER_DATASETS).join(", ")}`);
+  if (!isOneOf(TIERS, tier)) throw fail(`${JSON.stringify(tier)} is not a tier: ${TIERS.join(", ")}`);
+  const s = SPAN_FORMS[tier].exec(span);
+  if (s === null) throw fail(`${span} is not the span of a pack of tier ${tier}`);
+  let start: string;
+  switch (tier) {
+    case "h":
+      start = `${s[1]}-${s[2]}-${s[3]}T${s[4]}:00:00Z`;
+      break;
+    case "d":
+      start = `${s[1]}-${s[2]}-${s[3]}T00:00:00Z`;
+      break;
+    case "w":
+      start = isoWeekStart(Number(s[1]), Number(s[2]));
+      break;
+    case "m":
+      start = `${s[1]}-${s[2]}-01T00:00:00Z`;
+      break;
+    case "y":
+      start = `${s[1]}-01-01T00:00:00Z`;
+      break;
+  }
+  let want: string;
+  try {
+    want = tierTag(dataset as TierDataset, tier, start);
+  } catch (e) {
+    if (e instanceof LayoutError) throw fail(e.message);
+    throw e;
+  }
+  if (want !== base) throw fail(`the span ${span} is not a span of tier ${tier}: its start ${start} gives ${want}`);
+  let rebuild = 1;
+  if (r !== null) {
+    const digits = r[2] ?? "";
+    rebuild = Number(digits);
+    if (digits !== String(rebuild) || !Number.isSafeInteger(rebuild) || rebuild < 2) {
+      throw new LayoutError(`${tag} carries -r${digits}: a rebuild of a span is -r2, -r3 and up, with no leading zero, and the first build carries no suffix (ruling 25)`);
+    }
+  }
+  return { base, dataset: dataset as TierDataset, tier, start, rebuild };
+}
+
+// The tag the next build of a span takes, given `existing`, every tag of the
+// package (all the pages of its tag list): the span's tag when no build of it
+// is listed, else its tag with -rN, N one above the highest build listed. A
+// listed tag of another form is not a build of the span, and no tag this
+// gives equals it, so it is passed over. GHCR resolves tags without regard to case
+// (section 4.1), so each is read lowercased. A tag left out of `existing` may
+// be named again; the push then finds another digest under it and stops the
+// job (section 4.7 rule 1). A re-run of a build already pushed finds its own
+// tag by its digest first: this names a tag for bytes no tag of the span holds.
+export function nextTierTag(dataset: TierDataset, tier: Tier, start: Date | string, existing: Iterable<string>): string {
+  const base = tierTag(dataset, tier, start);
+  if (existing === null || typeof existing !== "object" || typeof (existing as Partial<Iterable<unknown>>)[Symbol.iterator] !== "function") {
+    throw new LayoutError("the existing tags are not a list of tags");
+  }
+  let last = 0;
+  for (const t of existing as Iterable<unknown>) {
+    if (typeof t !== "string") throw new LayoutError(`the existing tags hold a ${t === null ? "null" : typeof t}, which is not a tag`);
+    const lower = t.toLowerCase();
+    if (lower !== base && !lower.startsWith(`${base}-r`)) continue;
+    let parts: TierTagParts;
+    try {
+      parts = parseTierTag(lower);
+    } catch (e) {
+      if (e instanceof LayoutError) continue;
+      throw e;
+    }
+    if (parts.base === base && parts.rebuild > last) last = parts.rebuild;
+  }
+  // parseTierTag reads N up to 2^53 - 1 (Number.MAX_SAFE_INTEGER), above
+  // which a double skips whole numbers: a span whose last build has that N
+  // has no next tag.
+  if (last >= Number.MAX_SAFE_INTEGER) throw new LayoutError(`${base}-r${last} is the highest build a tag numbers: no later build of the span has a tag`);
+  return tierTag(dataset, tier, start, last + 1);
 }
 
 // `r-<YYYYMMDDTHHMMSSZ>`: a root, write-once (section 4.6); DOM-020 writes it
@@ -237,6 +396,19 @@ export function rootTag(at: Date | string): string {
 export function stateTag(date: Date | string): string {
   return checkTag(`state-${ymd(day(date, "the state date"))}`);
 }
+
+// `ledger-filter-<YYYYMMDD>`: the provisional filter of the package `state`
+// that holds the domains table through the end of that UTC day, write-once
+// (docs/format.md section 15, DOM-023). `date` is the day, `YYYY-MM-DD`, its
+// start `YYYY-MM-DDT00:00:00Z`, or a Date at that start.
+export function ledgerFilterTag(date: Date | string): string {
+  return checkTag(`ledger-filter-${ymd(day(date, "the filter date"))}`);
+}
+
+// The delta of the provisional filter in the package `state`: the hashes of
+// the domains first seen after its filter's as_of. It moves under the state
+// guard of DOM-024, like `state` (docs/format.md section 15).
+export const LEDGER_DELTA_TAG = "ledger-delta";
 
 // `<kind>-<sha12>`: an object of the `ref` package, sha12 of its bytes.
 export function refTag(kind: RefKind, sha256: string): string {
