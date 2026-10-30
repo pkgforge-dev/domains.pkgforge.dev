@@ -1,0 +1,5 @@
+{
+ "schema": "dom-011-overlap/1",
+ "at": "2026-10-29T23:35:53.919Z",
+ "skipped": "the window 2026-10-29T01:40:00.000Z falls on the pick's own UTC day, whose THC dump is not out until the next day"
+}

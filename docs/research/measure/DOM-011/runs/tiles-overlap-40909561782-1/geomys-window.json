@@ -1,0 +1,36 @@
+{
+ "schema": "dom-011-window/1",
+ "at": "2026-10-29T21:44:39.572Z",
+ "log": "tuscolo2027h1",
+ "from": "2026-10-26T12:00:00.000Z",
+ "to": "2026-10-26T12:05:00.000Z",
+ "stat": {
+  "mon": "https://tuscolo2027h1.skylight.geomys.org/",
+  "window": [
+   "2026-10-26T12:00:00.000Z",
+   "2026-10-26T12:05:00.000Z"
+  ],
+  "log_size": 399584113,
+  "last_full_tile": 1560874,
+  "partial_width": 113,
+  "first_served_tile": 0,
+  "first_served_probes": 1,
+  "start_tile": 1400036,
+  "bsearch_probes": 21,
+  "cut_before": false,
+  "reached_end": false,
+  "closed_before_checkpoint": true,
+  "complete": true,
+  "tiles_read": 193,
+  "entries": 47792,
+  "distinct_names": 56165,
+  "gz_bytes": 0,
+  "gz_unknown_tiles": 193,
+  "gzip_local_bytes": 1200803,
+  "raw_bytes": 7025572,
+  "gz_per_entry": null,
+  "throttled": 0,
+  "first": "2026-10-26T12:00:00.096Z",
+  "last": "2026-10-26T12:04:59.896Z"
+ }
+}

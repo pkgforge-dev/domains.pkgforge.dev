@@ -1,0 +1,2979 @@
+{
+  "schema": "dom-011-tiles/1",
+  "computed": "2026-10-30T02:23:07.344Z",
+  "definitions": {
+    "round": "one look at the log list and at every tiled log in state usable or qualified, with the contact User-Agent; its time is its start",
+    "window": "the 24 hours from the first round; a slot is a half hour of it counted from that round, and a slot is present when a round started in it",
+    "status": "per log and per probe, the count of each answer over the rounds of the window: an HTTP status; `bad` (200 with a body that is not a checkpoint, or not a names tile of its width); `error` (no answer: a timeout, a reset, the round deadline); `skipped` (no such tile: the tree is smaller than a tile, or its size is a multiple of 256); `absent` (the probe never ran: the checkpoint failed)",
+    "checkpoint": "GET <monitoring URL>checkpoint; 200 counts only when the body parses as a checkpoint",
+    "tile0": "GET tile/names/000",
+    "tail": "GET tile/names/<the last full tile>, from that round checkpoint",
+    "partial": "GET tile/names/<N>.p/<W>, the partial tile of that round checkpoint; a 404 can be the log replacing it by the full tile, which the static CT API allows",
+    "first_served": "the lowest names tile the log answers 200 for, by binary search between tile 0 (404) and the tail (200), assuming one contiguous range; first and last over the window, and its move in tiles a day",
+    "entries_per_day": "the growth of the tree size from the first to the last checkpoint of the window, per 86,400 s of round time",
+    "tail_age_min": "the median over the rounds of the minutes from the round start to the Timestamp of the last entry of the last full tile",
+    "reliable": "a log in state usable in every round of the window, whose checkpoint and last full names tile answered 200 in every round of the window, and that never answered 429",
+    "geomys": "every answer of a Geomys log in the rounds: the checkpoint, tile 0 and the tail must answer 200 and no request may answer 429 (a partial tile may answer 404, see partial); and every Geomys window read must see no 429",
+    "geomys_window": "Tuscolo2027h1 from 2026-10-26T12:00:00Z to 12:05:00Z, read by tiles-window.mjs; gz_bytes counts declared lengths only, gzip_local_bytes is the tiles gzipped here at level 6",
+    "overlap": "for a 5-minute window inside the Kafka retention, picked at run time: each set is the distinct names (lower case, without a leading `*.`) of a log family (every usable shard of Sycamore, Willow, Tuscolo, Gouda), their union, the Kafka window of certstream_domains, and THC dump of the window day; a cell is the percentage of the row set that is in the column set, hashed by ct-window.mjs hashName",
+    "rates": "ct-rates.mjs: entries a day of every log not rejected or retired, from two tree sizes 10 minutes apart, once per run; a run total sums the logs measured, so it is a lower bound when a log was not",
+    "verdict": "PASS when at least 44 of the 48 slots are present, Geomys answered as `geomys` says, the reliable list is not empty, a whole Geomys window was read with no 429, and at least one overlap window holds all four families, an uncut Kafka window and THC day"
+  },
+  "window": {
+    "from": "2026-10-28T23:43:38.209Z",
+    "to": "2026-10-29T23:43:38.209Z",
+    "complete": true
+  },
+  "rounds": {
+    "expected": 48,
+    "present": 48,
+    "in_window": 55,
+    "total": 55,
+    "runs": 8,
+    "largest_gap": {
+      "min": 30,
+      "from": "2026-10-29T22:44:33.099Z",
+      "to": "2026-10-29T23:14:33.101Z"
+    },
+    "gaps": [
+      {
+        "from": "2026-10-29T05:13:32.050Z",
+        "to": "2026-10-29T05:13:52.112Z",
+        "min": 0.3,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T10:43:45.093Z",
+        "to": "2026-10-29T10:44:05.719Z",
+        "min": 0.3,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T16:13:58.037Z",
+        "to": "2026-10-29T16:14:20.318Z",
+        "min": 0.4,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T21:44:13.093Z",
+        "to": "2026-10-29T21:44:38.969Z",
+        "min": 0.4,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T23:14:33.101Z",
+        "to": "2026-10-29T23:14:52.576Z",
+        "min": 0.3,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T23:14:52.576Z",
+        "to": "2026-10-29T23:25:22.798Z",
+        "min": 10.5,
+        "seam": true
+      },
+      {
+        "from": "2026-10-29T23:25:22.798Z",
+        "to": "2026-10-29T23:35:51.687Z",
+        "min": 10.5,
+        "seam": true
+      }
+    ]
+  },
+  "list": {
+    "timestamps": [
+      {
+        "timestamp": "2026-10-28T13:37:58Z",
+        "version": "95.15",
+        "first_round": "2026-10-28T23:43:38.209Z"
+      },
+      {
+        "timestamp": "2026-10-29T13:38:57Z",
+        "version": "95.16",
+        "first_round": "2026-10-29T16:13:58.037Z"
+      }
+    ],
+    "failures": 0,
+    "state_changes": []
+  },
+  "logs": [
+    {
+      "name": "trastevere2026h2",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 918165,
+      "tail_age_min": 0.2,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "trastevere2027h1",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 2749083,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "trastevere2027h2",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1499,
+      "tail_age_min": 127.7,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "trastevere2028h1",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1503,
+      "tail_age_min": 125.7,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "trastevere2028h2",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1499,
+      "tail_age_min": 114.3,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "tuscolo2026h2",
+      "op": "Geomys",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 2219336,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "tuscolo2027h1",
+      "op": "Geomys",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 12486663,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "tuscolo2027h2",
+      "op": "Geomys",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1497,
+      "tail_age_min": 120.7,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "tuscolo2028h1",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1504,
+      "tail_age_min": 128.6,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "tuscolo2028h2",
+      "op": "Geomys",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1499,
+      "tail_age_min": 123.3,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "aquamarine2026h2",
+      "op": "GoDaddy",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 829886,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "aquamarine2027h1",
+      "op": "GoDaddy",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 5460710,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "aquamarine2027h2",
+      "op": "GoDaddy",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 59,
+      "tail_age_min": 3509.8,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "aquamarine2028h1",
+      "op": "GoDaddy",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 61,
+      "tail_age_min": 4529.4,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "aquamarine2028h2",
+      "op": "GoDaddy",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 56,
+      "tail_age_min": 3956.5,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "parcelyard2026h2",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 1873872,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "parcelyard2027h1",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 16857769,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "parcelyard2027h2",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 57,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "plumbersarms2026h2",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 1873117,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "plumbersarms2027h1",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 16850612,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "plumbersarms2027h2",
+      "op": "Google",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 57,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "selene2027h1",
+      "op": "HARICA",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 8264401,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "selene2027h2",
+      "op": "HARICA",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 83,
+      "tail_age_min": 2904.5,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "selene2028h1",
+      "op": "HARICA",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 90,
+      "tail_age_min": 4035.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "selene2028h2",
+      "op": "HARICA",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 80,
+      "tail_age_min": 2918.5,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "gouda2026h2",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 366929,
+        "last": 366929,
+        "min": 366929,
+        "max": 366929,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 1427574,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "gouda2027h1",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 100748,
+        "last": 100748,
+        "min": 100748,
+        "max": 100748,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 11025222,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "gouda2027h2",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 25,
+        "last": 25,
+        "min": 25,
+        "max": 25,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 55,
+      "tail_age_min": 1057.5,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "gouda2028h1",
+      "op": "IPng Networks",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 61,
+      "tail_age_min": 5175.8,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "gouda2028h2",
+      "op": "IPng Networks",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 57,
+      "tail_age_min": 4544.2,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "halloumi2026h2a",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 1948466,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "halloumi2027h1",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 11911511,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "halloumi2027h2",
+      "op": "IPng Networks",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 57,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "halloumi2028h1",
+      "op": "IPng Networks",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 53,
+          "skipped": 2
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 62,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "halloumi2028h2",
+      "op": "IPng Networks",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 57,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "sycamore2026h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 2511126,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "sycamore2027h1",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 17683015,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "sycamore2027h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 50,
+      "tail_age_min": 6164.2,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "sycamore2028h1",
+      "op": "Let's Encrypt",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 56,
+      "tail_age_min": 3109.5,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "sycamore2028h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 59,
+      "tail_age_min": 2831.6,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "willow2026h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 2507472,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "willow2027h1",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 17363332,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "willow2027h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 53,
+          "skipped": 2
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 51,
+      "tail_age_min": 5947.3,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "willow2028h1",
+      "op": "Let's Encrypt",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 56,
+      "tail_age_min": 2982.7,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "willow2028h2",
+      "op": "Let's Encrypt",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 60,
+      "tail_age_min": 2739.9,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "eszigno2026h2",
+      "op": "Microsec",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 2204420,
+      "tail_age_min": 0.1,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "eszigno2027h1",
+      "op": "Microsec",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 9968348,
+      "tail_age_min": 0,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "eszigno2027h2",
+      "op": "Microsec",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 54,
+          "error": 1
+        },
+        "tile0": {
+          "200": 54,
+          "absent": 1
+        },
+        "tail": {
+          "200": 54,
+          "absent": 1
+        },
+        "partial": {
+          "200": 54,
+          "absent": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 60,
+      "tail_age_min": 5520.3,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": false,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "eszigno2028h1",
+      "op": "Microsec",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 55
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 62,
+      "tail_age_min": 1201.3,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "eszigno2028h2",
+      "op": "Microsec",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "200": 55
+        },
+        "tail": {
+          "200": 55
+        },
+        "partial": {
+          "200": 54,
+          "skipped": 1
+        }
+      },
+      "first_served": {
+        "first": 0,
+        "last": 0,
+        "min": 0,
+        "max": 0,
+        "tiles_per_day": 0
+      },
+      "entries_per_day": 56,
+      "tail_age_min": 5370.7,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": true,
+        "no_429": true
+      }
+    },
+    {
+      "name": "monument2027h1",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 11803661,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "monument2027h2",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 60,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "monument2028h1",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 62,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "monument2028h2",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 60,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "statue2027h1",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 11806620,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "statue2027h2",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 58,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "statue2028h1",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 63,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "statue2028h2",
+      "op": "Sectigo",
+      "states": [
+        "qualified"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 59,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": false,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    },
+    {
+      "name": "luoshu2027",
+      "op": "TrustAsia",
+      "states": [
+        "usable"
+      ],
+      "rounds": 55,
+      "status": {
+        "checkpoint": {
+          "200": 55
+        },
+        "tile0": {
+          "404": 55
+        },
+        "tail": {
+          "404": 55
+        },
+        "partial": {
+          "404": 55
+        }
+      },
+      "first_served": null,
+      "entries_per_day": 12269451,
+      "tail_age_min": null,
+      "throttled": 0,
+      "reliable_parts": {
+        "usable": true,
+        "checkpoint": true,
+        "tail": false,
+        "no_429": true
+      }
+    }
+  ],
+  "reliable": [
+    "tuscolo2026h2",
+    "tuscolo2027h1",
+    "tuscolo2027h2",
+    "gouda2026h2",
+    "gouda2027h1",
+    "gouda2027h2",
+    "sycamore2026h2",
+    "sycamore2027h1",
+    "sycamore2027h2",
+    "willow2026h2",
+    "willow2027h1",
+    "willow2027h2"
+  ],
+  "geomys": {
+    "probes": 2196,
+    "non_200": 0,
+    "non_200_listed": [],
+    "throttled": 0,
+    "window_reads": 9,
+    "window_throttled": 0
+  },
+  "geomys_window": {
+    "log": "tuscolo2027h1",
+    "from": "2026-10-26T12:00:00Z",
+    "to": "2026-10-26T12:05:00Z",
+    "reads": [
+      {
+        "dir": "tiles-overlap-40789306801-1",
+        "at": "2026-10-28T23:43:39.934Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40789318453-1",
+        "at": "2026-10-29T05:15:20.209Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40822163660-1",
+        "at": "2026-10-29T10:45:38.861Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40859865072-1",
+        "at": "2026-10-29T16:15:56.245Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40909561782-1",
+        "at": "2026-10-29T21:44:39.572Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40960318972-1",
+        "at": "2026-10-29T23:14:53.456Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 20,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40971791055-1",
+        "at": "2026-10-29T23:25:24.059Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 20,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40973029838-1",
+        "at": "2026-10-29T23:35:53.995Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 20,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      },
+      {
+        "dir": "tiles-overlap-40974209508-1",
+        "at": "2026-10-29T23:46:42.331Z",
+        "ok": true,
+        "error": null,
+        "tiles_read": 193,
+        "entries": 47792,
+        "distinct_names": 56165,
+        "gz_bytes": 0,
+        "gz_unknown_tiles": 193,
+        "gzip_local_bytes": 1200803,
+        "raw_bytes": 7025572,
+        "bsearch_probes": 21,
+        "first_served_tile": 0,
+        "start_tile": 1400036,
+        "throttled": 0,
+        "first": "2026-10-26T12:00:00.096Z",
+        "last": "2026-10-26T12:04:59.896Z"
+      }
+    ],
+    "whole": 9,
+    "reads_agree": true,
+    "first": {
+      "dir": "tiles-overlap-40789306801-1",
+      "at": "2026-10-28T23:43:39.934Z",
+      "ok": true,
+      "error": null,
+      "tiles_read": 193,
+      "entries": 47792,
+      "distinct_names": 56165,
+      "gz_bytes": 0,
+      "gz_unknown_tiles": 193,
+      "gzip_local_bytes": 1200803,
+      "raw_bytes": 7025572,
+      "bsearch_probes": 21,
+      "first_served_tile": 0,
+      "start_tile": 1400036,
+      "throttled": 0,
+      "first": "2026-10-26T12:00:00.096Z",
+      "last": "2026-10-26T12:04:59.896Z"
+    }
+  },
+  "overlap": [
+    {
+      "dir": "tiles-overlap-40789306801-1",
+      "at": "2026-10-28T23:43:39.862Z",
+      "skipped": "the window 2026-10-28T01:45:00.000Z falls on the pick's own UTC day, whose THC dump is not out until the next day",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40789318453-1",
+      "at": "2026-10-29T05:13:50.436Z",
+      "skipped": null,
+      "window": {
+        "from": "2026-10-28T07:15:00.000Z",
+        "to": "2026-10-28T07:20:00.000Z",
+        "day": "2026-10-28",
+        "picked_by": "run time"
+      },
+      "whole": true,
+      "sets": {
+        "sycamore": 84302,
+        "willow": 83228,
+        "tuscolo": 53312,
+        "gouda": 44280,
+        "union4": 116483,
+        "kafka": 415501
+      },
+      "matrix": {
+        "rows": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka"
+        ],
+        "cols": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka",
+          "thc"
+        ],
+        "cells": [
+          [
+            100,
+            86.89,
+            47,
+            34.75,
+            100,
+            57.51,
+            97.61
+          ],
+          [
+            88.01,
+            100,
+            47.44,
+            34.3,
+            100,
+            58.19,
+            97.68
+          ],
+          [
+            74.32,
+            74.06,
+            100,
+            35.59,
+            100,
+            51.87,
+            93.77
+          ],
+          [
+            66.16,
+            64.46,
+            42.85,
+            100,
+            100,
+            44.91,
+            89.84
+          ],
+          [
+            72.37,
+            71.45,
+            45.77,
+            38.01,
+            100,
+            47.12,
+            91.28
+          ],
+          [
+            11.67,
+            11.66,
+            6.66,
+            4.79,
+            13.21,
+            100,
+            67.62
+          ]
+        ]
+      },
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40822163660-1",
+      "at": "2026-10-29T10:44:04.154Z",
+      "skipped": null,
+      "window": {
+        "from": "2026-10-28T12:45:00.000Z",
+        "to": "2026-10-28T12:50:00.000Z",
+        "day": "2026-10-28",
+        "picked_by": "run time"
+      },
+      "whole": true,
+      "sets": {
+        "sycamore": 89265,
+        "willow": 89677,
+        "tuscolo": 58520,
+        "gouda": 50812,
+        "union4": 132237,
+        "kafka": 338634
+      },
+      "matrix": {
+        "rows": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka"
+        ],
+        "cols": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka",
+          "thc"
+        ],
+        "cells": [
+          [
+            100,
+            88.43,
+            43.71,
+            35.22,
+            100,
+            66.59,
+            98.36
+          ],
+          [
+            88.03,
+            100,
+            43.36,
+            35.49,
+            100,
+            66.87,
+            98.36
+          ],
+          [
+            66.67,
+            66.44,
+            100,
+            33.19,
+            100,
+            60.91,
+            95.35
+          ],
+          [
+            61.88,
+            62.63,
+            38.23,
+            100,
+            100,
+            55.49,
+            94.04
+          ],
+          [
+            67.5,
+            67.82,
+            44.25,
+            38.42,
+            100,
+            53.31,
+            94.23
+          ],
+          [
+            17.55,
+            17.71,
+            10.53,
+            8.33,
+            20.82,
+            100,
+            60.67
+          ]
+        ]
+      },
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40859865072-1",
+      "at": "2026-10-29T16:14:19.595Z",
+      "skipped": null,
+      "window": {
+        "from": "2026-10-28T18:15:00.000Z",
+        "to": "2026-10-28T18:20:00.000Z",
+        "day": "2026-10-28",
+        "picked_by": "run time"
+      },
+      "whole": true,
+      "sets": {
+        "sycamore": 93336,
+        "willow": 92328,
+        "tuscolo": 67864,
+        "gouda": 60174,
+        "union4": 141077,
+        "kafka": 430549
+      },
+      "matrix": {
+        "rows": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka"
+        ],
+        "cols": [
+          "sycamore",
+          "willow",
+          "tuscolo",
+          "gouda",
+          "union4",
+          "kafka",
+          "thc"
+        ],
+        "cells": [
+          [
+            100,
+            87.07,
+            49.52,
+            37.61,
+            100,
+            51,
+            98.17
+          ],
+          [
+            88.02,
+            100,
+            49.69,
+            37.74,
+            100,
+            51.63,
+            98.36
+          ],
+          [
+            68.11,
+            67.6,
+            100,
+            38.1,
+            100,
+            45.54,
+            94.28
+          ],
+          [
+            58.34,
+            57.91,
+            42.97,
+            100,
+            100,
+            36.9,
+            91.74
+          ],
+          [
+            66.16,
+            65.45,
+            48.1,
+            42.65,
+            100,
+            38.78,
+            92.68
+          ],
+          [
+            11.06,
+            11.07,
+            7.18,
+            5.16,
+            12.71,
+            100,
+            68.03
+          ]
+        ]
+      },
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40909561782-1",
+      "at": "2026-10-29T21:44:39.517Z",
+      "skipped": "the window 2026-10-28T23:45:00.000Z is within 30 minutes of an end of its UTC day",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40960318972-1",
+      "at": "2026-10-29T23:14:53.382Z",
+      "skipped": "the window 2026-10-29T01:15:00.000Z falls on the pick's own UTC day, whose THC dump is not out until the next day",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40971791055-1",
+      "at": "2026-10-29T23:25:23.994Z",
+      "skipped": "the window 2026-10-29T01:30:00.000Z falls on the pick's own UTC day, whose THC dump is not out until the next day",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40973029838-1",
+      "at": "2026-10-29T23:35:53.919Z",
+      "skipped": "the window 2026-10-29T01:40:00.000Z falls on the pick's own UTC day, whose THC dump is not out until the next day",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    },
+    {
+      "dir": "tiles-overlap-40974209508-1",
+      "at": "2026-10-29T23:46:42.261Z",
+      "skipped": "until 2026-10-29T23:43:25.000Z has passed",
+      "window": null,
+      "whole": false,
+      "sets": null,
+      "matrix": null,
+      "errors": []
+    }
+  ],
+  "rates": {
+    "runs": [
+      {
+        "dir": "tiles-overlap-40789306801-1",
+        "t0": "2026-10-28T23:43:49.853Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 313.4,
+        "names_tile_logs_M_per_day": 90
+      },
+      {
+        "dir": "tiles-overlap-40789318453-1",
+        "t0": "2026-10-29T05:15:26.739Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 297.3,
+        "names_tile_logs_M_per_day": 84.3
+      },
+      {
+        "dir": "tiles-overlap-40822163660-1",
+        "t0": "2026-10-29T10:45:46.949Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 376.8,
+        "names_tile_logs_M_per_day": 64.1
+      },
+      {
+        "dir": "tiles-overlap-40859865072-1",
+        "t0": "2026-10-29T16:16:04.783Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 283.4,
+        "names_tile_logs_M_per_day": 79
+      },
+      {
+        "dir": "tiles-overlap-40909561782-1",
+        "t0": "2026-10-29T21:44:48.359Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 398.2,
+        "names_tile_logs_M_per_day": 76.5
+      },
+      {
+        "dir": "tiles-overlap-40960318972-1",
+        "t0": "2026-10-29T23:15:03.155Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 237.4,
+        "names_tile_logs_M_per_day": 61.2
+      },
+      {
+        "dir": "tiles-overlap-40971791055-1",
+        "t0": "2026-10-29T23:25:33.407Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 82,
+        "total_M_per_day": 250,
+        "names_tile_logs_M_per_day": 68.4
+      },
+      {
+        "dir": "tiles-overlap-40973029838-1",
+        "t0": "2026-10-29T23:36:05.128Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 80,
+        "total_M_per_day": 432.8,
+        "names_tile_logs_M_per_day": 87
+      },
+      {
+        "dir": "tiles-overlap-40974209508-1",
+        "t0": "2026-10-29T23:46:53.997Z",
+        "gap_s": 600,
+        "logs": 82,
+        "measured": 81,
+        "total_M_per_day": 300.3,
+        "names_tile_logs_M_per_day": 87.3
+      }
+    ],
+    "median_per_day_M": {
+      "parcelyard2026h2": 1.99,
+      "parcelyard2027h1": 16,
+      "parcelyard2027h2": 0,
+      "plumbersarms2026h2": 1.97,
+      "plumbersarms2027h1": 15.93,
+      "plumbersarms2027h2": 0,
+      "argon2026h2": 2.22,
+      "argon2027h1": 15.17,
+      "xenon2026h2": 2.38,
+      "xenon2027h1": 13.49,
+      "nimbus2026": 0,
+      "nimbus2027": 0,
+      "wyvern2026h2": 2.38,
+      "wyvern2027h1": 12.25,
+      "wyvern2027h2": 0,
+      "sphinx2026h2": 1.76,
+      "sphinx2027h1": 10.44,
+      "sphinx2027h2": 0,
+      "monument2027h1": 10.61,
+      "monument2027h2": 0,
+      "monument2028h1": 0,
+      "monument2028h2": 0,
+      "statue2027h1": 10.64,
+      "statue2027h2": 0,
+      "statue2028h1": 0,
+      "statue2028h2": 0,
+      "mammoth2026h2": 0,
+      "sabre2026h2": 0,
+      "elephant2026h2": 2.07,
+      "elephant2027h1": 15.09,
+      "elephant2027h2": 0,
+      "tiger2026h2": 2.37,
+      "tiger2027h1": 14.36,
+      "tiger2027h2": 0,
+      "sycamore2026h2": 2.36,
+      "sycamore2027h1": 15.7,
+      "sycamore2027h2": 0,
+      "willow2026h2": 2.37,
+      "willow2027h1": 15.36,
+      "willow2027h2": 0,
+      "sycamore2028h1": 0,
+      "sycamore2028h2": 0,
+      "willow2028h1": 0,
+      "willow2028h2": 0,
+      "luoshu2027": 10.88,
+      "log2026a": 2.27,
+      "log2026b": 2.31,
+      "hetu2027": 11.33,
+      "tuscolo2026h2": 2.16,
+      "tuscolo2027h1": 12.17,
+      "tuscolo2027h2": 0,
+      "tuscolo2028h1": 0,
+      "tuscolo2028h2": 0,
+      "trastevere2026h2": 0.98,
+      "trastevere2027h1": 2.5,
+      "trastevere2027h2": 0,
+      "trastevere2028h1": 0,
+      "trastevere2028h2": 0,
+      "halloumi2026h2a": 2.07,
+      "halloumi2027h1": 11.01,
+      "halloumi2027h2": 0,
+      "gouda2026h2": 1.47,
+      "gouda2027h1": 10.18,
+      "gouda2027h2": 0,
+      "gouda2028h1": 0,
+      "gouda2028h2": 0,
+      "halloumi2028h1": 0,
+      "halloumi2028h2": 0,
+      "eszigno2026h2": 2.22,
+      "eszigno2027h1": 8.93,
+      "eszigno2027h2": 0,
+      "eszigno2028h1": 0,
+      "eszigno2028h2": 0,
+      "aquamarine2026h2": 0.75,
+      "aquamarine2027h1": 5.09,
+      "aquamarine2027h2": 0,
+      "aquamarine2028h1": 0,
+      "aquamarine2028h2": 0,
+      "selene2027h1": 7.24,
+      "selene2027h2": 0,
+      "selene2028h1": 0,
+      "selene2028h2": 0
+    }
+  },
+  "verdict": "PASS",
+  "reasons": []
+}

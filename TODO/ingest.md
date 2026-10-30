@@ -295,8 +295,7 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
 
 ## DOM-011 — Measure names-tile availability per log, Geomys's window and the overlap
 
-- **Status:** partial
-- **Waiting:** until 2026-10-30T00:30:00Z; the chain was dispatched at 2026-10-28T23:43:26Z with `until=2026-10-29T23:43:25Z` (first run 40789306801; its successor 40789318453 was pending at 23:43:34Z). Read the first run's overlap artifact once its overlap job ends, restart a broken chain with the same `until`, and after `until` and the last run run `node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json`, commit `result.json` and `runs/`, write the table and the reliable set here and in DOM-037, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 3.1 and section 11 Phase 0 item 2; `docs/research/web-pkgforge-2026-10-27/ct.md` section 4; the findings of 2026-10-27T08:23Z to 08:25Z recorded below.
@@ -404,6 +403,42 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
   - `geomys-window.json`: the same Tuscolo window as the local read gives the same counts (193 tiles, 47,792 entries, 56,165 distinct names, 21 search probes), `complete: true` and `throttled: 0`, with no tile that declared a Content-Length.
   - `rates.json` over a 600 s span: 82 logs, 82 measured, 313.4 million entries a day in all, and 90.0 million in the logs whose tile 0 answers 200. This is the entry's rate figure. The local 60 s read (324.7 million over 79 logs) was indicative only.
   - The chain's measure-chain job ended at 23:43:35Z after it dispatched successor 40789318453, which waits in the queue behind the rounds job.
+- **MEASURED 2026-10-30T02:23Z (the 24 hours, from the chain's artifacts):** `node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json` exits 0 and prints `PASS`. It listed 9 runs of the chain (40789306801 to 40974209508, all `success`) and fetched 18 artifacts into `docs/research/measure/DOM-011/runs/` (2.4 MB).
+  - **Rounds.** The window is 2026-10-28T23:43:38Z to 2026-10-29T23:43:38Z. It has 48 of 48 slots, from 55 rounds in 8 runs, and the largest gap is 30 min. The log list moved from version 95.15 to 95.16 (`log_list_timestamp` 2026-10-29T13:38:57Z), first read at 16:13:58Z, with 0 failed reads.
+  - **Per log, 55 rounds each.** The operators fall into three groups:
+    - **Every tile probed answered 200 (tile 0, tail and partial):** Let's Encrypt Sycamore and Willow (2026h2 to 2028h2), Geomys Tuscolo and Trastevere (2026h2 to 2028h2), GoDaddy Aquamarine (2026h2 to 2028h2), HARICA Selene (2027h1 to 2028h2), and Microsec Eszigno (2026h2 to 2028h2). Eszigno2027h2 is the exception: one round errored at its checkpoint and probed nothing else. A partial tile answered `skipped` at most twice for a log, when the tree held no partial tile at that read.
+    - **IPng Gouda serves a recent range.** Gouda 2026h2, 2027h1 and 2027h2 answer 404 at tile 0 and 200 at the tail. Their first served tiles are 366,929, 100,748 and 25, the same as on 2026-10-28. Gouda 2028h1 and 2028h2 serve tile 0.
+    - **No names tiles: 404 at tile 0, the tail and the partial in every round.** IPng Halloumi (all five shards), Google ParcelYard and PlumbersArms, Sectigo Monument and Statue (2027h1 to 2028h2), and TrustAsia Luoshu2027. Their checkpoints answer 200.
+  - **Reliable set (12).** A log is reliable when it is in state usable and its checkpoint and tail answered 200 in every round. The set: Tuscolo 2026h2, 2027h1 and 2027h2; Gouda 2026h2, 2027h1 and 2027h2; Sycamore 2026h2, 2027h1 and 2027h2; Willow 2026h2, 2027h1 and 2027h2. They grew by 67,225,393 entries over the 24 hours, the tree growth from the first to the last checkpoint. That is 262,600 tiles a day, about 3.0 a second. At design A's 26.4 B an entry gzipped, it is about 1.77 GB a day [E].
+  - **Qualified logs.** Trastevere, Aquamarine, Selene and Eszigno serve every tile probed and are not reliable only because their state is `qualified`. Together they grew by 30,400,121 entries a day.
+  - **Busiest shards, entries a day:** Sycamore2027h1 17,683,015; Willow2027h1 17,363,332; Tuscolo2027h1 12,486,663; Gouda2027h1 11,025,222. Among the logs with no names tiles: ParcelYard2027h1 16,857,769, PlumbersArms2027h1 16,850,612, Luoshu2027 12,269,451 and Halloumi2027h1 11,911,511.
+  - **Geomys.** 2,196 answers in the rounds, every one 200, none 429. 9 whole window reads, none 429. The window of Tuscolo2027h1 from 2026-10-26T12:00:00Z to 12:05:00Z gave 193 tiles, 47,792 entries and 56,165 names in each read, with 21 search probes. No tile declared a length, and the tiles gzip to 1,200,803 B here.
+  - **Overlap.** Three windows are whole, each with its THC day 2026-10-28 read. Six were skipped as built: four on the pick's own UTC day, one within 30 minutes of a day's end, and one after `until`. Distinct names:
+
+    | window (2026-10-28) | Sycamore | Willow | Tuscolo | Gouda | union of the four | Kafka |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | 07:15 to 07:20Z | 84,302 | 83,228 | 53,312 | 44,280 | 116,483 | 415,501 |
+    | 12:45 to 12:50Z | 89,265 | 89,677 | 58,520 | 50,812 | 132,237 | 338,634 |
+    | 18:15 to 18:20Z | 93,336 | 92,328 | 67,864 | 60,174 | 141,077 | 430,549 |
+
+    Shares across the three windows:
+
+    | set | share of the union of the four |
+    | --- | --- |
+    | THC's day holds | 91.28%, 94.23% and 92.68% |
+    | the Kafka window holds | 47.12%, 53.31% and 38.78% |
+    | Sycamore holds | 72.37%, 67.50% and 66.16% |
+    | Tuscolo holds | 45.77%, 44.25% and 48.10% |
+    | Gouda holds | 38.01%, 38.42% and 42.65% |
+
+    The other way round, the union holds 13.21%, 20.82% and 12.71% of the Kafka window. Sycamore and Willow share 86.9% to 88.4% of each other.
+  - **Rates.** Nine reads, each over 600 s, gave 237.4 M to 432.8 M entries a day over the 80 to 82 measured logs. Of these, 61.2 M to 90.0 M are in the logs whose tile 0 answers 200. A 600 s read swings by a factor of 1.8, so the 24-hour tree growth above is the figure.
+  - **The tiles add names THC's day lacks.** The union of the four logs holds 5.8% to 8.7% names that THC's day of the same date does not. Kafka's window holds about half the union. So the tiles are a source of their own and not only a fresher copy of THC. DOM-037 takes them as its source.
+- **Found 2026-10-30T02:23Z (DOM-012):** the chain ended with three short runs. They are 40971791055, 40973029838 and 40974209508, created at 23:14:47Z, 23:25:19Z and 23:35:47Z, each about 21 minutes long.
+  - **Why.** Run 40909561782's job `rounds` took its last round at 23:14:33Z and stopped, because the next mark (23:44Z) fell after `until`. Each later run started before `until`, so it dispatched a successor, took one round at once, and stopped. Each also ran its `overlap` job for about 10 minutes, and the last run, after `until`, started no successor.
+  - **Cost.** 7 rounds beyond the 48 slots, about an hour of runner time. The verdict counts slots, not rounds, so it is not wrong.
+  - **What DOM-012 carries.** DOM-012's `measure-feeds.yml` has the same guard: a run before `until` dispatches. Its tail will repeat this pattern for at most a few runs. A dispatch guard that also needs the next slot to fall before `until` would end the chain on its last full run.
+- **Closed 2026-10-30T02:25Z (proven):** the Prove's first line passes. `node scripts/measure/tiles-availability.mjs --download --verdict docs/research/measure/DOM-011/result.json` exits 0 and prints `PASS`, with 48 of 48 slots, Geomys 200 in every probe and no 429, a usable list of 12 logs, one whole Geomys window and three whole overlap windows. Its artifacts came from the chain's 9 runs on ubuntu-24.04 (MEASURED above). The Prove's second line, the Geomys window, was MEASURED on 2026-10-28T15:47:41Z and again in each of the 9 runs. `result.json` and `runs/` are committed with this close. The reliable set goes into DOM-037 as a Found of the same instant.
 
 ## DOM-012 — Measure when ISC and WhoisDS publish
 
@@ -682,6 +717,13 @@ Evidence tags. MEASURED names the command and the UTC time. READ names the URL o
   - After the live run: `node scripts/ghcr/tags.mjs obs --prefix ct-le. --min 1`, `node scripts/ghcr/tags.mjs obs --prefix ct-geomys. --min 1` and `node scripts/ghcr/tags.mjs obs --prefix ct-ipng. --min 1` each exit 0, and the same three with the prefixes `raw-ct-le.`, `raw-ct-geomys.` and `raw-ct-ipng.` exit 0 for the raw lane. The tool follows the registry's `Link` pages (DOM-019), so the check holds past 1,000 tags.
   - `node scripts/ingest/run.mjs --source ct-geomys --dry-run --max-tiles 50` prints 50 tiles read with status 200 and no 429.
 - **Found 2026-10-28T23:38Z (DOM-011):** one local round of DOM-011 at 2026-10-28T15:46:31Z found names tiles at tile 0 and the tail on HARICA Selene, Microsec Eszigno and Geomys Trastevere. All three are qualified logs that this entry's list does not name. Google's tiled logs (ParcelYard, PlumbersArms) and TrustAsia Luoshu2027 answered 404 there. The reliable set comes from DOM-011's 24-hour result.
+- **Found 2026-10-30T02:25Z (DOM-011's 24-hour result, which replaces the M10 figures of the Premise):** the measurement ran from 2026-10-28T23:43Z to 2026-10-29T23:43Z, 55 rounds; the record is `docs/research/measure/DOM-011/result.json`.
+  - **The reliable set is 12 logs.** It is Sycamore, Willow, Tuscolo and Gouda, each in its 2026h2, 2027h1 and 2027h2 shards. Each is in state usable, and its checkpoint and tail answered 200 in every round.
+  - **Its volume.** The set grew by 67,225,393 entries in the 24 hours. That is 262,600 tiles a day, about 3.0 a second, and about 1.77 GB a day gzipped at 26.4 B an entry [E]. The Premise's 51.7 million, 2.3 tiles a second and 1.37 GB come from two reads 120 s apart, and the 24-hour growth replaces them. So the Band reads 3.0 tiles a second, and the raw lane's size is about 1.77 GB a day, about 0.65 TB a year [E].
+  - **Gouda serves from a first tile.** Gouda 2026h2, 2027h1 and 2027h2 serve from tiles 366,929, 100,748 and 25, unchanged over the 24 hours. The cursor's `first_served` of the Approach holds.
+  - **More logs serve names tiles.** Geomys Trastevere, GoDaddy Aquamarine, HARICA Selene and Microsec Eszigno answered 200 at tile 0, the tail and the partial in every round. They are qualified, together 30.4 million entries a day. The Shards bullet reads a shard that is `usable` or `qualified`, so the adapter must decide whether these operators' logs are read. They have no source bit: `ct-godaddy`, bit 17, is the only one named. Halloumi, Google, Sectigo and TrustAsia serve no names tiles.
+  - **Geomys.** 2,196 answers and 9 whole window reads with the contact User-Agent, none 429.
+  - **Overlap.** In three windows on 2026-10-28, THC's day held 91.3% to 94.2% of the four-log union, and Kafka's window held 38.8% to 53.3%. So the tiles add 5.8% to 8.7% names that no other source here carries that day. That makes them a source, not only a fresher copy.
 
 ## DOM-042 — Mirror THC's monthly database into GHCR
 

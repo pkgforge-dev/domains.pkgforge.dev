@@ -99,15 +99,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 40 open, 7 partial, 0 blocked, 15 done.**
+**62 items. 40 open, 6 partial, 0 blocked, 16 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 22 | 7 | 0 | 15 | 44 |
+| P1 | 22 | 6 | 0 | 16 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 40 | 7 | 0 | 15 | 62 |
+| **All** | 40 | 6 | 0 | 16 | 62 |
 
 ## Entries
 
@@ -123,7 +123,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-008](storage.md) | P1 | storage | partial | Measure deflate-raw decode CPU in workerd |
 | [DOM-009](ingest.md) | P1 | ingest | **done** | Measure the THC daily job and the 54-day backfill |
 | [DOM-010](ingest.md) | P1 | ingest | **done** | Measure THC's monthly database: columns, CNAMEs and stream speed |
-| [DOM-011](ingest.md) | P1 | ingest | partial | Measure names-tile availability per log, Geomys's window and the overlap |
+| [DOM-011](ingest.md) | P1 | ingest | **done** | Measure names-tile availability per log, Geomys's window and the overlap |
 | [DOM-012](ingest.md) | P1 | ingest | partial | Measure when ISC and WhoisDS publish |
 | [DOM-013](foundation.md) | P1 | foundation | **done** | The workspace, the workerd test harness and CI |
 | [DOM-014](foundation.md) | P1 | foundation | **done** | Workflow policy check and pinned installers |

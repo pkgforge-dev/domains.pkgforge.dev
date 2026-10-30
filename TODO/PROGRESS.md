@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 40 open, 7 partial, 0 blocked, 15 done.**
+**62 items. 40 open, 6 partial, 0 blocked, 16 done.**
 
 ## What this session did
 
@@ -74,10 +74,11 @@ is the only one.
   - Ruling 18 is measured: two calls of `root-promote.yml` queue in its group `root-writer` (runs 40905625954 and 40905643334, the second promote job 2 s after the first ended). The caller that measured it is removed.
 - Asked the operator three design questions from wave 4's findings and recorded the answers as rulings 23 to 25: a quarantined day is served but never as new (DOM-029); a day no source covers is a hole named in `gaps`, not an empty pack (DOM-029); a rebuilt tier pack takes the suffix `-rN` on its tag (DOM-023).
 - Moved biome to 2.6.4 (Renovate #1); its new rule `useMathMinMax` flags four string reductions, each now carrying a `biome-ignore` with its reason. Moved Node to 26.13.0 and `@types/node` to 26.6.6 (#2); the local gate ran on Node 26.7.0, and `ci.yml` runs the new version. Closed #3 (`@cloudflare/workers-types` 5.20261029.1) under ruling 20 with its reason: the types stay at 5.20261013.1, the compatibility date the pinned workerd runs, and DOM-030 moves wrangler, the date and the types together.
+- Closed DOM-011 on 2026-10-30 from the chain's 9 runs: `PASS`, 48 of 48 slots, Geomys never throttled with the contact User-Agent, and a reliable set of 12 shards (Sycamore, Willow, Tuscolo and Gouda, 2026h2 to 2027h2) growing by 67.2 million entries a day. THC's day holds 91% to 94% of the four logs' names and Kafka about half, so the tiles are a source of their own. DOM-037 carries the reliable set; DOM-012 carries the chain's short tail runs as a Found.
 
 ## What is in progress
 
-Seven entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Six entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
@@ -86,7 +87,6 @@ Seven entries are partial. Each one's Waiting line names the instant its result 
 | DOM-005 | the probe's `/kafka` deploy and its 10-minute run now; the memory sweep after DOM-002 sets `crons = []` |
 | DOM-007 | the `/range` deploy, the cache check and the single reads now; the loads at 20, 50 and 100 requests a second after `crons = []` |
 | DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
-| DOM-011 | 24 hours of the `measure-tiles.yml` chain |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts only if DOM-003 records a Worker clock.
@@ -95,7 +95,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
 
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
    - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
-   - DOM-011 closes after its 24 hours, and DOM-012 after 7 days.
+   - DOM-012 closes after its 7 days.
 2. DOM-003, once DOM-001 and DOM-002 have closed.
 3. Compaction: DOM-023, with its Decision of 2026-10-29T15:18Z (a rebuild suffix on tier tags) and the duties its Found of 2026-10-29T15:30Z lists.
 4. The ingest skeleton, built to the clock verdict: DOM-024. Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
