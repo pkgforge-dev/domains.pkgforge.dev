@@ -54,14 +54,15 @@ record guard refuses an order that lists an entry before an open dependency.
    (`TODO/PROGRESS.md`, "Start here next session").
 2. **Foundation before any adapter (DOM-013 to DOM-016).** The workspace and
    its workerd harness (DOM-013) wait for no measurement: its own smoke Worker
-   proves that `deflate-raw` exists under the pinned date, and DOM-008 measures
-   its CPU on Cloudflare later. The workflow policy check (DOM-014) precedes
+   proves that `deflate-raw` exists under the pinned date, and DOM-008 measured
+   its CPU on Cloudflare later (2026-10-30). The workflow policy check (DOM-014) precedes
    every workflow that writes to GHCR. The names package (DOM-015) and the source
    registry (DOM-016) are what every adapter and every pack imports.
 3. **The format and the registry of truth before any publish (DOM-017 to
    DOM-020).** A pack (DOM-017) and its verifier (DOM-018) come first; the pack's
-   header names its codec and block size, so DOM-008's verdict changes a default
-   and not the layout, and DOM-017 does not wait for it. The GHCR
+   header names its codec and block size, so DOM-008's verdict could change a
+   default and not the layout, and DOM-017 did not wait for it. The verdict kept
+   the defaults. The GHCR
    packages and the push tool (DOM-019) follow. The root (DOM-020) is the only
    thing a reader trusts, so nothing publishes before it works.
 4. **The new-domain feed is the first product (DOM-021 to DOM-035).** The
@@ -99,28 +100,28 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 38 open, 8 partial, 0 blocked, 16 done.**
+**62 items. 38 open, 3 partial, 0 blocked, 21 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 20 | 8 | 0 | 16 | 44 |
+| P1 | 20 | 3 | 0 | 21 | 44 |
 | P2 | 15 | 0 | 0 | 0 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 38 | 8 | 0 | 16 | 62 |
+| **All** | 38 | 3 | 0 | 21 | 62 |
 
 ## Entries
 
 | ID | Priority | Category | Status | Item |
 | --- | --- | --- | --- | --- |
-| [DOM-001](ops.md) | P1 | ops | partial | Measure the Actions clock: a schedule and a self-dispatch chain |
-| [DOM-002](ops.md) | P1 | ops | partial | Measure the Cloudflare cron clock with a probe Worker that writes a hot tier to R2 |
+| [DOM-001](ops.md) | P1 | ops | **done** | Measure the Actions clock: a schedule and a self-dispatch chain |
+| [DOM-002](ops.md) | P1 | ops | **done** | Measure the Cloudflare cron clock with a probe Worker that writes a hot tier to R2 |
 | [DOM-003](ops.md) | P1 | ops | open | Decide the clock from the measurements |
 | [DOM-004](ingest.md) | P1 | ingest | **done** | Measure Kafka from a GitHub runner |
-| [DOM-005](ingest.md) | P1 | ingest | partial | Measure Kafka from a Worker connect() |
+| [DOM-005](ingest.md) | P1 | ingest | **done** | Measure Kafka from a Worker connect() |
 | [DOM-006](storage.md) | P1 | storage | **done** | Measure a 1.5 GB push from a runner and that a first push comes out public |
-| [DOM-007](storage.md) | P1 | storage | partial | Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second |
-| [DOM-008](storage.md) | P1 | storage | partial | Measure deflate-raw decode CPU in workerd |
+| [DOM-007](storage.md) | P1 | storage | **done** | Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second |
+| [DOM-008](storage.md) | P1 | storage | **done** | Measure deflate-raw decode CPU in workerd |
 | [DOM-009](ingest.md) | P1 | ingest | **done** | Measure the THC daily job and the 54-day backfill |
 | [DOM-010](ingest.md) | P1 | ingest | **done** | Measure THC's monthly database: columns, CNAMEs and stream speed |
 | [DOM-011](ingest.md) | P1 | ingest | **done** | Measure names-tile availability per log, Geomys's window and the overlap |

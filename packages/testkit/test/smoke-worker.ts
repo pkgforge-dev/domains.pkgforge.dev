@@ -1,6 +1,7 @@
 // packages/testkit/test/smoke-worker.ts — the Worker the harness test runs in
 // workerd. It proves two runtime APIs exist under the pinned compatibility date
-// and flags; DOM-008 measures their CPU on Cloudflare itself.
+// and flags; DOM-008 measured the CPU of DecompressionStream("deflate-raw") on
+// Cloudflare itself.
 //
 //   GET  /decode?text=T   compresses T with CompressionStream("deflate-raw") and
 //                         decompresses it with DecompressionStream("deflate-raw")

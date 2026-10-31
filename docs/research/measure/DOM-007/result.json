@@ -1,0 +1,607 @@
+{
+  "schema": "domains.measure.range-load.result.v1",
+  "entry": "DOM-007",
+  "places": [
+    "operator"
+  ],
+  "refs": [
+    {
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "layer": {
+        "digest": "sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3",
+        "size": 1610612736,
+        "title": "payload.bin"
+      }
+    }
+  ],
+  "runs": [
+    {
+      "file": "operator-cold-20.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:26:37.494Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "cold",
+      "rps": 20,
+      "seconds": 60,
+      "cache": "none",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 1200,
+        "expected": 1200,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 1200,
+        "p50": 716,
+        "p95": 1741,
+        "max": 4322
+      },
+      "worker_ms": {
+        "n": 1200,
+        "p50": 701,
+        "p95": 1728,
+        "max": 4309
+      },
+      "subrequests": {
+        "n": 1200,
+        "p50": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "colos": {
+        "KTM": 1200
+      }
+    },
+    {
+      "file": "operator-cold-50.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:27:40.758Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "cold",
+      "rps": 50,
+      "seconds": 60,
+      "cache": "none",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 3000,
+        "expected": 3000,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 3000,
+        "p50": 703,
+        "p95": 1103,
+        "max": 4022
+      },
+      "worker_ms": {
+        "n": 3000,
+        "p50": 688,
+        "p95": 1082,
+        "max": 3980
+      },
+      "subrequests": {
+        "n": 3000,
+        "p50": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "colos": {
+        "KTM": 3000
+      }
+    },
+    {
+      "file": "operator-cold-100.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:28:44.874Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "cold",
+      "rps": 100,
+      "seconds": 60,
+      "cache": "none",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 6000,
+        "expected": 6000,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 6000,
+        "p50": 699,
+        "p95": 728,
+        "max": 1872
+      },
+      "worker_ms": {
+        "n": 6000,
+        "p50": 683,
+        "p95": 708,
+        "max": 1856
+      },
+      "subrequests": {
+        "n": 6000,
+        "p50": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "colos": {
+        "KTM": 6000
+      }
+    },
+    {
+      "file": "operator-warm-20.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:29:47.129Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "warm",
+      "rps": 20,
+      "seconds": 60,
+      "cache": "block",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 1200,
+        "expected": 1200,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 1200,
+        "p50": 23,
+        "p95": 32,
+        "max": 62
+      },
+      "worker_ms": {
+        "n": 1200,
+        "p50": 6,
+        "p95": 7,
+        "max": 45
+      },
+      "subrequests": {
+        "n": 1200,
+        "p50": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "colos": {
+        "KTM": 1200
+      }
+    },
+    {
+      "file": "operator-warm-50.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:30:50.953Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "warm",
+      "rps": 50,
+      "seconds": 60,
+      "cache": "block",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 3000,
+        "expected": 3000,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 3000,
+        "p50": 19,
+        "p95": 32,
+        "max": 323
+      },
+      "worker_ms": {
+        "n": 3000,
+        "p50": 4,
+        "p95": 6,
+        "max": 308
+      },
+      "subrequests": {
+        "n": 3000,
+        "p50": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "colos": {
+        "KTM": 3000
+      }
+    },
+    {
+      "file": "operator-warm-100.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:31:54.476Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "warm",
+      "rps": 100,
+      "seconds": 60,
+      "cache": "block",
+      "length": 25600,
+      "counts": {
+        "429": 0,
+        "requests": 6000,
+        "expected": 6000,
+        "5xx": 0,
+        "other": 0
+      },
+      "latency_ms": {
+        "n": 6000,
+        "p50": 17,
+        "p95": 27,
+        "max": 324
+      },
+      "worker_ms": {
+        "n": 6000,
+        "p50": 4,
+        "p95": 5,
+        "max": 306
+      },
+      "subrequests": {
+        "n": 6000,
+        "p50": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "colos": {
+        "KTM": 6000
+      }
+    }
+  ],
+  "singles": [
+    {
+      "file": "operator-single-2.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-30T19:32:57.540Z",
+      "verdict": "PASS",
+      "failed": [],
+      "mode": "single",
+      "rps": 0,
+      "rows": [
+        {
+          "size": 1024,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1384,
+            "p95": 2256,
+            "max": 2294
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1369,
+            "p95": 2245,
+            "max": 2277
+          },
+          "block_hits": null
+        },
+        {
+          "size": 1024,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 17,
+            "p95": 19,
+            "max": 22
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 4,
+            "p95": 5,
+            "max": 5
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 25600,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1578,
+            "p95": 2819,
+            "max": 2935
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1558,
+            "p95": 2790,
+            "max": 2924
+          },
+          "block_hits": null
+        },
+        {
+          "size": 25600,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 18,
+            "p95": 29,
+            "max": 142
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 4,
+            "p95": 5,
+            "max": 116
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 65536,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1469,
+            "p95": 2620,
+            "max": 2663
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1456,
+            "p95": 2605,
+            "max": 2650
+          },
+          "block_hits": null
+        },
+        {
+          "size": 65536,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 18,
+            "p95": 26,
+            "max": 70
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 4,
+            "p95": 6,
+            "max": 57
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 1048576,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1516,
+            "p95": 2914,
+            "max": 3034
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1498,
+            "p95": 2891,
+            "max": 3016
+          },
+          "block_hits": null
+        },
+        {
+          "size": 1048576,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 27,
+            "p95": 32,
+            "max": 35
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 4,
+            "p95": 5,
+            "max": 6
+          },
+          "block_hits": 30
+        }
+      ]
+    },
+    {
+      "file": "operator-single.json",
+      "place": "operator",
+      "ref": "sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c",
+      "started_at": "2026-10-29T00:28:52.447Z",
+      "verdict": "FAIL",
+      "failed": [
+        "all-expected"
+      ],
+      "mode": "single",
+      "rps": 0,
+      "rows": [
+        {
+          "size": 1024,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1798,
+            "p95": 2831,
+            "max": 3616
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1785,
+            "p95": 2817,
+            "max": 3603
+          },
+          "block_hits": null
+        },
+        {
+          "size": 1024,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 21,
+            "p95": 28,
+            "max": 30
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 6,
+            "p95": 6,
+            "max": 7
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 25600,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1785,
+            "p95": 2939,
+            "max": 5339
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1771,
+            "p95": 2926,
+            "max": 5325
+          },
+          "block_hits": null
+        },
+        {
+          "size": 25600,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 19,
+            "p95": 21,
+            "max": 23
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 6,
+            "p95": 7,
+            "max": 7
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 65536,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1699,
+            "p95": 3398,
+            "max": 6661
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1686,
+            "p95": 3385,
+            "max": 6648
+          },
+          "block_hits": null
+        },
+        {
+          "size": 65536,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 20,
+            "p95": 26,
+            "max": 29
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 6,
+            "p95": 7,
+            "max": 7
+          },
+          "block_hits": 30
+        },
+        {
+          "size": 1048576,
+          "kind": "cold",
+          "requests": 30,
+          "expected": 28,
+          "latency_ms": {
+            "n": 30,
+            "p50": 1061,
+            "p95": 10661,
+            "max": 10669
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 1040,
+            "p95": 10648,
+            "max": 10653
+          },
+          "block_hits": null
+        },
+        {
+          "size": 1048576,
+          "kind": "warm",
+          "requests": 30,
+          "expected": 30,
+          "latency_ms": {
+            "n": 30,
+            "p50": 31,
+            "p95": 39,
+            "max": 43
+          },
+          "worker_ms": {
+            "n": 30,
+            "p50": 6,
+            "p95": 9,
+            "max": 11
+          },
+          "block_hits": 30
+        }
+      ]
+    }
+  ],
+  "verdict": "FAIL",
+  "definitions": {
+    "latency_ms": "the client: from the start of a request to the last byte of its answer, over every request of the run, failed ones included",
+    "worker_ms": "the route's own total_ms: from its first step to its answer",
+    "classes": "expected: the Worker answered 200 with JSON whose ok is true and whose status is --expect; 429 and 5xx: the read's status, or the Worker's own when it did not answer JSON 200; other: anything else, a step that timed out, a client timeout or a failed connection",
+    "quantiles": "the value at index floor(n * q) of the ascending list (probes/worker/src/gaps.ts quantile)",
+    "open_loop": "request i starts at t0 + i * 1000 / rps ms, whatever the earlier ones are doing; client_lag_ms is how late the client started it",
+    "cold": "each request asks a block of --length bytes never asked before in the run",
+    "warm": "block k of --blocks at offset k * length, cache=block, each read once before the clock starts"
+  }
+}

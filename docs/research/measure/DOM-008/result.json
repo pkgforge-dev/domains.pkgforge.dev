@@ -1,0 +1,487 @@
+{
+  "format": "domains.measure.decode-cpu.v1",
+  "entry": "DOM-008",
+  "url": "https://domains-probe.ACCOUNT.workers.dev/decode",
+  "run_id": "4f1cb460",
+  "started": "2026-10-30T18:44:20.427Z",
+  "ended": "2026-10-30T19:18:05.621Z",
+  "requests_per_combination": 200,
+  "concurrency": 1,
+  "interval_ms": 1000,
+  "cpu_source": "tail",
+  "cpu_field": "cpuTime of each invocation trace event that wrangler tail --format json prints: CPU time in ms, the platform account",
+  "wall_field": "wall_ms is wallTime of the same event, and client_wall_ms is the request time seen by this script: both wall time, never CPU time",
+  "cpu_whole_ms": true,
+  "quantile": "the value at index floor(n * q) of the ascending list, as probes/worker/src/gaps.ts quantile()",
+  "tail": {
+    "command": "wrangler 4.150.0 tail domains-probe --format json",
+    "events_seen": 1995,
+    "events_of_run": 1993,
+    "duplicate": 0,
+    "objects": 1995,
+    "skipped_chars": 0,
+    "bad": 0
+  },
+  "combinations": [
+    {
+      "name": "blocks=1 per=1024",
+      "mode": "blocks",
+      "per": 1024,
+      "blocks": 1,
+      "requests": 200,
+      "traced": 200,
+      "names": 1024,
+      "crc32": "29d29ba0",
+      "raw_bytes": 11839,
+      "packed_bytes": 3566,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 1,
+        "p99": 1,
+        "max": 2
+      },
+      "cpu_ms_per_block": {
+        "p50": 1,
+        "p99": 1,
+        "max": 2
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.977,
+        "p99": 0.977,
+        "max": 1.953
+      },
+      "wall_ms": {
+        "p50": 250,
+        "p99": 423,
+        "max": 527
+      },
+      "client_wall_ms": {
+        "p50": 263.6,
+        "p99": 434.9,
+        "max": 537.7
+      }
+    },
+    {
+      "name": "blocks=4 per=1024",
+      "mode": "blocks",
+      "per": 1024,
+      "blocks": 4,
+      "requests": 200,
+      "traced": 200,
+      "names": 4096,
+      "crc32": "ee589a95",
+      "raw_bytes": 41835,
+      "packed_bytes": 20801,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 1,
+        "p99": 3,
+        "max": 3
+      },
+      "cpu_ms_per_block": {
+        "p50": 0.25,
+        "p99": 0.75,
+        "max": 0.75
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.244,
+        "p99": 0.732,
+        "max": 0.732
+      },
+      "wall_ms": {
+        "p50": 251,
+        "p99": 310,
+        "max": 365
+      },
+      "client_wall_ms": {
+        "p50": 264.1,
+        "p99": 376.8,
+        "max": 531.9
+      }
+    },
+    {
+      "name": "blocks=16 per=1024",
+      "mode": "blocks",
+      "per": 1024,
+      "blocks": 16,
+      "requests": 200,
+      "traced": 200,
+      "names": 16384,
+      "crc32": "fbba4376",
+      "raw_bytes": 154368,
+      "packed_bytes": 84304,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 4,
+        "p99": 13,
+        "max": 15
+      },
+      "cpu_ms_per_block": {
+        "p50": 0.25,
+        "p99": 0.813,
+        "max": 0.938
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.244,
+        "p99": 0.793,
+        "max": 0.916
+      },
+      "wall_ms": {
+        "p50": 255,
+        "p99": 416,
+        "max": 571
+      },
+      "client_wall_ms": {
+        "p50": 269.3,
+        "p99": 434.5,
+        "max": 581.8
+      }
+    },
+    {
+      "name": "blocks=1 per=4096",
+      "mode": "blocks",
+      "per": 4096,
+      "blocks": 1,
+      "requests": 200,
+      "traced": 200,
+      "names": 4096,
+      "crc32": "98a46914",
+      "raw_bytes": 41808,
+      "packed_bytes": 20624,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 1,
+        "p99": 2,
+        "max": 2
+      },
+      "cpu_ms_per_block": {
+        "p50": 1,
+        "p99": 2,
+        "max": 2
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.244,
+        "p99": 0.488,
+        "max": 0.488
+      },
+      "wall_ms": {
+        "p50": 250,
+        "p99": 434,
+        "max": 551
+      },
+      "client_wall_ms": {
+        "p50": 262.7,
+        "p99": 465.9,
+        "max": 563.2
+      }
+    },
+    {
+      "name": "blocks=4 per=4096",
+      "mode": "blocks",
+      "per": 4096,
+      "blocks": 4,
+      "requests": 200,
+      "traced": 200,
+      "names": 16384,
+      "crc32": "dbe978b4",
+      "raw_bytes": 154231,
+      "packed_bytes": 80363,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 4,
+        "p99": 6,
+        "max": 11
+      },
+      "cpu_ms_per_block": {
+        "p50": 1,
+        "p99": 1.5,
+        "max": 2.75
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.244,
+        "p99": 0.366,
+        "max": 0.671
+      },
+      "wall_ms": {
+        "p50": 254,
+        "p99": 466,
+        "max": 1156
+      },
+      "client_wall_ms": {
+        "p50": 266.6,
+        "p99": 485.4,
+        "max": 1167.5
+      }
+    },
+    {
+      "name": "blocks=16 per=4096",
+      "mode": "blocks",
+      "per": 4096,
+      "blocks": 16,
+      "requests": 200,
+      "traced": 200,
+      "names": 65536,
+      "crc32": "2963e621",
+      "raw_bytes": 630558,
+      "packed_bytes": 347447,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 12,
+        "p99": 17,
+        "max": 22
+      },
+      "cpu_ms_per_block": {
+        "p50": 0.75,
+        "p99": 1.063,
+        "max": 1.375
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.183,
+        "p99": 0.259,
+        "max": 0.336
+      },
+      "wall_ms": {
+        "p50": 267,
+        "p99": 536,
+        "max": 547
+      },
+      "client_wall_ms": {
+        "p50": 279.8,
+        "p99": 549.4,
+        "max": 558.3
+      }
+    },
+    {
+      "name": "blocks=1 per=16384",
+      "mode": "blocks",
+      "per": 16384,
+      "blocks": 1,
+      "requests": 200,
+      "traced": 194,
+      "names": 16384,
+      "crc32": "7aefe677",
+      "raw_bytes": 154188,
+      "packed_bytes": 77817,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 194
+      },
+      "cpu_ms": {
+        "p50": 3,
+        "p99": 8,
+        "max": 9
+      },
+      "cpu_ms_per_block": {
+        "p50": 3,
+        "p99": 8,
+        "max": 9
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.183,
+        "p99": 0.488,
+        "max": 0.549
+      },
+      "wall_ms": {
+        "p50": 252,
+        "p99": 533,
+        "max": 1146
+      },
+      "client_wall_ms": {
+        "p50": 265.5,
+        "p99": 544.6,
+        "max": 1158
+      }
+    },
+    {
+      "name": "blocks=4 per=16384",
+      "mode": "blocks",
+      "per": 16384,
+      "blocks": 4,
+      "requests": 200,
+      "traced": 198,
+      "names": 65536,
+      "crc32": "559aa4cb",
+      "raw_bytes": 630431,
+      "packed_bytes": 338030,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 198
+      },
+      "cpu_ms": {
+        "p50": 11,
+        "p99": 16,
+        "max": 19
+      },
+      "cpu_ms_per_block": {
+        "p50": 2.75,
+        "p99": 4,
+        "max": 4.75
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.168,
+        "p99": 0.244,
+        "max": 0.29
+      },
+      "wall_ms": {
+        "p50": 264,
+        "p99": 522,
+        "max": 547
+      },
+      "client_wall_ms": {
+        "p50": 276.8,
+        "p99": 534.1,
+        "max": 558.2
+      }
+    },
+    {
+      "name": "blocks=16 per=16384",
+      "mode": "blocks",
+      "per": 16384,
+      "blocks": 16,
+      "requests": 200,
+      "traced": 200,
+      "names": 262144,
+      "crc32": "ce181e2a",
+      "raw_bytes": 2639805,
+      "packed_bytes": 1472428,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 44,
+        "p99": 54,
+        "max": 54
+      },
+      "cpu_ms_per_block": {
+        "p50": 2.75,
+        "p99": 3.375,
+        "max": 3.375
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.168,
+        "p99": 0.206,
+        "max": 0.206
+      },
+      "wall_ms": {
+        "p50": 310,
+        "p99": 538,
+        "max": 547
+      },
+      "client_wall_ms": {
+        "p50": 322,
+        "p99": 563.1,
+        "max": 606.2
+      }
+    },
+    {
+      "name": "rows=1000 per=4096",
+      "mode": "rows",
+      "per": 4096,
+      "rows": 1000,
+      "blocks": 1,
+      "requests": 200,
+      "traced": 200,
+      "names": 4096,
+      "crc32": "98a46914",
+      "raw_bytes": 41808,
+      "packed_bytes": 20624,
+      "errors": 0,
+      "status": {
+        "200": 200
+      },
+      "outcome": {
+        "ok": 200
+      },
+      "cpu_ms": {
+        "p50": 3,
+        "p99": 5,
+        "max": 5
+      },
+      "cpu_ms_per_block": {
+        "p50": 3,
+        "p99": 5,
+        "max": 5
+      },
+      "cpu_ms_per_1000_names": {
+        "p50": 0.732,
+        "p99": 1.221,
+        "max": 1.221
+      },
+      "wall_ms": {
+        "p50": 253,
+        "p99": 410,
+        "max": 446
+      },
+      "client_wall_ms": {
+        "p50": 265.5,
+        "p99": 424,
+        "max": 457.2
+      }
+    }
+  ],
+  "criteria": [
+    {
+      "name": "decode-4096-p99-at-most-3ms",
+      "rule": "p99 CPU time of /decode?blocks=1&per=4096, the whole invocation: an upper bound on one block of 4,096 names",
+      "p99_max_ms": 3,
+      "p99_ms": 2,
+      "errors": 0,
+      "verdict": "PASS"
+    },
+    {
+      "name": "rows-1000-p99-at-most-15ms",
+      "rule": "p99 CPU time of /decode?rows=1000, the whole invocation",
+      "p99_max_ms": 15,
+      "p99_ms": 5,
+      "errors": 0,
+      "verdict": "PASS"
+    }
+  ],
+  "verdict": "PASS"
+}

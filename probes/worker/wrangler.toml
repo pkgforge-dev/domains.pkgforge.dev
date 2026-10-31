@@ -13,7 +13,7 @@
 #
 # Each cron below has a row in the CRONS table of src/gaps.ts, and the scheduled
 # handler refuses a cron that has none; src/index.test.ts holds the two equal.
-# DOM-002 sets `crons = []` after its 48 hours; the Worker stays for DOM-005,
+# DOM-002 set `crons = []` after its 48 hours; the Worker stays for DOM-005,
 # DOM-007 and DOM-008.
 #
 # The date is the harness's (packages/testkit COMPATIBILITY_DATE): the workerd
@@ -33,7 +33,7 @@ workers_dev = true
 preview_urls = false
 
 [triggers]
-crons = ["* * * * *", "*/5 * * * *"]
+crons = []
 
 [[r2_buckets]]
 binding = "PROBE"

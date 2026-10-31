@@ -11,7 +11,7 @@
 //   node scripts/test.mjs scripts/measure --name "decode cpu"
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,16 +24,20 @@ import {
   CouldNotRun,
   createJsonSplitter,
   eventRecord,
+  keptText,
+  keptUrl,
   lines,
   main,
   PLAN,
   parseFlags,
+  pool,
   RESULT_FORMAT,
   RUN_FORMAT,
   requestUrl,
   runPathFor,
   spawnTail,
   summarise,
+  tailText,
   UsageError,
   wranglerTailCommand,
 } from './decode-cpu.mjs';
@@ -243,8 +247,88 @@ test('decode cpu: a run of another format or source is refused', () => {
   assert.throws(() => summarise({ ...syntheticRun(), format: 'other' }), CouldNotRun);
   assert.throws(() => summarise({ ...syntheticRun(), cpu_source: 'logs' }), /CPU source is "logs", not tail/);
   assert.throws(() => summarise({ ...syntheticRun(), events: [] }), /no trace event matched/);
+  assert.throws(() => summarise({ ...syntheticRun(), url: undefined }), /lacks the probe's URL/);
   assert.equal(lines(summarise(syntheticRun())).at(-1), 'verdict=PASS cpu_source=tail cpu_whole_ms=false');
   assert.equal(summarise(syntheticRun({ cpu: (_c, k) => k % 3 })).cpu_whole_ms, true);
+  assert.equal(summarise(syntheticRun()).interval_ms, null, 'a run made before --interval-ms keeps no interval');
+});
+
+test('decode cpu: --input keeps the workers.dev host of a saved run without the account subdomain, and never writes over the run', async () => {
+  const raw = file({ ...syntheticRun(), url: 'https://domains-probe.someaccount.workers.dev/decode' });
+  const out = join(dir, 'raw-input', 'result.json');
+  const r = await run(['--input', raw, '--out', out]);
+  assert.equal(r.code, 0, r.stderr);
+  const text = readFileSync(out, 'utf8');
+  assert.equal(text.includes('someaccount'), false);
+  assert.equal(JSON.parse(text).url, 'https://domains-probe.ACCOUNT.workers.dev/decode');
+  const before = readFileSync(raw, 'utf8');
+  for (const args of [
+    ['--input', raw, '--out', raw],
+    ['--input', raw, '--out', join(dir, 'x.run.json')],
+  ]) {
+    const refused = await run(args);
+    assert.equal(refused.code, 2, refused.stderr);
+    assert.match(refused.stderr, /--out must not be the --input|--out names the result, never a \.run\.json/);
+  }
+  assert.equal(readFileSync(raw, 'utf8'), before, 'the saved run is unchanged');
+});
+
+test('decode cpu: pool starts no two requests less than the interval apart by its clock, whether its timers fire early or late', async () => {
+  for (const concurrency of [1, 4, 16]) {
+    let t = 0;
+    let k = 0;
+    // Each wait moves the clock by a share of what was asked: early, late, exact.
+    const shares = [0.5, 1.7, 1, 0.2, 3, 0.9];
+    const wait = async (ms) => {
+      t += ms * shares[k++ % shares.length];
+    };
+    const starts = [];
+    let live = 0;
+    let peak = 0;
+    await pool(
+      40,
+      concurrency,
+      50,
+      async (i) => {
+        starts.push([i, t]);
+        live += 1;
+        peak = Math.max(peak, live);
+        await wait(10 + (i % 7) * 30);
+        live -= 1;
+      },
+      { now: () => t, wait },
+    );
+    assert.deepEqual(
+      starts.map(([i]) => i),
+      Array.from({ length: 40 }, (_, i) => i),
+    );
+    const gaps = starts.slice(1).map(([, at], j) => at - starts[j][1]);
+    assert.ok(Math.min(...gaps) >= 50, `concurrency ${concurrency}: a gap of ${Math.min(...gaps)}`);
+    assert.ok(peak <= concurrency, `concurrency ${concurrency}: ${peak} at once`);
+  }
+  // A timer that fires just short of the interval waits again: no gap of 49.5.
+  let t = 0;
+  let k = 0;
+  const near = [];
+  await pool(5, 1, 50, async () => void near.push(t), {
+    now: () => t,
+    wait: async (ms) => {
+      t += ms * [0.99, 1.2][k++ % 2];
+    },
+  });
+  assert.ok(
+    near.slice(1).every((at, j) => at - near[j] >= 50),
+    near.join(', '),
+  );
+  let live = 0;
+  let peak = 0;
+  await pool(10, 4, 0, async () => {
+    live += 1;
+    peak = Math.max(peak, live);
+    await sleep(5);
+    live -= 1;
+  });
+  assert.equal(peak, 4, 'with no interval, concurrency requests run at once');
 });
 
 // A local stand-in for the probe whose every /decode answer is also pushed, as
@@ -252,9 +336,11 @@ test('decode cpu: a run of another format or source is refused', () => {
 async function standIn({ traced = () => true, cpuTime = (url) => (url.searchParams.has('rows') ? 1.2 : 0.3 * Number(url.searchParams.get('blocks'))) } = {}) {
   let onEvent = null;
   const seen = [];
+  const arrived = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://stand-in.test');
     seen.push(url.search);
+    arrived.push(performance.now());
     const per = Number(url.searchParams.get('per'));
     const combo = url.searchParams.has('rows') ? { mode: 'rows', per, rows: Number(url.searchParams.get('rows')) } : { mode: 'blocks', per, blocks: Number(url.searchParams.get('blocks')) };
     const body = { ...answerOf(combo), tag: url.searchParams.get('tag') };
@@ -269,7 +355,7 @@ async function standIn({ traced = () => true, cpuTime = (url) => (url.searchPara
     onEvent = fn;
     return { hasExited: () => false, stderr: () => '', stats: { objects: 0 }, stop: async () => void (tail.stopped = true) };
   };
-  return { url: `http://127.0.0.1:${server.address().port}/decode`, seen, tail, startTail, close: () => new Promise((done) => server.close(done)) };
+  return { url: `http://127.0.0.1:${server.address().port}/decode`, seen, arrived, tail, startTail, close: () => new Promise((done) => server.close(done)) };
 }
 
 const FAST = { readyMs: 2000, readyEachMs: 200, quietMs: 300, drainMaxMs: 2000, pollMs: 10 };
@@ -280,7 +366,7 @@ test('decode cpu: a live run against a stand-in for the probe writes the result 
   const stdout = [];
   const stderr = [];
   try {
-    const code = await main(['--url', probe.url, '--requests', '6', '--concurrency', '3', '--out', out], {
+    const code = await main(['--url', probe.url, '--requests', '6', '--concurrency', '3', '--interval-ms', '0', '--out', out], {
       stdout: { write: (s) => stdout.push(s) },
       stderr: { write: (s) => stderr.push(s) },
       startTail: probe.startTail,
@@ -306,11 +392,230 @@ test('decode cpu: a live run against a stand-in for the probe writes the result 
   assert.equal(again.stdout, stdout.join(''));
 });
 
+test('decode cpu: --interval-ms starts two requests at least that far apart, at any concurrency, and the run and the result keep it', async () => {
+  const probe = await standIn();
+  const out = join(dir, 'paced', 'result.json');
+  const calls = [];
+  const fetchImpl = (url, init) => {
+    calls.push(performance.now());
+    return fetch(url, init);
+  };
+  const stderr = [];
+  try {
+    const code = await main(['--url', probe.url, '--requests', '1', '--concurrency', '4', '--interval-ms', '60', '--out', out], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: probe.startTail,
+      fetchImpl,
+      timing: FAST,
+    });
+    assert.equal(code, 0, stderr.join(''));
+  } finally {
+    await probe.close();
+  }
+  assert.match(stderr.join(''), /4 at a time, 60 ms or more apart/);
+  // The first call is the ready marker, which is not paced. pool reads the clock
+  // and then calls the request at once, so each gap between two calls is 60 ms
+  // less the few that synchronous code takes or more; 5 ms of slack covers that.
+  // The pool test above holds the gap exactly, on a clock of its own.
+  const starts = calls.slice(1);
+  assert.equal(starts.length, PLAN.length);
+  assert.equal(probe.arrived.length, 1 + PLAN.length);
+  const gaps = starts.slice(1).map((at, j) => at - starts[j]);
+  assert.ok(Math.min(...gaps) >= 60 - 5, `the starts are ${gaps.map((g) => g.toFixed(1)).join(', ')} ms apart`);
+  const span = starts.at(-1) - starts[0];
+  assert.ok(span >= (PLAN.length - 1) * 60 - 5, `the starts span ${span.toFixed(1)} ms`);
+  assert.equal(JSON.parse(readFileSync(out, 'utf8')).interval_ms, 60);
+  assert.equal(JSON.parse(readFileSync(runPathFor(out), 'utf8')).interval_ms, 60);
+});
+
+test('decode cpu: the run and the result keep a workers.dev host without the account subdomain', async () => {
+  const probe = await standIn();
+  const base = 'https://domains-probe.someaccount.workers.dev/decode';
+  const fetchImpl = (url, init) => fetch(url.replace(base, probe.url), init);
+  const out = join(dir, 'kept', 'result.json');
+  try {
+    const stderr = [];
+    const code = await main(['--url', base, '--requests', '1', '--interval-ms', '0', '--out', out], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: probe.startTail,
+      fetchImpl,
+      timing: FAST,
+    });
+    assert.equal(code, 0, stderr.join(''));
+  } finally {
+    await probe.close();
+  }
+  for (const path of [out, runPathFor(out)]) {
+    const text = readFileSync(path, 'utf8');
+    assert.equal(text.includes('someaccount'), false, path);
+    assert.equal(JSON.parse(text).url, 'https://domains-probe.ACCOUNT.workers.dev/decode');
+  }
+  assert.equal(keptUrl('http://127.0.0.1:8787/decode'), 'http://127.0.0.1:8787/decode');
+  // A port, a final dot (typed, or as %2e), upper case or a user name never keeps the account's label.
+  for (const [given, kept] of [
+    ['https://domains-probe.someaccount.workers.dev:8443/decode', 'https://domains-probe.ACCOUNT.workers.dev:8443/decode'],
+    ['https://domains-probe.someaccount.workers.dev./decode', 'https://domains-probe.ACCOUNT.workers.dev/decode'],
+    ['https://domains-probe.someaccount.workers.dev%2e/decode', 'https://domains-probe.ACCOUNT.workers.dev/decode'],
+    ['https://DOMAINS-PROBE.SomeAccount.workers.dev/decode', 'https://domains-probe.ACCOUNT.workers.dev/decode'],
+    ['https://user:pw@domains-probe.someaccount.workers.dev/decode?x=1', 'https://domains-probe.ACCOUNT.workers.dev/decode'],
+  ])
+    assert.equal(keptUrl(given), kept, given);
+});
+
+test('decode cpu: keptText and tailText leave out the account subdomain, and tailText the account names and ids', () => {
+  const host = 'domains-probe.someaccount.workers.dev';
+  assert.equal(keptText(`a ${host} b ${host.toUpperCase()}:8443 c ${host}.`), 'a domains-probe.ACCOUNT.workers.dev b domains-probe.ACCOUNT.workers.dev:8443 c domains-probe.ACCOUNT.workers.dev.');
+  assert.equal(keptText('domains.pkgforge.dev and 127.0.0.1:8787'), 'domains.pkgforge.dev and 127.0.0.1:8787');
+  const id = '0123456789abcdef0123456789abcdef';
+  // The shape of wrangler 4.150.0's message for a login that holds more than one account.
+  const stderr = [
+    'More than one account available but unable to select one in non-interactive mode.',
+    'Available accounts are (`<name>`: `<account_id>`):',
+    `  \`Fake Account Name\`: \`${id}\``,
+    `  \`Other Name\`: \`${'f'.repeat(32)}\``,
+    `A request to /accounts/${id}/workers/scripts/domains-probe/tails failed at ${host}.`,
+  ].join('\n');
+  const printed = tailText(stderr);
+  for (const secret of ['Fake Account Name', 'Other Name', id, 'f'.repeat(32), 'someaccount']) assert.equal(printed.includes(secret), false, secret);
+  assert.match(printed, /More than one account available/);
+  assert.match(printed, /\/accounts\/ACCOUNT_ID\/workers/);
+});
+
+test('decode cpu: an error body or a fetch error that names the host is kept without the account subdomain', async () => {
+  const probe = await standIn();
+  const base = 'https://domains-probe.someaccount.workers.dev/decode';
+  let calls = 0;
+  const fetchImpl = (url, init) => {
+    calls += 1;
+    if (calls === 2) return Promise.resolve(new Response('error 1101 at domains-probe.someaccount.workers.dev', { status: 502 }));
+    if (calls === 3) return Promise.reject(new Error('connect to domains-probe.someaccount.workers.dev failed'));
+    // Upper case with a port, a host whose label straddles the 300th character, and a host named twice.
+    if (calls === 4) return Promise.resolve(new Response('Host: DOMAINS-PROBE.SOMEACCOUNT.WORKERS.DEV:8443', { status: 502 }));
+    if (calls === 5) return Promise.resolve(new Response(`${'x'.repeat(278)}domains-probe.someaccount.workers.dev`, { status: 502 }));
+    if (calls === 6) return Promise.resolve(new Response('from domains-probe.someaccount.workers.dev to domains-probe.someaccount.workers.dev', { status: 502 }));
+    return fetch(url.replace(base, probe.url), init);
+  };
+  const out = join(dir, 'kept-errors', 'result.json');
+  const stderr = [];
+  let code;
+  try {
+    code = await main(['--url', base, '--requests', '1', '--interval-ms', '0', '--out', out], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: probe.startTail,
+      fetchImpl,
+      timing: FAST,
+    });
+  } finally {
+    await probe.close();
+  }
+  assert.ok(existsSync(runPathFor(out)), `exit ${code}: ${stderr.join('')}`);
+  const run = readFileSync(runPathFor(out), 'utf8');
+  // Any 6 letters of the label: a cut through it keeps fewer than 11.
+  assert.equal(/someac/i.test(run), false, 'a part of the account label survives in the kept run');
+  assert.match(run, /error 1101 at domains-probe\.ACCOUNT\.workers\.dev/);
+  assert.match(run, /connect to domains-probe\.ACCOUNT\.workers\.dev failed/);
+  assert.match(run, /Host: domains-probe\.ACCOUNT\.workers\.dev:8443/);
+  assert.match(run, /from domains-probe\.ACCOUNT\.workers\.dev to domains-probe\.ACCOUNT\.workers\.dev/);
+});
+
+test('decode cpu: an --out that cannot be written is refused before a request is sent, and leaves no temporary file', async () => {
+  const probe = await standIn();
+  const outDir = join(dir, 'out-is-a-dir');
+  mkdirSync(outDir, { recursive: true });
+  const aFile = file({});
+  try {
+    for (const [out, re] of [
+      [outDir, /out-is-a-dir cannot be written: EISDIR/],
+      [join(aFile, 'result.json'), /cannot be written: E[A-Z]+/],
+    ]) {
+      const stderr = [];
+      const code = await main(['--url', probe.url, '--requests', '1', '--interval-ms', '0', '--out', out], {
+        stdout: { write: () => {} },
+        stderr: { write: (s) => stderr.push(s) },
+        startTail: probe.startTail,
+        timing: FAST,
+      });
+      assert.equal(code, 2, stderr.join(''));
+      assert.match(stderr.join(''), re);
+    }
+  } finally {
+    await probe.close();
+  }
+  assert.equal(probe.seen.length, 0, 'no request was sent');
+  assert.deepEqual(
+    readdirSync(dir).filter((f) => f.endsWith('.tmp')),
+    [],
+  );
+  const offline = await run(['--input', file(syntheticRun()), '--out', outDir]);
+  assert.equal(offline.code, 2);
+  assert.match(offline.stderr, /out-is-a-dir cannot be written: EISDIR/);
+  assert.equal(offline.stdout, '');
+});
+
+test('decode cpu: a result that cannot be written after a live run exits 2, keeps the run and leaves no temporary file', async () => {
+  const probe = await standIn();
+  const at = join(dir, 'late-fault');
+  const out = join(at, 'result.json');
+  let calls = 0;
+  // The fault comes after the check before the run: the result's path becomes a directory.
+  const fetchImpl = (url, init) => {
+    calls += 1;
+    if (calls === 2) mkdirSync(out, { recursive: true });
+    return fetch(url, init);
+  };
+  const stderr = [];
+  let code;
+  try {
+    code = await main(['--url', probe.url, '--requests', '1', '--interval-ms', '0', '--out', out], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: probe.startTail,
+      fetchImpl,
+      timing: FAST,
+    });
+  } finally {
+    await probe.close();
+  }
+  assert.equal(code, 2, stderr.join(''));
+  assert.match(stderr.join(''), /could not write result\.json: E[A-Z]+/);
+  assert.equal(JSON.parse(readFileSync(runPathFor(out), 'utf8')).requests.length, PLAN.length, 'the run is kept');
+  assert.deepEqual(
+    readdirSync(at).filter((f) => f.endsWith('.tmp')),
+    [],
+  );
+});
+
+test('decode cpu: a tail that exits prints its stderr without the account names and ids wrangler lists', async () => {
+  const probe = await standIn({ traced: () => false });
+  const id = '0123456789abcdef0123456789abcdef';
+  const text = `More than one account available but unable to select one in non-interactive mode.\nAvailable accounts are (\`<name>\`: \`<account_id>\`):\n  \`Fake Account Name\`: \`${id}\`\n`;
+  const startTail = async () => ({ hasExited: () => true, stderr: () => text, stats: { objects: 0 }, stop: async () => {} });
+  const stderr = [];
+  try {
+    const code = await main(['--url', probe.url, '--requests', '1', '--interval-ms', '0'], { stdout: { write: () => {} }, stderr: { write: (s) => stderr.push(s) }, startTail, timing: FAST });
+    assert.equal(code, 2);
+  } finally {
+    await probe.close();
+  }
+  const printed = stderr.join('');
+  assert.match(printed, /could not run: the tail exited: More than one account available/);
+  assert.equal(printed.includes('Fake Account Name'), false);
+  assert.equal(printed.includes(id), false);
+});
+
 test('decode cpu: a live run whose tail never shows the marker, or traces no cpuTime, exits 2 and keeps what it read', async () => {
   const silent = await standIn({ traced: () => false });
   try {
     const stderr = [];
-    const code = await main(['--url', silent.url, '--requests', '1'], { stdout: { write: () => {} }, stderr: { write: (s) => stderr.push(s) }, startTail: silent.startTail, timing: FAST });
+    const code = await main(['--url', silent.url, '--requests', '1', '--interval-ms', '0'], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: silent.startTail,
+      timing: FAST,
+    });
     assert.equal(code, 2);
     assert.match(stderr.join(''), /no marker request showed in the tail within 2 s/);
     assert.equal(silent.tail.stopped, true);
@@ -321,7 +626,12 @@ test('decode cpu: a live run whose tail never shows the marker, or traces no cpu
   const out = join(dir, 'blind', 'result.json');
   try {
     const stderr = [];
-    const code = await main(['--url', blind.url, '--requests', '2', '--out', out], { stdout: { write: () => {} }, stderr: { write: (s) => stderr.push(s) }, startTail: blind.startTail, timing: FAST });
+    const code = await main(['--url', blind.url, '--requests', '2', '--interval-ms', '0', '--out', out], {
+      stdout: { write: () => {} },
+      stderr: { write: (s) => stderr.push(s) },
+      startTail: blind.startTail,
+      timing: FAST,
+    });
     assert.equal(code, 2);
     assert.match(stderr.join(''), /carry no cpuTime/);
   } finally {
@@ -359,6 +669,26 @@ test('decode cpu: spawnTail reads the events a child prints, and stop() ends the
   assert.equal(child.hasExited(), true);
 });
 
+test('decode cpu: spawnTail keeps the last 4,000 characters of stderr or fewer from a line start, so tailText reads whole lines', async () => {
+  const id = '0123456789abcdef0123456789abcdef';
+  const text = `  \`Fake Account Name\`: \`${id}\`\n${`${'y'.repeat(79)}\n`.repeat(49)}${'z'.repeat(31)}\n`;
+  // A window of the last 4,000 characters starts 10 characters into the account line.
+  assert.equal(text.length - 4000, 10);
+  const path = join(dir, 'stderr.txt');
+  writeFileSync(path, text);
+  const child = spawnTail({
+    command: process.execPath,
+    args: ['-e', "process.stderr.write(require('fs').readFileSync(process.argv[1], 'utf8')); setInterval(() => {}, 1000)", path],
+    cwd: dir,
+    onEvent: () => {},
+  });
+  for (let waited = 0; !child.stderr().endsWith('z\n') && waited < 10_000; waited += 20) await sleep(20);
+  await child.stop();
+  const printed = tailText(child.stderr());
+  assert.ok(printed.startsWith('yyy'), printed.slice(0, 40));
+  assert.equal(printed.includes('count Name'), false);
+});
+
 test('decode cpu: usage faults exit 2', async () => {
   for (const [args, re] of [
     [[], /exactly one of --url and --input/],
@@ -368,13 +698,29 @@ test('decode cpu: usage faults exit 2', async () => {
     [['--url', 'https://p.test/decode'], /--requests N is required/],
     [['--url', 'https://p.test/decode', '--requests', '0'], /--requests must be a whole number from 1 to 2000/],
     [['--url', 'https://p.test/decode', '--requests', '1', '--concurrency', '17'], /--concurrency must be a whole number from 1 to 16/],
-    [['--input', 'x.json', '--requests', '5'], /--requests and --concurrency go with --url/],
+    [['--input', 'x.json', '--requests', '5'], /--requests, --concurrency and --interval-ms go with --url/],
+    [['--input', 'x.json', '--interval-ms', '5'], /--requests, --concurrency and --interval-ms go with --url/],
+    [['--url', 'https://p.test/decode', '--requests', '1', '--interval-ms', '60001'], /--interval-ms must be a whole number from 0 to 60000/],
     [['--input', 'x.json', '--source', 'logs'], /unknown flag --source/],
+    [['--url', 'https://p.test/decode', '--requests', '1', '--interval-ms', '1000', '--interval-ms', '0'], /--interval-ms is given more than once/],
+    [['--url', 'https://user:pw@p.test/decode', '--requests', '1'], /--url must carry no user name or password/],
+    [['--url', 'https://p.test/decode', '--requests', '1', '--out', 'r.run.json'], /--out names the result, never a \.run\.json/],
+    [['--input', 'x.json', '--out', 'x.json'], /--out must not be the --input/],
+    [['https://domains-probe.someaccount.workers.dev/decode', '--requests', '1'], /unexpected argument https:\/\/domains-probe\.ACCOUNT\.workers\.dev\/decode/],
   ]) {
     const r = await run(args);
     assert.equal(r.code, 2, `${args.join(' ')}: ${r.stderr}`);
     assert.match(r.stderr, re);
+    assert.equal(/someaccount|pw@/.test(r.stderr), false, `${args.join(' ')}: ${r.stderr}`);
   }
+  const missing = await run(['--input', join(dir, 'domains-probe.someaccount.workers.dev', 'none.run.json')]);
+  assert.equal(missing.code, 2);
+  assert.match(missing.stderr, /--input cannot be read: ENOENT/);
+  assert.equal(missing.stderr.includes('someaccount'), false, missing.stderr);
   assert.throws(() => parseFlags(['--url']), UsageError);
+  // The defaults pace a run under the tail's rate (DOM-008, the Found of 2026-10-30T18:39Z).
+  const defaults = parseFlags(['--url', 'https://p.test/decode', '--requests', '1']);
+  assert.deepEqual([defaults.concurrency, defaults.intervalMs], [1, 1000]);
+  assert.equal(parseFlags(['--url', 'https://p.test/decode', '--requests', '1', '--interval-ms', '0']).intervalMs, 0);
   assert.equal(requestUrl('https://p.test/decode', PLAN[9], 'a.9.0'), 'https://p.test/decode?rows=1000&per=4096&tag=a.9.0');
 });

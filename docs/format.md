@@ -462,9 +462,10 @@ A test of `packages/pack` holds this table equal to the constants of the code.
 | `DEFAULT_PAGE_ENTRIES` | 64 |
 | `MAX_RAW_BLOCK_BYTES` | 16777216 |
 
-DOM-008 measures the decode CPU in a Worker. If its verdict prefers 1,024
-records a block or the `gzip` codec, it changes the first two constants and this
-table. A pack written before the change still reads.
+DOM-008 measured the decode CPU in a Worker on 2026-10-30: one block of 4,096
+names costs at most 2 ms of CPU at p99, so the first two constants stay
+(`docs/architecture.md` section 4.4). A later change of them would leave a pack
+written before it readable.
 
 ## 10. The runtime
 
@@ -542,7 +543,7 @@ in both runs below, so their cost is the cost of these values:
 The bytes a name are the bytes of the parts and the index, divided by the
 names. "Fields" is that figure minus the figure of the keys alone. "Decode" is
 the Node wall time of reading, decompressing, checking and decoding every block,
-for 1,000 names. It is not CPU time in workerd, which DOM-008 measures. Both
+for 1,000 names. It is not CPU time in workerd, which DOM-008 measured (section 4.4 of `docs/architecture.md`). Both
 runs used Node v26.7.0 with zlib 1.3.2.1-motley-42c2f19, 4,096 records a
 block, `deflate-raw` at level 9. Each run's JSON is in
 `docs/research/measure/DOM-017/`: `names-1000000.json`, `cs2-first.json`, and

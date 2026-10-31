@@ -1,0 +1,16 @@
+range-load mode=cold place=operator rps=20 seconds=60 cache=none length=25600 expect=206 seed=1760819841
+target       domains-probe.ACCOUNT.workers.dev/range repo=pkgforge-dev/domains.pkgforge.dev/probe ref=sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c (tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c) layer=sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3 1610612736 B
+requests     1200  206 1200  429 0  5xx 0  other 0
+by_status    206:1200
+latency_ms   p50 716  p95 1741  max 4322  (client: request start to last byte)
+worker_ms    p50 701  p95 1728  max 4309  (the route's total_ms)
+subrequests  p50 3  max 3  mean 3
+cache        none read
+colos        KTM:1200
+client_lag   p95 14 ms  max 22 ms
+PASS requests  1200 requests answered or failed
+PASS p95-under-3000ms  p95 1741 ms
+PASS no-429  0 of 1200
+PASS 5xx-at-most-1pct  0 of 1200
+PASS other-at-most-1pct  0 of 1200
+PASS

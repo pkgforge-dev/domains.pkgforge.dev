@@ -8,7 +8,7 @@ is the only one.
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), is the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 25 on 2026-10-29), then works the order unattended.
-- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). Its version 12cec14c, deployed 2026-10-28T23:42:35Z, adds `/kafka`, `/range` and `/decode`, and the bucket holds DOM-008's sample packs under `sample/v1/`, and the public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC). No serving Worker, no custom domain and no cache bucket yet.
+- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). It holds `crons = []` from the deploy of 2026-10-30T18:30:46Z, and its last tick was scheduled at 18:34:24Z (DOM-002). Its version 529b760c, deployed 2026-10-30T19:51:58Z, serves `/`, `/gaps`, `/range` and `/decode` without `/kafka` (DOM-005). The bucket holds DOM-008's sample packs under `sample/v1/`. DOM-056 deletes both. The public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC) stay (ruling 5). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
 ## Baseline
@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 38 open, 8 partial, 0 blocked, 16 done.**
+**62 items. 38 open, 3 partial, 0 blocked, 21 done.**
 
 ## What this session did
 
@@ -89,18 +89,15 @@ is the only one.
   - `promote.mjs --partial`: a promotion of `ingest-live.yml` adds the owed packs that the live-set rule allows and leaves the rest owed, so one pack across a hole no longer blocks every promotion for 7 days.
   - Decided D1 to D24 of DOM-024 under ruling 20, each a Decision of the entry, and the bound on owed packs, which DOM-036 measures.
 - Ran the three lenses on wave 6 (87 findings over two halves) and fixed them in four rounds, each verified on sonnet. The last verification left one test gap, which the lead closed: every named mutant now fails a test.
+- Closed the clock measurements on 2026-10-30. DOM-001: the self-dispatch chain passes the rule (577 of 576 runs, p90 gap 5.02 min, max 5.9 min) and the `*/5` schedule fails it (10 of 576 runs, p90 and max gap 411.82 min); the schedule and the keepalive are disabled. DOM-002: the Worker's minute cron passes (2,875 of 2,880 ticks, p90 gap 1.01 min, max 2.73 min), and the probe runs with `crons = []`.
+- Closed the probe's Worker measurements on 2026-10-30: DOM-005 and DOM-007 from colo KTM; DOM-008's colo was not read. DOM-008: one block of 4,096 names costs at most 2 ms of CPU at p99 and 1,000 rows at most 5 ms, so `deflate-raw` at 4,096 names a block stays. DOM-007: cold and warm Range reads at 20, 50 and 100 requests a second all answered 206 with no 429, so R2 stays a cache; the runner's place moves to DOM-054. DOM-005: a call holds 16 MiB of `max_bytes` from a Worker `connect()`, stopped by the route's 30 s cap, and the probe no longer serves `/kafka`.
 
 ## What is in progress
 
-Eight entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Three entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
-| DOM-001 | 48 hours of the schedule and the chain (`CHAIN_END` 2026-10-30T15:15:58Z) |
-| DOM-002 | 48 hours of the probe's crons from its first tick, 2026-10-28T15:23:24Z |
-| DOM-005 | the probe's `/kafka` deploy and its 10-minute run now; the memory sweep after DOM-002 sets `crons = []` |
-| DOM-007 | the `/range` deploy, the cache check and the single reads now; the loads at 20, 50 and 100 requests a second after `crons = []` |
-| DOM-008 | the sample packs in R2 and the `/decode` deploy now; the 2,000-request CPU run after `crons = []` |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
 | DOM-023 | the first scheduled run of `compact-daily.yml`; then its live Prove, once DOM-029's backfill has put THC's days in the root (DOM-024's guard that moves `ledger-delta` is built) |
 | DOM-024 | DOM-003's `config/clock.json` and a first adapter in `config/lanes.json`; then a dispatch of `ingest-live.yml`, its queued successor and the anonymous read of `state:latest` |
@@ -110,9 +107,8 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10). DOM-025 starts onl
 ## Start here next session
 
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
-   - DOM-001, DOM-002, DOM-005, DOM-007 and DOM-008 close after DOM-002's 48 hours, 2026-10-30T15:30Z. The probe's loads wait for its `crons = []`.
    - DOM-012 closes after its 7 days.
-2. DOM-003, once DOM-001 and DOM-002 have closed.
+2. DOM-003: DOM-001 and DOM-002 have closed, the chain and the Worker cron pass and the schedule fails.
 3. Compaction: DOM-023 is partial, built and gated. `measure-compact.yml` measured one range on 2026-10-30, and no compaction has built a pack on GitHub. Its live Prove waits on DOM-024's skeleton and DOM-029's THC backfill (items 4 and 5), and its Waiting line names what closes it.
 4. The ingest skeleton: DOM-024 is partial, built and gated. Its live Prove waits on DOM-003's `config/clock.json` and the first adapter (item 5). Then DOM-025 only if DOM-003 recorded a Worker clock; otherwise close it on the ruling.
 5. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.

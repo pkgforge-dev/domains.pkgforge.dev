@@ -175,11 +175,15 @@ export function parseFlags(argv) {
   };
 }
 
-// A *.workers.dev host without the account's subdomain: WORKER.ACCOUNT.workers.dev.
+// A *.workers.dev host without the account's subdomain: WORKER.ACCOUNT.workers.dev,
+// its port kept. The labels are read without the port and without a final dot,
+// so neither keeps the account's label in place.
 export function redactHost(host) {
-  const labels = host.toLowerCase().split('.');
-  if (labels.length >= 4 && labels.at(-1) === 'dev' && labels.at(-2) === 'workers') return [labels[0], 'ACCOUNT', ...labels.slice(-2)].join('.');
-  return host.toLowerCase();
+  const lower = host.toLowerCase();
+  const [, name, port = ''] = /^(.*?)(:\d+)?$/.exec(lower);
+  const labels = name.replace(/\.$/, '').split('.');
+  if (labels.length >= 4 && labels.at(-1) === 'dev' && labels.at(-2) === 'workers') return `${[labels[0], 'ACCOUNT', ...labels.slice(-2)].join('.')}${port}`;
+  return lower;
 }
 
 // The /range URL of one read; any query of the base is replaced.

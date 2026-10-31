@@ -367,7 +367,9 @@ async function checkProbe(ctx) {
     throw new CannotRun(`the probe's route list could not be read: ${err.message}`);
   }
   const row = Array.isArray(listing?.routes) ? listing.routes.find((r) => r.path === PATH) : undefined;
-  if (row === undefined) throw new CannotRun(`the probe does not list ${PATH}: deploy probes/worker with the route first`);
+  // DOM-005 closed and took the row of /kafka out of probes/worker's ROUTES, so a
+  // deploy of probes/worker never adds it; --verdict FILE needs no probe.
+  if (row === undefined) throw new CannotRun(`the probe does not list ${PATH}: probes/worker took the route out when DOM-005 closed (TODO/ingest.md), so only --verdict FILE runs, on a kept result`);
   ctx.result.route.summary = row.summary ?? null;
 }
 

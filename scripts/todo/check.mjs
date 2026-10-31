@@ -278,7 +278,8 @@ function run() {
     // 14
     if (r.status === 'done' && !/^\s*- \*\*Closed\b/m.test(section)) fail(`${r.id}: done, but no \`- **Closed …:**\` line records its Prove passing`);
     // 15
-    for (const [, label, stamp] of section.matchAll(/^\s*- \*\*(Closed|Measured|Read|Found|Built|Done|Correction)\b[^*\n]*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z)[^*\n]*\*\*/gm)) {
+    // The labels in any case: the record writes MEASURED and READ in capitals.
+    for (const [, label, stamp] of section.matchAll(/^\s*- \*\*(Closed|Measured|Read|Found|Built|Done|Correction)\b[^*\n]*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z)[^*\n]*\*\*/gim)) {
       if (Date.parse(stamp) > Date.now()) fail(`${r.id}: its ${label} line is stamped ${stamp}, later than now: a record says when it was, never later`);
     }
   }

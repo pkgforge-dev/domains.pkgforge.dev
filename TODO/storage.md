@@ -63,8 +63,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 
 ## DOM-007 — Measure Worker Range reads from GHCR: cold, warm, and 20, 50 and 100 requests a second
 
-- **Status:** partial
-- **Waiting:** until 2026-10-30T16:00:00Z; deploy the probe routes, read `/range` once and twice with `cache=block` to see whether workers.dev keeps the entry, run the single reads, and after DOM-002 sets `crons = []` run the cold and warm loads at 20, 50 and 100 requests a second from this machine and from a runner, merge, replace the [E] latencies of `docs/architecture.md` section 4.3, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** design A section 13 and design B section 11 Phase 0 items 1 and 3: every read measurement so far came from a laptop in Nepal, none from a Worker.
@@ -167,11 +166,70 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - So from this colo, 2 of 30 cold reads of 1 MiB took more than 10 s at the blob store, and a cold read of 64 KiB or less had a p95 of 2.8 s to 3.4 s.
   - These are one place's reads, one at a time. The runner's reads and the loads measure the rest, and DOM-030 reads the 1 MiB tail when it sets the Worker's subrequest budget.
 - **Correction 2026-10-29T06:55Z (a test that read timing):** the gate of 2026-10-29T06:52Z failed once on `scripts/measure/range-load.test.mjs` "an answer that is not JSON 200 ...": the samples came back `worker-500`, `timeout@range`, `client-timeout`, `worker-400`. The test's probe plants its answers by arrival at the server, and two requests sent 100 ms apart arrived swapped on the loaded machine. The test now compares the sample keys as a set. The script's samples stay in request order; only the test changed.
+- **MEASURED 2026-10-30T19:26:16Z (the deployed route, version 77cc8b01 with `crons = []`):** the lead deployed it from the worktree's `probes/worker`: `wrangler deployments list` gives the deployment at 18:30:46Z, and wrangler had sent the empty triggers when it exited at 18:30:54Z. This entry made no deploy.
+  - `curl` of `$PROBE_URL/range` with `tag` the pinned digest, `offset=0` and `length=1024` exits 0 with HTTP 200 in 2.21 s. The route answers `ok`, 206, 3 subrequests and `total_ms` 2,054: manifest 200 in 851 ms, blob 307 in 342 ms, range 206 in 861 ms, colo KTM.
+  - `npx --yes wrangler@4.150.0 whoami` exits 0 at 19:33:39Z. It names the account of DOM-061, whose id begins with the 8 characters that DOM-002's Found of 2026-10-28T14:30Z records (`TODO/ops.md`). Neither its name nor its id is written here: the name carries the workers.dev subdomain.
+- **MEASURED 2026-10-30T19:26:37Z to 19:32:57Z (the loads from the operator's workstation):** for MODE `cold` then `warm`, and RPS 20, 50 and 100 in that order, back to back, `node scripts/measure/range-load.mjs --url "$PROBE_URL/range" --tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c --mode MODE --rps RPS --seconds 60 --expect 206 --place operator --out docs/research/measure/DOM-007/runs/operator-MODE-RPS.json` exits 0 and prints `PASS`. Each printed table is kept beside its run as `operator-MODE-RPS.txt`.
+  - The conditions: Windows 11, Node v26.7.0 (`.node-version` names 26.13.0), the probe on workers.dev, and the colo KTM for every request. A cold read asks a new block of 25,600 B with `cache=none`. A warm read asks one of 50 fixed blocks with `cache=block`, after a prefill that read 50 of 50.
+  - The client's latency, and the route's own `total_ms` as "Worker p50":
+
+    | Mode | rps | Requests | 206 | 429 | 5xx | Other | p50 ms | p95 ms | Max ms | Worker p50 ms | Subrequests | Client lag max ms | Seed |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    | cold | 20 | 1,200 | 1,200 | 0 | 0 | 0 | 716 | 1,741 | 4,322 | 701 | 3 | 22 | 1760819841 |
+    | cold | 50 | 3,000 | 3,000 | 0 | 0 | 0 | 703 | 1,103 | 4,022 | 688 | 3 | 55 | 1261790661 |
+    | cold | 100 | 6,000 | 6,000 | 0 | 0 | 0 | 699 | 728 | 1,872 | 683 | 3 | 98 | 195713932 |
+    | warm | 20 | 1,200 | 1,200 | 0 | 0 | 0 | 23 | 32 | 62 | 6 | 0 | 21 | 1297358982 |
+    | warm | 50 | 3,000 | 3,000 | 0 | 0 | 0 | 19 | 32 | 323 | 4 | 0 | 94 | 1585258127 |
+    | warm | 100 | 6,000 | 6,000 | 0 | 0 | 0 | 17 | 27 | 324 | 4 | 0 | 16 | 1078646392 |
+
+  - Every cold read made 3 subrequests: p50, max and mean 3. So at 100 requests a second GHCR answered 12,000 requests and the blob store 6,000 range reads in 60 s, with no 429 and no 5xx.
+  - Every warm read was a manifest and block cache hit with 0 subrequests: 1,200, 3,000 and 6,000 of the expected answers.
+  - The client's lag at p95 was 12 to 14 ms in every run, so the client kept the open loop's clock.
+- **MEASURED 2026-10-30T19:32:57Z to 19:36:08Z (the single reads again, as a control, right after the loads):** `node scripts/measure/range-load.mjs --url "$PROBE_URL/range" --tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c --mode single --count 30 --expect 206 --place operator --out docs/research/measure/DOM-007/runs/operator-single-2.json` exits 0 (seed 2117593442). It prints:
+
+        size_B     kind  n    ok   p50_ms  p95_ms  max_ms  worker_p50  block_hits
+        1024       cold  30   30   1384    2256    2294    1369        -
+        1024       warm  30   30   17      19      22      4           30
+        25600      cold  30   30   1578    2819    2935    1558        -
+        25600      warm  30   30   18      29      142     4           30
+        65536      cold  30   30   1469    2620    2663    1456        -
+        65536      warm  30   30   18      26      70      4           30
+        1048576    cold  30   30   1516    2914    3034    1498        -
+        1048576    warm  30   30   27      32      35      4           30
+        PASS all-expected  240 of 240
+
+  - The two 1 MiB timeouts of 2026-10-29T00:28Z do not recur: 30 of 30 cold reads of 1 MiB answered 206, with a max of 3,034 ms.
+- **MEASURED 2026-10-30T19:36:22Z (the merge):** `node scripts/measure/range-load.mjs --merge docs/research/measure/DOM-007/runs --out docs/research/measure/DOM-007/result.json` exits 1 and prints `FAIL`.
+  - `result.json` names `places` `["operator"]` and one ref: the manifest `sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c`, with the layer `sha256:ef6b33bbb7b0b3624feeb858867299ebca92faf93503c2a4e32ce95d548b52d3` of 1,610,612,736 B.
+  - The six loads and the single reads of 2026-10-30 pass. The FAIL is the single reads of 2026-10-29 (`operator-single.json`, `all-expected` 238 of 240), kept as they ran. No Prove item reads the merged verdict.
+- **Found 2026-10-30T19:40Z (a cold read costs more when reads are few):** one at a time, a cold read had a p50 of 1,384 to 1,578 ms on 2026-10-30, and 1,061 to 1,798 ms on 2026-10-29. Under load the p50 was 699 to 716 ms, and the p95 fell as the rate rose: 1,741 ms at 20, 1,103 ms at 50, 728 ms at 100. The candidates:
+  - The colo keeps its connections to `ghcr.io` and to the blob store open, and uses them again when reads come often: plausible. The route's step times (`steps[].ms`, `head_ms`) under load and one at a time would settle it. `range-load.mjs` keeps only `total_ms`.
+  - GHCR and the blob store answer a manifest and a blob that are read often from a cache of their own: plausible. The same step times would settle it.
+  - The hour: refuted. The smoke read at 19:26:16Z took 2,054 ms in the route, and the single reads from 19:32:57Z had a p50 of 1,384 to 1,578 ms. Both are within minutes of loads with a p50 of about 700 ms.
+  - The start of an isolate: refuted. The route's `total_ms` starts after the isolate runs, and its p50 is within 20 ms of the client's in every load and every cold read of 2026-10-30 (13 to 20 ms). Three single reads of 1 MiB differ by 21 to 25 ms: cold on 2026-10-29, and warm on both days.
+  - What breaks the Prove's line: a cold p95 one at a time was 2,256 to 2,914 ms on 2026-10-30, but 2,831 to 10,661 ms on 2026-10-29. So a read at low traffic can pass 3 s where the loads stay under it.
+- **Found 2026-10-30T19:40Z (section 4.3 held no [E] latency):** the Result says this entry's table replaces the [E] latencies of `docs/architecture.md` section 4.3. That section marks no value [E]: its rows are MEASURED from laptops, and the line `DOM-007 measures reads from a Worker.` held the place. The loads' table and four notes now stand where that line stood, and the measured rows of design A and design B stay.
+- **Found 2026-10-30T19:40Z (the runner's place is not measured):** `.github/workflows/measure-range-load.yml` takes the probe's URL as the `workflow_dispatch` input `url`, and that URL names the account's workers.dev subdomain. The lead ruled for this session that the host goes into no public place, the workflow inputs of this repository included. So the runner's runs were not dispatched. The options:
+  1. Dispatch as built. The step masks the input in the log, and the anonymous run page and run API do not show it (MEASURED 2026-10-28T23:43:30Z, above). Whether GitHub shows the input anywhere else is not measured.
+  2. Give the probe a route on the `pkgforge.dev` zone, so that its URL names no account. That is a new resource with its row in `docs/resources.md`, a zone change, and a new URL pattern in the workflow.
+  3. A repository secret. Rule 9 of `scripts/check-workflows.mjs` refuses every `secrets` reference, so this needs a change of the workflow policy.
+  4. Measure a runner's colo through the API Worker of DOM-030 on `domains.pkgforge.dev`, whose URL is public by design, with the drive script of DOM-054.
+  - Recommendation: option 4. One colo's egress answers the Decision with no 429 and no 5xx at 100 requests a second. Option 4 adds a second colo with no new resource and no exception to a rule. DOM-054 carries it, in a Found line of its own.
+- **Decision 2026-10-30T19:40Z (the reading):** neither branch of the Decision is taken. At 50 and 100 requests a second, 9,000 cold reads made 18,000 GHCR requests, and none answered 429 or a 5xx. So R2 stays a cache of at most 5 GB, and the Worker's cold path reads GHCR. This holds for the colo KTM and 60 s at each rate.
+- **Gate part (c) 2026-10-30T19:40Z:**
+  - The door sweep: section 4.3 of `docs/architecture.md` is read by DOM-030, DOM-032 and DOM-054 (`TODO/serve.md` lines 26, 69 and 233). `result.json` is written only by `range-load.mjs --merge`, and no code reads it. The Prove of DOM-062 (`TODO/serve.md` line 329) runs `range-load.mjs` against `https://domains.pkgforge.dev/healthz`: the script exits 2 with `--url must be an http or https URL ending in /range` before any request. That entry is not this one's, so the lead has the finding. A search of `docs/research/measure/DOM-007`, `docs/architecture.md` and `TODO/storage.md` for the probe's host and for its account subdomain exits 1 for both. A planted copy of the host in a scratch file is found (exit 0), so the search can fire.
+  - The guard mutation: in scratch copies of `runs/`, a single run whose verdict is set to PASS against its failing criteria makes `--merge` exit 2 ("says PASS, its criteria say FAIL"). A copy without `operator-warm-50.json` makes it exit 2 ("missing: operator warm 50"). The runs as kept merge with exit 1.
+  - The claim audit: each number above comes from a run file under `docs/research/measure/DOM-007/runs/`, `result.json`, the `curl` answer or the test output. The cause of the slower lone reads is written as not measured, with two candidates plausible and two refuted. The runner's place is written as not measured.
+- **Closed 2026-10-30T19:40Z (proven):** every Prove item passes, from the operator's workstation through the colo KTM.
+  - `node scripts/measure/range-load.mjs --url "$PROBE_URL/range" --tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c --mode cold --rps 100 --seconds 60 --expect 206 --place operator --out docs/research/measure/DOM-007/runs/operator-cold-100.json` exits 0 and prints the table and `PASS`: p95 728 ms, 0 of 6,000 answers 429, 0 of 6,000 answers 5xx.
+  - The same command with `--mode warm` (`operator-warm-100.json`) exits 0 and prints `PASS`: p95 27 ms.
+  - `node scripts/test.mjs probes/worker --name "range"` exits 0 at 19:36:37Z: `test: 34 test(s) passed matching range under probes/worker (10 file(s))`. These are the 30 Node and 2 workerd tests of the route, and 2 tests of other routes whose names hold "range". `node scripts/test.mjs scripts/measure --name "range load"` exits 0 with 14 tests.
+  - The Operator line asks for the account's name here. `whoami` names the account of DOM-061 (MEASURED 19:26:16Z above), and the name stays out: it carries the workers.dev subdomain.
+  - The runner's place is not measured. The Found above gives the options, and DOM-054 carries option 4.
 
 ## DOM-008 — Measure deflate-raw decode CPU in workerd
 
-- **Status:** partial
-- **Waiting:** until 2026-10-30T16:00:00Z; upload the three sample packs and read one back, deploy the probe routes, smoke-read `/decode`, and after DOM-002 sets `crons = []` run `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 200 --manifest .tmp/measure/DOM-008/sample/manifest.json --out docs/research/measure/DOM-008/result.json`, commit the result with `sample-manifest.json`, and close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** S
 - **Source:** design B section 2.4 item 3 and section 11 item 2; design A section 12 ("Block decode CPU in Workers is unmeasured"). The design in `docs/architecture.md` section 4.4 chooses `deflate-raw` because Workers decode it with `DecompressionStream`.
@@ -262,6 +320,69 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `/decode?blocks=16&per=16384` answers 262,144 names, CRC `ce181e2a`.
   - `/decode?blocks=17` answers 400.
   - `wall_ms.decode` reads 0 in both, and `wall_ms.r2` 377 and 715 ms. Deployed, the clock does not advance across the inflate, so CPU must come from Cloudflare.
+- **MEASURED 2026-10-30T18:33:56Z (the deployed route, version 77cc8b01 with `crons = []`):** the lead deployed it from the worktree's `probes/worker`: `wrangler deployments list` gives the deployment at 18:30:46Z, and wrangler had sent the empty triggers when it exited at 18:30:54Z. This entry made no deploy.
+  - `curl` of `/decode?blocks=1&per=4096&tag=smoke-1`, `/decode?blocks=16&per=16384&tag=smoke-2` and `/decode?rows=1000&tag=smoke-3` each exits 0 with HTTP 200.
+  - They answer 4,096 names with CRC `98a46914`, 262,144 names with CRC `ce181e2a`, and 1,000 rows of the first block of 4,096. Each is the manifest's.
+  - `npx --yes wrangler@4.150.0 whoami` exits 0 at 18:36:48Z. It names the operator's account, the account of DOM-061, whose id begins with the 8 characters that DOM-002's Found of 2026-10-28T14:30Z records (`TODO/ops.md`). Neither its name nor its id is written here: the name carries the workers.dev subdomain.
+- **Found 2026-10-30T18:39Z (the tail samples):** the Waiting line's command, `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 200 --manifest .tmp/measure/DOM-008/sample/manifest.json --out docs/research/measure/DOM-008/result.json`, ran from 18:35:48Z to 18:39:00Z, 4 requests at a time. It exits 2: `blocks=1 per=1024: 13 of 200 requests have a trace event with cpuTime, fewer than 90%`.
+  - All 2,000 requests answered 200. The tail printed 146 trace events of the run in 162 s, about 0.9 a second, while the script sent the 2,000 requests in about the same time.
+  - Every event the tail printed carries `cpuTime`, as a whole number of milliseconds. So the tail is a source of CPU time, and the refusal for events with no `cpuTime` does not apply.
+  - The script keeps no stderr of the tail, so whether wrangler printed a notice of sampling is not known.
+  - The run is kept as `docs/research/measure/DOM-008/runs/run1-2026-10-30T1835Z.run.json`. The script of that run wrote the probe's full URL into the file, and the host was replaced by `ACCOUNT` by hand after the run; every other field is as it ran, and `--input` of it still exits 2 with the 13 of 200.
+- **MEASURED 2026-10-30T18:42:17Z to 18:44:01Z (the pace, a calibration):** `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 10 --concurrency 1 --interval-ms 1000 --manifest .tmp/measure/DOM-008/sample/manifest.json --out .tmp/measure/DOM-008/run2/result.json` exits 1.
+  - The tail traced 100 of 100 requests and the marker.
+  - One of the 10 invocations of `blocks=1&per=4096` took 9 ms of CPU, against a p50 of 1 ms, so `decode-4096-p99-at-most-3ms` fails on 10 requests. `rows-1000-p99-at-most-15ms` passes with a p99 of 7 ms.
+  - The run is kept as `docs/research/measure/DOM-008/runs/run2-2026-10-30T1842Z.run.json`, and `--input` of it prints the same lines.
+- **MEASURED 2026-10-30T18:44:20Z to 19:18:05Z (the run that judges the Decision):** `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 200 --concurrency 1 --interval-ms 1000 --manifest .tmp/measure/DOM-008/sample/manifest.json --out docs/research/measure/DOM-008/result.json` exits 0.
+  - The conditions: the operator's Windows 11 machine, Node v26.7.0, the wrangler 4.150.0 of `node_modules` for the tail, and the probe on workers.dev.
+  - All 2,000 requests answered 200 with the manifest's names and CRC-32. The tail traced 1,992 of them, and every traced invocation ended `ok`. The 8 untraced requests are all of `blocks=1&per=16384` and `blocks=4&per=16384`. Their cause is not known.
+  - CPU time of a whole invocation, in ms, from `docs/research/measure/DOM-008/result.json`. "Per block" and "per 1,000 names" divide the CPU time of each invocation. "Wall" is `wallTime` p50.
+
+    | Query | Names | Raw bytes | Traced | CPU p50 | CPU p99 | CPU max | Per block p50, p99 | Per 1,000 names p50, p99 | Wall p50 |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | blocks=1&per=1024 | 1,024 | 11,839 | 200 of 200 | 1 | 1 | 2 | 1, 1 | 0.977, 0.977 | 250 |
+    | blocks=4&per=1024 | 4,096 | 41,835 | 200 of 200 | 1 | 3 | 3 | 0.25, 0.75 | 0.244, 0.732 | 251 |
+    | blocks=16&per=1024 | 16,384 | 154,368 | 200 of 200 | 4 | 13 | 15 | 0.25, 0.813 | 0.244, 0.793 | 255 |
+    | blocks=1&per=4096 | 4,096 | 41,808 | 200 of 200 | 1 | 2 | 2 | 1, 2 | 0.244, 0.488 | 250 |
+    | blocks=4&per=4096 | 16,384 | 154,231 | 200 of 200 | 4 | 6 | 11 | 1, 1.5 | 0.244, 0.366 | 254 |
+    | blocks=16&per=4096 | 65,536 | 630,558 | 200 of 200 | 12 | 17 | 22 | 0.75, 1.063 | 0.183, 0.259 | 267 |
+    | blocks=1&per=16384 | 16,384 | 154,188 | 194 of 200 | 3 | 8 | 9 | 3, 8 | 0.183, 0.488 | 252 |
+    | blocks=4&per=16384 | 65,536 | 630,431 | 198 of 200 | 11 | 16 | 19 | 2.75, 4 | 0.168, 0.244 | 264 |
+    | blocks=16&per=16384 | 262,144 | 2,639,805 | 200 of 200 | 44 | 54 | 54 | 2.75, 3.375 | 0.168, 0.206 | 310 |
+    | rows=1000 (per=4096) | 4,096 | 41,808 | 200 of 200 | 3 | 5 | 5 | 3, 5 | 0.732, 1.221 | 253 |
+
+  - It prints `PASS decode-4096-p99-at-most-3ms: p99 2 ms, at most 3 ms; errors=0`, `PASS rows-1000-p99-at-most-15ms: p99 5 ms, at most 15 ms; errors=0` and `verdict=PASS cpu_source=tail cpu_whole_ms=true`.
+  - `node scripts/measure/decode-cpu.mjs --input docs/research/measure/DOM-008/result.run.json --manifest docs/research/measure/DOM-008/sample-manifest.json` exits 0 and prints the same lines (`cmp` exits 0). `sample-manifest.json` is a copy of `.tmp/measure/DOM-008/sample/manifest.json`, sha256 `4d21799e27a396e4b46a88fdb04a2d088978744e7bcf2a9c40072f682668dbf6`.
+- **Correction 2026-10-30T19:22Z (the Decision reading's plan, and the script):** the plan of 4 requests at a time sends about 14 requests for each event the tail prints (2,000 against 146). `scripts/measure/decode-cpu.mjs` changes in four ways:
+  - `--interval-ms` sets the least time between the starts of two requests. The run and the result keep it as `interval_ms`.
+  - The defaults are `--concurrency 1 --interval-ms 1000`, so the Prove's command, with no pacing flag, is the paced run.
+  - The run and the result keep the probe's URL as `https://domains-probe.ACCOUNT.workers.dev/decode` (`keptUrl`, with `redactHost` of `scripts/measure/range-load.mjs`). The URL the script was given names the account.
+  - The error text a request keeps, an error body or a fetch error's message, names the host the same way (`keptText`), with a test of its own.
+- **Found 2026-10-30T19:22Z (what the numbers do not show):**
+  - The platform counts CPU time in whole milliseconds here (`cpu_whole_ms: true`). So the 3 ms line reads values of 1 and 2 ms. The p99 of 200 is the value at index 198, the second largest.
+  - An invocation can take several times its p50. The calibration saw 9 ms for one block of 4,096, and the run saw a max of 11 ms for 4 blocks of 4,096 against a p99 of 6. The cause is not measured.
+  - The sample's block holds about 0.84 times the raw bytes of a mean block of the whole day (the Correction of 2026-10-28T23:38Z). If CPU is linear in raw bytes, which is not measured, the p99 of 2 ms scales to about 2.4 ms. That is still under 3 ms.
+  - What breaks it: 16 blocks of 16,384 names, 262,144 names in one invocation, take p50 44 ms and p99 54 ms of CPU. That p99 is above the 50 ms cap of mirror-archlinux's setting. 16 blocks of 4,096 names take p99 17 ms.
+  - The probe sent one request at a time, one a second. The CPU time of an invocation under concurrent load in one isolate is not measured here.
+- **Decision 2026-10-30T19:22Z (the verdict):** keep `deflate-raw` at 4,096 names a block. Both lines of the Decision hold: p99 2 ms against 3 ms, and p99 5 ms against 15 ms. Per the Approach, `DEFAULT_RECORDS_PER_BLOCK` and `DEFAULT_CODEC` of `packages/pack` and the table of `docs/format.md` do not change. `docs/architecture.md` section 4.4 carries the result.
+- **Gate part (c) 2026-10-30T19:22Z:**
+  - The door sweep: `runLive`, `pool` and `keptUrl` have one caller each, in `decode-cpu.mjs`. `redactHost` keeps its own tests in `range-load.test.mjs`, and `node scripts/test.mjs scripts/measure` exits 0 (384 tests, 1 skipped on this platform). A search of `docs`, `scripts`, `TODO` and `probes` for the probe's host and for its account label finds neither (grep exits 1 for both).
+  - The guard mutation: with `keptUrl` taken out of the run, the test "keep a workers.dev host without the account subdomain" fails (exit 1). With the pacing switched off, the test of `--interval-ms` fails with `the starts span 28.0 ms` (exit 1). Both guards are restored, and `node scripts/test.mjs scripts/measure --name "decode cpu"` exits 0 with 18 tests, the test of `keptText` among them.
+  - The claim audit: each number above comes from `result.json`, one of the two kept runs, the `curl` answers or the test output. The cause of the 8 untraced requests and of the slow invocations is written as not known. The density scaling is written as an assumption.
+- **Closed 2026-10-30T19:22Z (proven):** every Prove item passes.
+  - `node scripts/measure/decode-cpu.mjs --url "$PROBE_URL/decode" --requests 200 --concurrency 1 --interval-ms 1000 --manifest .tmp/measure/DOM-008/sample/manifest.json --out docs/research/measure/DOM-008/result.json` exits 0. The flags are the script's defaults. It prints p50 and p99 CPU for each block size, and `PASS decode-4096-p99-at-most-3ms: p99 2 ms, at most 3 ms; errors=0`.
+  - `node scripts/test.mjs probes/worker --name "decode"` exits 0 at 19:22:15Z: `test: 22 test(s) passed matching decode under probes/worker (10 file(s))`. These are the 12 Node and 3 workerd tests of the route, and 7 kafka tests whose names hold "decode".
+  - `docs/research/measure/DOM-008/result.json` holds `"cpu_source": "tail"`.
+- **Correction 2026-10-31T01:11Z (review, door and mutation):** the review found seven doors of `scripts/measure/decode-cpu.mjs` open, and the script changes in each:
+  - `--input` copied a saved run's URL into the result as it stood. `summarise` now keeps it with `keptUrl`, and a run with no URL is refused.
+  - `redactHost` of `scripts/measure/range-load.mjs` kept the account's label for a host with a port other than 443 and 80, or with a final dot. It now reads the labels without them and keeps the port. `range-load.mjs` keeps its `target.host` with the same function.
+  - `keptText` replaced only the given host, in its own case. It now replaces any workers.dev host in any case, and every one of them, before the cut at 300 characters.
+  - The tail's stderr went into the printed refusals as it came, and wrangler 4.150.0 lists each account's name and id when a login holds more than one. `tailText` now leaves those lines out and prints a 32-hex-digit id as `ACCOUNT_ID`, and the tail's stderr is cut at a line's start.
+  - An `--out` that could not be written failed after the run, with exit 1, a `.tmp` file left and the run lost. The script now checks the paths before the run and refuses with exit 2, writes the run before the result, removes the `.tmp` file of a write that fails, and exits 2. An `--out` that is the `--input`, or that ends in `.run.json`, is refused.
+  - `pool` reserved a start's slot and slept once, so a timer that fired late shortened the next gap: at 60 ms and 4 at a time, the review saw gaps of 27 ms. It now reads the clock again after each wait, so no two starts are less than `--interval-ms` apart, and the header's words hold.
+  - A flag given twice is refused, a `--url` with a user name or password is refused, a typed URL in a usage message is printed as `keptUrl` keeps it, and a file error prints its code, not its path.
+  - The tests: `node scripts/test.mjs scripts/measure --name "decode cpu"` exits 0 with 25 tests, and `node scripts/test.mjs scripts/measure` exits 0 with 392 tests, 1 skipped. The test of `pool` gives it a clock of its own whose timers fire early and late, and holds every gap at the interval. Planted one at a time, 22 mutants of `decode-cpu.mjs` and 2 of `redactHost` each fail a test (exit 1), among them the burst of three starts, a gap 1 ms short, the cut before the redaction, a host matched once or in one case, and the run written after the result.
+  - The Decision's numbers do not change: `node scripts/measure/decode-cpu.mjs --input docs/research/measure/DOM-008/result.run.json --manifest docs/research/measure/DOM-008/sample-manifest.json --out FILE` exits 0, and `cmp` of FILE with `result.json` exits 0.
 
 ## DOM-017 — The pack format: writer, reader, merge and sparse index
 

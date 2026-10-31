@@ -184,19 +184,24 @@ test("probe routes: GET / lists the route table", async () => {
   );
   assert.deepEqual(
     ROUTES.map((route) => route.path),
-    ["/", "/gaps", "/kafka", "/range", "/decode"],
+    ["/", "/gaps", "/range", "/decode"],
   );
   assert.deepEqual(
     ROUTES.map((route) => [route.path, route.entry]),
     [
       ["/", "DOM-061"],
       ["/gaps", "DOM-061"],
-      ["/kafka", "DOM-005"],
       ["/range", "DOM-007"],
       ["/decode", "DOM-008"],
     ],
   );
   for (const route of ROUTES) assert.equal(route.method, "GET", `${route.path} answers GET`);
+});
+
+// DOM-005 closed on 2026-10-30 and took /kafka out of ROUTES: the probe does not
+// serve it, so it is not a public route until DOM-056 deletes the probe.
+test("probe routes: /kafka is not served after DOM-005 closed", async () => {
+  assert.equal((await get(new FakeBucket(), "/kafka?topic=certstream_domains&offset=latest")).status, 404);
 });
 
 test("probe routes: an unknown path answers 404 and another method 405", async () => {
@@ -408,11 +413,15 @@ test("probe tick: every 64 KiB of a hot object is random, and each put names its
   assert.equal(bucket.objects.get(HEARTBEAT_KEY)!.options?.httpMetadata?.contentType, "application/json; charset=utf-8");
 });
 
-test("probe config: wrangler.toml's crons are exactly CRONS, every invocation is logged, and it binds the bucket and nothing else", () => {
+// DOM-002 set crons = [] after its 48 hours (2026-10-30): the probe stays for
+// DOM-005, DOM-007 and DOM-008 with no cron, and CRONS keeps the two rows that
+// /gaps reads the recorded ticks by.
+test("probe config: wrangler.toml lists no cron since DOM-002 closed, every invocation is logged, and it binds the bucket and nothing else", () => {
   const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const crons = toml.match(/^crons = \[(.*)\]$/m);
   assert.ok(crons, "wrangler.toml has a crons line");
-  assert.deepEqual([...crons[1]!.matchAll(/"([^"]*)"/g)].map((m) => m[1]!).sort(), CRONS.map((spec) => spec.cron).sort());
+  assert.equal(crons[1]!.trim(), "");
+  assert.deepEqual(CRONS.map((spec) => spec.cron).sort(), ["* * * * *", "*/5 * * * *"]);
   // DOM-008 reads the CPU time of every invocation.
   assert.match(toml, /^head_sampling_rate = 1$/m);
   const tables = [...toml.matchAll(/^\s*(\[\[?[^\]]+\]\]?)\s*$/gm)].map((m) => m[1]);

@@ -8,14 +8,18 @@
 //
 // Fetch: the route table ROUTES. GET / lists it; GET /gaps answers DOM-002's result
 // schema over a window of ticks (src/gaps.ts), kept GAPS_MAX_AGE_S seconds in the
-// Cache API. Three measurement routes follow, each one row of ROUTES with its
-// handler in a module beside this file: GET /kafka (DOM-005, src/kafka.ts) reads
-// OpenINTEL's Kafka broker over cloudflare:sockets; GET /range (DOM-007,
-// src/range.ts) reads byte ranges of a GHCR blob of this project's own package;
-// GET /decode (DOM-008, src/decode.ts) decodes a sample pack read from the bucket
-// PROBE. None of them touches the cron path or adds a binding. A route answers
-// anyone: the probe holds random bytes, tick records and a sample pack of public
-// names, and no caller is ever asked for a key (AGENTS.md absolute 8).
+// Cache API. Two measurement routes follow, each one row of ROUTES with its
+// handler in a module beside this file: GET /range (DOM-007, src/range.ts) reads
+// byte ranges of a GHCR blob of this project's own package; GET /decode (DOM-008,
+// src/decode.ts) decodes a sample pack read from the bucket PROBE. None of them
+// touches the cron path or adds a binding. A route answers anyone: the probe holds
+// random bytes, tick records and a sample pack of public names, and no caller is
+// ever asked for a key (AGENTS.md absolute 8).
+//
+// GET /kafka (DOM-005, src/kafka.ts) read OpenINTEL's Kafka broker over
+// cloudflare:sockets. DOM-005 closed on 2026-10-30 and took its row out of ROUTES,
+// so the probe does not serve /kafka until DOM-056 deletes it. src/kafka.ts stays
+// for its tests and for scripts/measure/kafka-worker.mjs, which reads its LIMITS.
 import {
   CRONS,
   checkHours,
@@ -41,7 +45,6 @@ import {
   WORKER,
   type CronSpec,
 } from "./gaps.ts";
-import { kafkaRoute } from "./kafka.ts";
 import { rangeRoute } from "./range.ts";
 import { decodeRoute } from "./decode.ts";
 import type { CronController, Env, ProbeBucket, ProbeListOptions } from "./types.ts";
@@ -89,7 +92,6 @@ export const ROUTES: readonly Route[] = [
     summary: `DOM-002's result over the first hours=N whole hours of ticks (default ${DEFAULT_HOURS}), from the first tick of the minute cron; ticks=1 adds every tick the result read`,
     handle: gapsRoute,
   },
-  kafkaRoute,
   rangeRoute,
   decodeRoute,
 ];

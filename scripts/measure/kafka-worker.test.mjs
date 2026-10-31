@@ -386,7 +386,10 @@ test('kafka worker: joinTail gives each call its own event only, and a call with
 test('kafka worker: the probe without /kafka, or one that answers another version, cannot be measured', async () => {
   const bare = await probe({ routes: ['/', '/gaps'] });
   try {
-    await assert.rejects(measure(flagsFor(bare.base), { ...quiet, startTail: () => tailOf('memory', true) }), (err) => err instanceof CannotRun && /does not list \/kafka/.test(err.message));
+    await assert.rejects(
+      measure(flagsFor(bare.base), { ...quiet, startTail: () => tailOf('memory', true) }),
+      (err) => err instanceof CannotRun && /does not list \/kafka: probes\/worker took the route out when DOM-005 closed .* only --verdict FILE runs/.test(err.message),
+    );
   } finally {
     await bare.close();
   }

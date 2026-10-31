@@ -41,7 +41,8 @@
 // 2026-10-28T16:07Z: `wrangler deploy --dry-run` (4.150.0) of an entry that
 // imports this module exits 0 and keeps the import as written.
 //
-// Usage: import { kafkaRoute } from "./kafka.ts" (one row of ROUTES in src/index.ts).
+// Usage: import { kafkaRoute } from "./kafka.ts". src/index.ts routes to it no
+// more since DOM-005 closed; its tests call it directly.
 // It is a module; it has no command line and no exit code.
 import { ProbeError, WORKER } from "./gaps.ts";
 import type { Route } from "./index.ts";

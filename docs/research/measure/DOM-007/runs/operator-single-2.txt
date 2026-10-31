@@ -1,0 +1,13 @@
+range-load mode=single place=operator count=30 expect=206 seed=2117593442
+target       domains-probe.ACCOUNT.workers.dev/range repo=pkgforge-dev/domains.pkgforge.dev/probe ref=sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c (tag sha256:2ba81369d2ffe2b4d3b1f982ae620a7ba23f260faa6aca0faf275c0ceeff327c)
+size_B     kind  n    ok   p50_ms  p95_ms  max_ms  worker_p50  block_hits
+1024       cold  30   30   1384    2256    2294    1369        -
+1024       warm  30   30   17      19      22      4           30
+25600      cold  30   30   1578    2819    2935    1558        -
+25600      warm  30   30   18      29      142     4           30
+65536      cold  30   30   1469    2620    2663    1456        -
+65536      warm  30   30   18      26      70      4           30
+1048576    cold  30   30   1516    2914    3034    1498        -
+1048576    warm  30   30   27      32      35      4           30
+PASS all-expected  240 of 240
+PASS

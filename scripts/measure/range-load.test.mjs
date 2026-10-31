@@ -382,6 +382,10 @@ test('range load: the helpers keep the account subdomain out, build the read URL
   assert.equal(redactHost('domains-probe.someaccount.workers.dev'), 'domains-probe.ACCOUNT.workers.dev');
   assert.equal(redactHost('domains.pkgforge.dev'), 'domains.pkgforge.dev');
   assert.equal(redactHost('127.0.0.1:8787'), '127.0.0.1:8787');
+  // A port, a final dot or upper case never keeps the account's label.
+  assert.equal(redactHost('domains-probe.someaccount.workers.dev:8443'), 'domains-probe.ACCOUNT.workers.dev:8443');
+  assert.equal(redactHost('domains-probe.someaccount.workers.dev.'), 'domains-probe.ACCOUNT.workers.dev');
+  assert.equal(redactHost('Domains-Probe.SomeAccount.Workers.Dev.:8443'), 'domains-probe.ACCOUNT.workers.dev:8443');
   assert.equal(
     readUrl('https://p.example.test/range?x=1', { repo: REPO, ref: PIN, offset: 25600, length: 25600, cache: 'none' }),
     `https://p.example.test/range?repo=${encodeURIComponent(REPO)}&tag=${encodeURIComponent(PIN)}&offset=25600&length=25600&cache=none`,

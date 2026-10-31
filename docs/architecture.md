@@ -238,7 +238,21 @@ READ `docs/research/reference/ghcr.ts` and `mirror@669ac72:docs/worker.md` ("GHC
 | Pushes | 2,000 requests a minute per token, 10 GB a layer, 10 minutes an upload (READ `mirror@669ac72:docs/measurements.md`) |
 | Push speed from a runner | 63.5 to 121.4 MB/s, MB being 10^6 B: four pushes of one layer of random bytes, 1,536 MiB or 4,096 MiB (MEASURED 2026-10-28, DOM-006, runs 40714201294 and 40716636421, `docs/research/measure/DOM-006/`) |
 
-DOM-007 measures reads from a Worker.
+Reads through a Worker are MEASURED 2026-10-30T19:26Z to 19:36Z (DOM-007, `docs/research/measure/DOM-007/result.json`). The probe Worker's route `/range` (`probes/worker/src/range.ts`) reads a manifest by digest, follows the blob's 307, and reads 25,600 B of the signed URL with `Range`. A cold read makes those 3 subrequests. A warm read finds the block in the Cache API and makes none. The client was the operator's machine in Nepal, and the colo KTM answered every request. Latency is the client's, from the start of a request to its last byte.
+
+| Read | Requests a second, for 60 s | Requests | 206 | 429 | 5xx | p50 ms | p95 ms | max ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cold | 20 | 1,200 | 1,200 | 0 | 0 | 716 | 1,741 | 4,322 |
+| Cold | 50 | 3,000 | 3,000 | 0 | 0 | 703 | 1,103 | 4,022 |
+| Cold | 100 | 6,000 | 6,000 | 0 | 0 | 699 | 728 | 1,872 |
+| Warm | 20 | 1,200 | 1,200 | 0 | 0 | 23 | 32 | 62 |
+| Warm | 50 | 3,000 | 3,000 | 0 | 0 | 19 | 32 | 323 |
+| Warm | 100 | 6,000 | 6,000 | 0 | 0 | 17 | 27 | 324 |
+
+- At 100 requests a second, each cold read made a manifest GET and a blob GET to GHCR and one range read to the blob store. That is 12,000 GHCR requests and 6,000 range reads in 60 s, and none answered 429 or a 5xx.
+- A cold read one at a time is slower than a cold read under load. 30 cold reads of each size from 1 KiB to 1 MiB, one at a time, had a p50 of 1,384 to 1,578 ms and a p95 of 2,256 to 2,914 ms. The route's own time is within 20 ms of the client's, so the time is in the subrequests. The cause is not measured.
+- On 2026-10-29, 2 of 30 cold reads of 1 MiB passed the route's cap of 10 s on one subrequest, at the blob store. On 2026-10-30, 0 of 30 did.
+- The numbers are of one colo. A GitHub runner's colo is not measured.
 
 ### 4.4 The pack format
 
@@ -255,7 +269,20 @@ Why these choices.
 
 - Reversed keys: §3.2.
 - `deflate-raw`: Workers decode it natively with `DecompressionStream`. The measured density is 6.04 bytes a name at 4,096 names a block. Brotli level 9 and zstd level 12 are within 1.5% of it (design B §2.4 item 3, MEASURED 2026-10-27 06:27Z).
-  Front coding alone costs 12.0 bytes a name. DOM-008 measures the decode CPU in workerd.
+  Front coding alone costs 12.0 bytes a name.
+- Decode CPU in a Worker: one block of 4,096 names costs at most 2 ms of CPU at p99, and an answer of 1,000 rows at most 5 ms. Both are under DOM-008's lines of 3 ms and 15 ms, so `deflate-raw` at 4,096 names a block stays the default. The table below is MEASURED 2026-10-30T18:44Z to 19:18Z (DOM-008, `docs/research/measure/DOM-008/result.json`).
+  Each row is 200 invocations of the probe Worker on workers.dev, sent one a second. Each invocation makes two ranged R2 reads, inflates the blocks with `DecompressionStream("deflate-raw")`, checks their CRC-32, scans every record and answers JSON. The CPU time is the platform's count of the whole invocation, in whole milliseconds, read from `wrangler tail`.
+
+  | Read | Names | CPU p50 ms | CPU p99 ms | CPU per 1,000 names, p50 and p99 ms |
+  | --- | --- | --- | --- | --- |
+  | 1 block of 1,024 | 1,024 | 1 | 1 | 0.977, 0.977 |
+  | 1 block of 4,096 | 4,096 | 1 | 2 | 0.244, 0.488 |
+  | 1 block of 16,384 | 16,384 | 3 | 8 | 0.183, 0.488 |
+  | 16 blocks of 4,096 | 65,536 | 12 | 17 | 0.183, 0.259 |
+  | 16 blocks of 16,384 | 262,144 | 44 | 54 | 0.168, 0.206 |
+  | 1,000 rows from 1 block of 4,096 | 4,096 | 3 | 5 | 0.732, 1.221 |
+
+  An answer that decodes about 262,000 names in one invocation passes 50 ms of CPU at p99. The sample's blocks hold about 0.84 times the raw bytes of a mean block of a whole day. The CPU time under concurrent requests in one isolate is not measured.
 - 4,096 names a block: 6.04 B a name, 7,948 blocks for 32.5 million names. 1,024 names cost 6.26 B and 31,792 blocks. 16,384 names cost 5.93 B and 1,987 blocks.
 
 A lookup reads the cached top index, one index page, and one block. A cold lookup costs at most two small range reads per pack.
@@ -410,9 +437,9 @@ The clock is the thing that starts an ingest run. Ruling 8 requires a measuremen
 
 | Clock | How it works | Evidence so far |
 | --- | --- | --- |
-| A. `schedule` | A cron line in a workflow. | GitHub delays and drops scheduled runs (READ events documentation). On `mirror-archlinux`, the `*/15` workflow ran 40 times in its last 300 runs, with a median gap of 233 min (p90 318, max 377). A re-measurement at 2026-10-27T09:14Z gave 67 runs, median 229 min, p90 314, max 443. The `17 */3` workflow had a median gap of 274 min with 10 dispatches among 37 runs. The hourly status workflow reached a 53 min median only with 90 dispatches. MEASURED 2026-10-27T06:33Z by the operator's agent. Design B measured the same: 66 scheduled runs in 10.1 days against about 970 expected, median 227 min, max 443 min (design B M8). |
-| B. Self-dispatch chain | Each run starts the next with `gh workflow run`, using `GITHUB_TOKEN`. A concurrency group makes the next run wait until this one ends. | Once a run exists, its runner starts fast: median 2 s, p90 3 s, max 7 s over 250 jobs (design B M8). Dispatch runs queue like scheduled runs. DOM-001 measures the chain's gaps. |
-| C. Cloudflare cron Worker | A Worker with a cron trigger reads the sources, writes a 72 h hot tier to R2, and the Actions jobs write the durable tiers. | Not measured. DOM-002 measures it with the probe Worker that DOM-061 deploys. |
+| A. `schedule` | A cron line in a workflow. | GitHub delays and drops scheduled runs (READ events documentation). On `mirror-archlinux`, the `*/15` workflow ran 40 times in its last 300 runs, with a median gap of 233 min (p90 318, max 377). A re-measurement at 2026-10-27T09:14Z gave 67 runs, median 229 min, p90 314, max 443. The `17 */3` workflow had a median gap of 274 min with 10 dispatches among 37 runs. The hourly status workflow reached a 53 min median only with 90 dispatches. MEASURED 2026-10-27T06:33Z by the operator's agent. Design B measured the same: 66 scheduled runs in 10.1 days against about 970 expected, median 227 min, max 443 min (design B M8). On this repository, the `*/5` workflow `measure-clock-schedule.yml` ran 10 times in 48 hours against 576 expected: median gap 334.58 min, p90 and max 411.82 min, FAIL (MEASURED 2026-10-30T20:21Z, DOM-001, `docs/research/measure/DOM-001/schedule.json`). |
+| B. Self-dispatch chain | Each run starts the next with `gh workflow run`, using `GITHUB_TOKEN`. A concurrency group makes the next run wait until this one ends. | Once a run exists, its runner starts fast: median 2 s, p90 3 s, max 7 s over 250 jobs (design B M8). Dispatch runs queue like scheduled runs. Over 48 hours the chain made 577 runs against 576 expected: median gap 5 min, p90 5.02 min, max 5.9 min, no break, PASS (MEASURED 2026-10-30T18:28Z, DOM-001, `docs/research/measure/DOM-001/chain.json`). |
+| C. Cloudflare cron Worker | A Worker with a cron trigger reads the sources, writes a 72 h hot tier to R2, and the Actions jobs write the durable tiers. | The probe Worker of DOM-061 ran a minute cron for 48 hours: 2,875 ticks against 2,880 expected, median gap 1 min, p90 1.01 min, max 2.73 min, PASS (MEASURED 2026-10-30T18:29Z, DOM-002, `docs/research/measure/DOM-002/worker.json`). |
 
 The decision rule (DOM-003) reads 48 hours of gaps from each clock. The two thresholds below, a p90 of 15 minutes and a maximum of 60, were proposed from the freshness target, and the operator confirmed them on 2026-10-28 (ruling 17).
 
@@ -424,7 +451,7 @@ The chain is the job `chain` of `ingest-live.yml`. It needs no other job, so it 
 
 GitHub Actions is the default. C is the alternative a design built only on Actions would not need. A hot tier written by a Worker lets a 1 h window stay fresh when Actions is late.
 Under C, the hot tier carries what needs no ledger: OpenINTEL claims, ISC rows, and CT names with their log times. Newness verdicts stay `provisional` until the daily job (§5.8).
-Kafka over a Worker `connect()` needs DOM-005 to pass. If it fails, the Kafka lane stays on Actions.
+Kafka over a Worker `connect()` passed DOM-005 on 2026-10-30 from colo KTM: a call holds 16 MiB of `max_bytes` under a 30 s cap. A cron Worker in another colo is not measured, and the Kafka lane stays on Actions unless DOM-003 and DOM-025 move it.
 
 ### 5.3 Schedules
 

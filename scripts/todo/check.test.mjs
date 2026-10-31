@@ -251,6 +251,9 @@ test('check 13: a Waiting line next.mjs cannot read fails, and so does one on an
   const bad = makeRecord();
   bad.edit('TODO/ingest.md', (t) => t.replace(section('DOM-003'), '$1\n- **Waiting:** until 2026-10-12T00:00:00Z, read it again.\n'));
   assert.match(bad.guard().stderr, /DOM-003: its Waiting line is not/);
+  const impossible = makeRecord();
+  impossible.edit('TODO/ingest.md', (t) => t.replace(section('DOM-003'), '$1\n- **Waiting:** until 2026-13-45T99:99:99Z; read it again.\n'));
+  assert.match(impossible.guard().stderr, /DOM-003: its Waiting line is not/, 'a date that does not exist');
   const open = makeRecord();
   open.edit('TODO/ingest.md', (t) => t.replace(section('DOM-004'), '$1\n- **Waiting:** until 2026-10-12T00:00:00Z; read it again.\n'));
   assert.match(open.guard().stderr, /DOM-004: a Waiting line on a open entry/);
@@ -265,13 +268,19 @@ test('check 14: a done entry with no Closed line fails', () => {
   const g = r.guard();
   assert.equal(g.status, 1);
   assert.match(g.stderr, /DOM-001: done, but no/);
+  // The word in prose is not the label.
+  const prose = makeRecord();
+  prose.edit('TODO/foundation.md', (t) => t.replace(/^(\s*)- \*\*Closed\b/gm, '$1- **Finished').replace(section('DOM-001'), '$1\n- **Note:** Closed in prose is no Closed line.\n'));
+  assert.match(prose.guard().stderr, /DOM-001: done, but no/);
 });
 
-test('check 15: a record line stamped later than now fails', () => {
-  const r = makeRecord();
+test('check 15: a record line stamped later than now fails, whatever its label and its case', () => {
   const later = `${new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 16)}Z`;
-  r.edit('TODO/foundation.md', (t) => t.replace(section('DOM-002'), `$1\n- **Measured ${later}:** a reading not taken yet.\n`));
-  const g = r.guard();
-  assert.equal(g.status, 1);
-  assert.match(g.stderr, new RegExp(`DOM-002: its Measured line is stamped ${later}, later than now`));
+  for (const label of ['Closed', 'Measured', 'MEASURED', 'Read', 'READ', 'Found', 'Built', 'Done', 'Correction']) {
+    const r = makeRecord();
+    r.edit('TODO/foundation.md', (t) => t.replace(section('DOM-002'), `$1\n- **${label} ${later}:** a reading not taken yet.\n`));
+    const g = r.guard();
+    assert.equal(g.status, 1, label);
+    assert.match(g.stderr, new RegExp(`DOM-002: its ${label} line is stamped ${later}, later than now`));
+  }
 });

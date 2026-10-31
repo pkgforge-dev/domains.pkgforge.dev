@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "clock": "worker",
+  "workflow": "domains-probe",
+  "event": "* * * * *",
+  "from": "2026-10-28T15:23:24.560Z",
+  "to": "2026-10-30T15:23:24.560Z",
+  "hours": 48,
+  "runs": 2875,
+  "expected": 2880,
+  "gaps_min": {
+    "median": 1,
+    "p90": 1.01,
+    "max": 2.73
+  },
+  "start_lag_s": {
+    "median": 0.789,
+    "p90": 1.296,
+    "max": 105.657
+  },
+  "slots": {
+    "expected": 2880,
+    "hit": 2874,
+    "missed": 6
+  },
+  "breaks_over_30min": 0,
+  "verdict": "PASS",
+  "rule": {
+    "p90_max_min": 15,
+    "max_max_min": 60
+  },
+  "complete": true,
+  "now": "2026-10-30T18:28:59.749Z",
+  "hours_seen": 48,
+  "interval_min": 1,
+  "gaps": 2875,
+  "put_ms": {
+    "median": 868,
+    "p90": 1767,
+    "max": 15513
+  },
+  "hot_puts": 574,
+  "put_errors": 0,
+  "class_a_ops": 7472,
+  "class_b_ops": 0,
+  "beside": [
+    {
+      "event": "*/5 * * * *",
+      "interval_min": 5,
+      "runs": 574,
+      "expected": 576,
+      "gaps": 574,
+      "gaps_min": {
+        "median": 5,
+        "p90": 5.01,
+        "max": 14.57
+      },
+      "start_lag_s": {
+        "median": 0.928,
+        "p90": 1.389,
+        "max": 574.884
+      },
+      "slots": {
+        "expected": 576,
+        "hit": 574,
+        "missed": 2
+      },
+      "breaks_over_30min": 0,
+      "verdict": "PASS"
+    }
+  ],
+  "definitions": {
+    "tick": "one invocation of a cron trigger, as its R2 record: scheduledTime, the slot it fired for, and startedAt, Date.now() at the top of the handler",
+    "window": "[from, from + hours) of scheduledTime, from being the scheduledTime of the minute cron's first tick (of the first tick of any cron when the minute cron has none)",
+    "gaps_min": "minutes between the startedAt of consecutive ticks of one cron in the window, plus the closing gap from its last tick in the window to its first tick after the window (or to the window's end when none came and the window has ended); a cron with no tick in an ended window has one gap, from the window's start to its first tick after the window or to the window's end",
+    "start_lag_s": "seconds from scheduledTime to startedAt, for the ticks in the window",
+    "slots": "the slots of a cron are the multiples of its interval in the window; hit counts those that hold a tick, by scheduledTime; missed counts those that hold none and whose whole interval has passed",
+    "quantiles": "the value at index floor(n * q) of the ascending list: the median is the upper middle value of an even count, the p90 is index floor(0.9 n)",
+    "verdict": "PASS when the minute cron's p90 gap is at most 15 min and its max gap at most 60 min, else FAIL; INCOMPLETE before the window has ended",
+    "class_ops": "class A: every tick in the window puts its record and the heartbeat, and every tick of a hot cron puts one hot object (attempts, a failed put counted); class B: the cron path reads nothing. The listing that answers /gaps is not counted here (list_calls)"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "clock": "actions-schedule",
+  "workflow": "measure-clock-schedule.yml",
+  "event": "schedule",
+  "from": "2026-10-28T20:20:09Z",
+  "to": "2026-10-30T20:20:09Z",
+  "hours": 48,
+  "runs": 10,
+  "expected": 576,
+  "gaps_min": {
+    "median": 334.58,
+    "p90": 411.82,
+    "max": 411.82
+  },
+  "start_lag_s": {
+    "median": 3,
+    "p90": 3,
+    "max": 3
+  },
+  "slots": {
+    "expected": 576,
+    "hit": 10,
+    "missed": 566
+  },
+  "breaks_over_30min": 10,
+  "verdict": "FAIL",
+  "rule": {
+    "p90_max_min": 15,
+    "max_max_min": 60
+  },
+  "complete": true,
+  "hours_seen": 48,
+  "repo": "pkgforge-dev/domains.pkgforge.dev",
+  "branch": "main",
+  "interval_min": 5,
+  "gaps": 10,
+  "runs_not_started": 0,
+  "cost": {
+    "runner_s_total": 27,
+    "runner_s_median": 3,
+    "note": "each tick is one short job; runner time is free for a public repository"
+  },
+  "conditions": {
+    "fetched_at": "2026-10-30T20:21:21.953Z",
+    "gh": "gh version 2.101.0 (2026-09-15)",
+    "listed_runs": 10,
+    "node": "v26.7.0"
+  },
+  "definitions": {
+    "tick": "the earliest started_at among the jobs of the run's first attempt that a runner took",
+    "window": "[from, from + hours), from being the first tick",
+    "gaps_min": "minutes between consecutive ticks in the window, plus the closing gap from the last tick in the window to the first tick at or after its end (or to its end when none came)",
+    "start_lag_s": "seconds from the run's created_at to its tick, for the ticks in the window",
+    "slots": "schedule only: the slot of a run is floor(created_at / interval); hit counts the expected slots, from the slot of the first tick's run, that hold a run, started or not; missed is a lower bound of the slots the cron lost",
+    "quantiles": "the value at index floor(n * q) of the ascending list: the median is the upper middle value of an even count, the p90 is index floor(0.9 n)",
+    "verdict": "PASS when the p90 gap is at most 15 min and the max gap at most 60 min, else FAIL; INCOMPLETE before the window has ended"
+  }
+}
