@@ -437,21 +437,23 @@ The clock is the thing that starts an ingest run. Ruling 8 requires a measuremen
 
 | Clock | How it works | Evidence so far |
 | --- | --- | --- |
-| A. `schedule` | A cron line in a workflow. | GitHub delays and drops scheduled runs (READ events documentation). On `mirror-archlinux`, the `*/15` workflow ran 40 times in its last 300 runs, with a median gap of 233 min (p90 318, max 377). A re-measurement at 2026-10-27T09:14Z gave 67 runs, median 229 min, p90 314, max 443. The `17 */3` workflow had a median gap of 274 min with 10 dispatches among 37 runs. The hourly status workflow reached a 53 min median only with 90 dispatches. MEASURED 2026-10-27T06:33Z by the operator's agent. Design B measured the same: 66 scheduled runs in 10.1 days against about 970 expected, median 227 min, max 443 min (design B M8). On this repository, the `*/5` workflow `measure-clock-schedule.yml` ran 10 times in 48 hours against 576 expected: median gap 334.58 min, p90 and max 411.82 min, FAIL (MEASURED 2026-10-30T20:21Z, DOM-001, `docs/research/measure/DOM-001/schedule.json`). |
-| B. Self-dispatch chain | Each run starts the next with `gh workflow run`, using `GITHUB_TOKEN`. A concurrency group makes the next run wait until this one ends. | Once a run exists, its runner starts fast: median 2 s, p90 3 s, max 7 s over 250 jobs (design B M8). Dispatch runs queue like scheduled runs. Over 48 hours the chain made 577 runs against 576 expected: median gap 5 min, p90 5.02 min, max 5.9 min, no break, PASS (MEASURED 2026-10-30T18:28Z, DOM-001, `docs/research/measure/DOM-001/chain.json`). |
-| C. Cloudflare cron Worker | A Worker with a cron trigger reads the sources, writes a 72 h hot tier to R2, and the Actions jobs write the durable tiers. | The probe Worker of DOM-061 ran a minute cron for 48 hours: 2,875 ticks against 2,880 expected, median gap 1 min, p90 1.01 min, max 2.73 min, PASS (MEASURED 2026-10-30T18:29Z, DOM-002, `docs/research/measure/DOM-002/worker.json`). |
+| A. `schedule` | A cron line in a workflow. | GitHub delays and drops scheduled runs (READ events documentation). On `mirror-archlinux`, the `*/15` workflow ran 40 times in its last 300 runs, with a median gap of 233 min (p90 318, max 377). A re-measurement at 2026-10-27T09:14Z gave 67 runs, median 229 min, p90 314, max 443. The `17 */3` workflow had a median gap of 274 min with 10 dispatches among 37 runs. The hourly status workflow reached a 53 min median only with 90 dispatches. MEASURED 2026-10-27T06:33Z by the operator's agent. Design B measured the same: 66 scheduled runs in 10.1 days against about 970 expected, median 227 min, max 443 min (design B M8). On this repository, the `*/5` workflow `measure-clock-schedule.yml` fails the rule over 48 hours (DOM-001; the numbers are in `docs/clock.md`). |
+| B. Self-dispatch chain | Each run starts the next with `gh workflow run`, using `GITHUB_TOKEN`. A concurrency group makes the next run wait until this one ends. | Once a run exists, its runner starts fast: median 2 s, p90 3 s, max 7 s over 250 jobs (design B M8). Dispatch runs queue like scheduled runs. On this repository, a chain of 5 minutes passes the rule over 48 hours (DOM-001; the numbers are in `docs/clock.md`). |
+| C. Cloudflare cron Worker | A Worker with a cron trigger reads the sources, writes a 72 h hot tier to R2, and the Actions jobs write the durable tiers. | The probe Worker of DOM-061 ran a minute cron for 48 hours and passes the rule (DOM-002; the numbers are in `docs/clock.md`). A tick records no colo. |
 
 The decision rule (DOM-003) reads 48 hours of gaps from each clock. The two thresholds below, a p90 of 15 minutes and a maximum of 60, were proposed from the freshness target, and the operator confirmed them on 2026-10-28 (ruling 17).
 
-- Take the first of A, then B, whose p90 gap is at most 15 minutes and whose maximum gap is at most 60 minutes.
-- If A and B both fail, build C (entry DOM-025). Actions then carries only the durable work: the THC daily job, compaction, verification and the root.
+- Take the first of A, then B, then C whose p90 gap is at most 15 minutes and whose maximum gap is at most 60 minutes. If all three fail, the verdict is `none`: no clock is written, and the operator is asked.
+- A verdict of C builds C (entry DOM-025). Actions then carries only the durable work: the THC daily job, compaction, verification and the root.
 - If B passes, the watchdog (DOM-034) still restarts a broken chain, as `mirror-archlinux` does (§5.9).
+
+`scripts/measure/clock-verdict.mjs` (DOM-003) applies the rule to the three results, `config/clock.json` records the verdict, and `docs/clock.md` gives it with the numbers it rests on.
 
 The chain is the job `chain` of `ingest-live.yml`. It needs no other job, so it starts with the run, and its first step that runs a script runs `scripts/ingest/chain.mjs start`. That script is the one reader of `config/clock.json`, which DOM-003 writes. Under the clock `actions-chain`, on `main` and on the first attempt of a run, it dispatches the next run with `gh workflow run ingest-live.yml --ref main` and the job's token (`actions: write`), at most 3 tries 15 s apart. It dispatches none when another run of the workflow waits, so a live chain keeps one waiting successor and the cron backstop never starts a second chain. The successor waits in the group `ingest-live` until this run ends. The last step, `chain.mjs sleep`, sleeps to the next boundary of the interval: the optional whole number `interval_min` of the file, 1 to 12, default 10. With no file, or with another clock, both steps print `chain off` and exit 0: only the cron `7,22,37,52 * * * *` and the dispatches start runs.
 
 GitHub Actions is the default. C is the alternative a design built only on Actions would not need. A hot tier written by a Worker lets a 1 h window stay fresh when Actions is late.
 Under C, the hot tier carries what needs no ledger: OpenINTEL claims, ISC rows, and CT names with their log times. Newness verdicts stay `provisional` until the daily job (§5.8).
-Kafka over a Worker `connect()` passed DOM-005 on 2026-10-30 from colo KTM: a call holds 16 MiB of `max_bytes` under a 30 s cap. A cron Worker in another colo is not measured, and the Kafka lane stays on Actions unless DOM-003 and DOM-025 move it.
+Kafka over a Worker `connect()` passed DOM-005 on 2026-10-30 from colo KTM, the colo that answered its HTTP requests: a call holds 16 MiB of `max_bytes` under a 30 s cap. The read rate of a cron Worker, from the colo its invocations run in, is not measured. DOM-025 is closed on ruling 8 with no code, because an Actions clock passes the rule first (DOM-003), so the Kafka lane runs on Actions.
 
 ### 5.3 Schedules
 
@@ -489,8 +491,8 @@ A failed source fails its own leg. The other legs, `push` and `promote` still ru
 
 ⚠ What is not done or not measured:
 
-- No adapter exists until DOM-026, and every lane of `config/lanes.json` is empty, so a run plans no leg. `ingest-live.yml` has not run on GitHub.
-- The chain dispatches nothing until DOM-003 writes `config/clock.json` with the clock `actions-chain`.
+- No adapter exists until DOM-026, and every lane of `config/lanes.json` is empty, so a run plans no leg. The first run of `ingest-live.yml` on GitHub, run 41142944289 (schedule, 2026-10-30T23:11:29Z), came before `config/clock.json`: its job `chain` printed `chain off`, `plan` passed, and `ingest`, `push` and `promote` were skipped.
+- No run under the clock `actions-chain` is measured, and no successor has been dispatched on GitHub.
 - That GitHub runs the job-level group `root-writer` of the job `push` inside the workflow-level group `ingest-live` as described is assumed, as `compact-daily.yml` assumes it for `compact`. That `actions/download-artifact` with a `pattern` that matches no artifact ends green is assumed too.
 - The steps of the four jobs that have steps run under bash in `scripts/workflows/ingest-live.test.mjs`, with doubles of the scripts they call. `scripts/workflows/ingest-live-scripts.test.mjs` runs the steps of `plan`, `ingest` and `push` over the real scripts, with the step "Move root:latest" of `root-promote.yml` (`partial` true) and the two ledger steps of the job `push` of `compact-daily.yml`, against the GHCR double of `scripts/root/fixture.mjs` and the fixture adapters of `scripts/ingest/fixtures/`: three runs, each reading what the run before it pushed. In the second and third runs both owed days of the file fixture print `waiting` across the hole before the stream's first window, the promotion ends `unchanged`, and the state still owes them. No run of that test promotes some owed packs while others wait; the tests of `scripts/root/promote.test.mjs` whose names start `promote: --partial` do.
 
@@ -873,7 +875,6 @@ Each resource is created by the entry named. The undo of each goes in `docs/reso
 | Drill Worker `domains-drill` (on workers.dev) and R2 bucket `domains-drill`, temporary | DOM-053 | `wrangler delete`; delete the bucket. The drill deletes both when it ends. |
 | Worker `domains-pkgforge-dev` and custom domain `domains.pkgforge.dev` on the `pkgforge.dev` zone | DOM-030 | `wrangler delete`; remove the custom domain |
 | R2 bucket `domains-pkgforge-cache` with a lifecycle rule: the one cache bucket, at most 5 GB | DOM-031 | delete the bucket |
-| Worker `domains-pkgforge-clock`, only if the clock verdict is C | DOM-025 | `wrangler delete` |
 | GHCR packages of §4.1 | the first push of a workflow | none. Nothing is ever deleted (ruling 5). |
 
 The `pkgforge.dev` zone's own Cloudflare account hosts the Worker, because a custom domain needs the zone in the same account.

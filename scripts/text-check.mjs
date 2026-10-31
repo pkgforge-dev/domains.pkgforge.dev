@@ -22,7 +22,7 @@ const TEXT = /\.(md|mjs|cjs|js|mts|cts|ts|tsx|jsx|json|jsonc|yaml|yml|toml|sql|h
 
 // The technical documents. The story lives elsewhere by design: CHANGELOG.md,
 // the git log, docs/research/ (dated measurements) and TODO/ (the record).
-const NARRATIVE_FILES = new Set(['AGENTS.md', 'README.md', 'HUMAN.md', 'SECURITY.md', 'docs/architecture.md', 'docs/sources.md', 'docs/resources.md']);
+const NARRATIVE_FILES = new Set(['AGENTS.md', 'README.md', 'HUMAN.md', 'SECURITY.md', 'docs/architecture.md', 'docs/sources.md', 'docs/clock.md', 'docs/resources.md']);
 const NARRATIVE_DIRS = /^docs\/(methodology|conventions|security)\/[^/]+\.md$/;
 // A Worker's generated root documents and the registry they are generated from.
 const GENERATED = /^apps\/[^/]+\/public\/[^/]+\.(md|txt|json)$/;

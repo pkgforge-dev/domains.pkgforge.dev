@@ -270,7 +270,8 @@ where this record holds none, it says so.
     choosing "Keep 15 / 60 min"). DOM-003 judges each clock by a 48 hour p90
     gap of at most 15 minutes and a maximum gap of at most 60 minutes, the
     numbers the record proposed on 2026-10-27. Overturn: the operator sets
-    other numbers; `config/clock.json` holds them once.
+    other numbers; `RULE` of `scripts/measure/clock-gaps.mjs` holds them, and
+    `docs/clock.md` names the files and documents that change with it.
 18. **The concurrency group `root-writer` lives in `root-promote.yml`**
     (operator, 2026-10-29, choosing the recommended option "In the called
     file"). Every promotion of the root waits in that one group, whoever calls

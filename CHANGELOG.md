@@ -2,6 +2,10 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-10-31
+
+- The clock decided (DOM-003): `scripts/measure/clock-verdict.mjs` derives the verdict from the three 48-hour results, and `config/clock.json` records `actions-chain`, the self-dispatch chain, at 10 minutes. `docs/clock.md` gives the numbers. The Worker hot tier (DOM-025) is not built: an Actions clock passes first.
+
 ## 2026-10-30
 
 - The clocks measured over 48 hours (DOM-001, DOM-002): a self-dispatch chain of Actions runs and the probe Worker's minute cron both pass the freshness rule, a p90 gap of at most 15 min and a largest gap of at most 60 min. GitHub's `*/5` schedule fails it, with 10 runs in 48 hours. The schedule and its keepalive are disabled, and the probe runs no cron.

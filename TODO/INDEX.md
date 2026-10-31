@@ -75,8 +75,8 @@ record guard refuses an order that lists an entry before an open dependency.
    checkpoint: queries for `.com.np`, `.com` and `co.uk` over windows of 1 h to
    7 d. The R2 cache (DOM-031) is an optimisation and does not block the
    checkpoint. The watchdogs (DOM-034) and the coverage table (DOM-035) keep it
-   honest. The conditional Worker hot tier (DOM-025) is built only when DOM-003
-   says so.
+   honest. The conditional Worker hot tier (DOM-025) is closed on ruling 8 with
+   no code: DOM-003's verdict is an Actions clock.
 5. **Names second (DOM-036 to DOM-041).** Names need the same machinery at ten
    times the volume. The Kafka names (DOM-036) and the tiles (DOM-037) feed the
    names dataset (DOM-038), which the subdomain routes (DOM-039) and the dumps
@@ -100,15 +100,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**62 items. 38 open, 3 partial, 0 blocked, 21 done.**
+**62 items. 36 open, 3 partial, 0 blocked, 23 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 20 | 3 | 0 | 21 | 44 |
-| P2 | 15 | 0 | 0 | 0 | 15 |
+| P1 | 19 | 3 | 0 | 22 | 44 |
+| P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 38 | 3 | 0 | 21 | 62 |
+| **All** | 36 | 3 | 0 | 23 | 62 |
 
 ## Entries
 
@@ -116,7 +116,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | --- | --- | --- | --- | --- |
 | [DOM-001](ops.md) | P1 | ops | **done** | Measure the Actions clock: a schedule and a self-dispatch chain |
 | [DOM-002](ops.md) | P1 | ops | **done** | Measure the Cloudflare cron clock with a probe Worker that writes a hot tier to R2 |
-| [DOM-003](ops.md) | P1 | ops | open | Decide the clock from the measurements |
+| [DOM-003](ops.md) | P1 | ops | **done** | Decide the clock from the measurements |
 | [DOM-004](ingest.md) | P1 | ingest | **done** | Measure Kafka from a GitHub runner |
 | [DOM-005](ingest.md) | P1 | ingest | **done** | Measure Kafka from a Worker connect() |
 | [DOM-006](storage.md) | P1 | storage | **done** | Measure a 1.5 GB push from a runner and that a first push comes out public |
@@ -138,7 +138,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-022](storage.md) | P1 | storage | **done** | The new-domain feed packs |
 | [DOM-023](storage.md) | P1 | storage | partial | Compaction: hour, day, week, month and year |
 | [DOM-024](ingest.md) | P1 | ingest | partial | The state cursors and the ingest workflow skeleton |
-| [DOM-025](ops.md) | P2 | ops | open | The Worker hot tier, only if the clock verdict is a Worker |
+| [DOM-025](ops.md) | P2 | ops | **done** | The Worker hot tier, only if the clock verdict is a Worker |
 | [DOM-026](ingest.md) | P1 | ingest | open | oi-nrd: OpenINTEL's newly registered topics |
 | [DOM-027](ingest.md) | P1 | ingest | open | isc-new: the ISC new-domain feed |
 | [DOM-028](ingest.md) | P2 | ingest | open | whoisds, cenk-nrd and hagezi-nrd: the daily lists |
