@@ -38,8 +38,10 @@ const hex = (c) => c.repeat(64);
 // The node double. Each call is logged as `node ARG...`, each argument quoted
 // by printf %q, so the boundaries between arguments are kept. The STUB
 // directory holds what each script answers: plan.json (copied to plan.mjs's
-// --out), advance.txt (advance.mjs's lines), and NAME.rc, an exit code
-// (plan, run.<adapter>, advance, hours, move, chain.start, chain.sleep).
+// --out), advance.txt (advance.mjs's lines), due.txt (the lines of chain.mjs
+// due), chain.due.die (the step's shell killed after those lines), and
+// NAME.rc, an exit code (plan, run.<adapter>, advance, hours, move,
+// chain.start, chain.due, chain.sleep).
 // chain.mjs start dispatches with gh, as scripts/ingest/chain.mjs does when the
 // clock is actions-chain; chain.start.rc stands in for its other exits.
 const PRELUDE = `
@@ -82,6 +84,13 @@ node() {
         fi
         echo "chain broken: the successor was not dispatched in 3 tries; the cron backstop restarts the chain"
         return 1
+      fi
+      if [ "$1" = due ]; then
+        if [ -f "$STUB/due.txt" ]; then cat "$STUB/due.txt"; fi
+        # chain.due.die: the step's shell is killed here, as its timeout ends it.
+        if [ -f "$STUB/chain.due.die" ]; then kill -KILL $$; fi
+        stub_rc chain.due
+        return
       fi
       echo "sleep 300 s to 2026-10-30T09:00:00Z"
       sleep 300
@@ -221,7 +230,8 @@ test("ingest-live: each job's grants, timeout, needs and if", () => {
 
   assert.equal(chain.needs, undefined, 'the chain starts with the run');
   assert.equal(chain.if, MAIN);
-  assert.equal(chain['timeout-minutes'], 15);
+  // The start and the due step, 2 minutes each at most, and a sleep of 12 at most, interval_min's top.
+  assert.equal(chain['timeout-minutes'], 17);
   assert.deepEqual(chain.permissions, { actions: 'write', contents: 'read' });
 
   // issues: write waits for scripts/track-issue (DOM-034).
@@ -249,7 +259,7 @@ test('ingest-live: the steps keep their names, ids, order and timeouts, and push
     'Build the closed hours',
     'Move state:latest',
   ]);
-  assert.deepEqual(named('chain'), ['actions/checkout', 'actions/setup-node', 'Start the successor', 'Sleep to the next boundary']);
+  assert.deepEqual(named('chain'), ['actions/checkout', 'actions/setup-node', 'Start the successor', 'Dispatch the scheduled workflows when due', 'Sleep to the next boundary']);
   const ids = Object.fromEntries([...STEPS].map(([id, { job, step }]) => [id, [job, step.name, step['timeout-minutes']]]));
   assert.deepEqual(ids, {
     plan: ['plan', 'Plan the lanes', 5],
@@ -258,6 +268,7 @@ test('ingest-live: the steps keep their names, ids, order and timeouts, and push
     hours: ['push', 'Build the closed hours', 15],
     move: ['push', 'Move state:latest', 5],
     start: ['chain', 'Start the successor', 2],
+    due: ['chain', 'Dispatch the scheduled workflows when due', 2],
     sleep: ['chain', 'Sleep to the next boundary', 13],
   });
   // The move runs after a failed hours step too, never after a failed advance.
@@ -303,7 +314,7 @@ test('ingest-live: every action is a pin of ACTION_PINS, checkout keeps no crede
   assert.equal(uses.filter((u) => u.startsWith('actions/checkout@')).length, 4, 'every job with steps checks out');
   const tokened = [];
   for (const [job, j] of Object.entries(WF.jobs)) for (const s of j.steps ?? []) for (const [k, v] of Object.entries(s.env ?? {})) if (v === TOKEN) tokened.push(`${job}/${s.id}/${k}`);
-  assert.deepEqual(tokened, ['ingest/run/REGISTRY_TOKEN', 'push/advance/REGISTRY_TOKEN', 'push/hours/REGISTRY_TOKEN', 'push/move/REGISTRY_TOKEN', 'chain/start/GH_TOKEN']);
+  assert.deepEqual(tokened, ['ingest/run/REGISTRY_TOKEN', 'push/advance/REGISTRY_TOKEN', 'push/hours/REGISTRY_TOKEN', 'push/move/REGISTRY_TOKEN', 'chain/start/GH_TOKEN', 'chain/due/GH_TOKEN']);
   assert.equal(TEXT.split('github.token').length - 1, tokened.length, 'no other reference to the token');
 });
 
@@ -317,7 +328,7 @@ test('ingest-live: every step that runs a script reads its exit from the script,
         assert.match(line, /^\s*node scripts\/[a-z/]+\.mjs [^|]*\|\| rc=\$\?$/, `${job}: ${line}`);
       }
     }
-  assert.equal(scripts, 7, 'plan, run, advance, hours, move, start and sleep');
+  assert.equal(scripts, 8, 'plan, run, advance, hours, move, start, due and sleep');
 });
 
 // ---- the plan step ---------------------------------------------------------
@@ -612,61 +623,154 @@ test("ingest-live: 'Move state:latest' writes add from the first 500 owed refs i
 
 // ---- the chain -------------------------------------------------------------
 
-const START_MUST = /node scripts\/ingest\/chain\.mjs start \|\| rc=\$\?/;
-const SLEEP_MUST = /node scripts\/ingest\/chain\.mjs sleep \|\| rc=\$\?/;
+const MUST = {
+  start: /node scripts\/ingest\/chain\.mjs start \|\| rc=\$\?/,
+  due: /node scripts\/ingest\/chain\.mjs due > >\(tee "\$RUNNER_TEMP\/due\.txt"\) \|\| rc=\$\?\nwait "\$!" \|\| true\n/,
+  sleep: /node scripts\/ingest\/chain\.mjs sleep \|\| rc=\$\?/,
+};
+// The `if` of a step as bash reads the outcomes of the steps before it. A
+// step with no `if` runs while no step before it failed (`first` is the exit
+// of the first step that failed, 0 while none did).
+const CONDITIONS = {
+  undefined: '[ "$first" -eq 0 ]',
+  "${{ !cancelled() && steps.start.outcome == 'success' }}": '[ "$outcome_start" = success ]',
+};
 
-// The job chain as GitHub runs it: each step in its own shell, in order, and
-// the job ends at the first step that fails. `planted` is put after `after`.
+// The job chain as GitHub runs it: each step in a bash of its own, with -e
+// and pipefail, in order and under its `if`; a step that fails fails the job.
+// `planted` is a step put after `after`, with no `if`. The job's exit is the
+// exit of its first step that failed, or 0.
 function chainJob(t, { planted = null, after = 'start', fake = {}, stub = {} } = {}) {
-  const { base } = world(t, { stub });
-  const steps = WF.jobs.chain.steps.filter((s) => s.run).map((s) => [s.id, stepScript(FILE, s.id, s.id === 'start' ? START_MUST : SLEEP_MUST)]);
-  const parts = [];
-  for (const [id, script] of steps) {
-    parts.push(`(\n${script}\n)`);
-    if (planted && id === after) parts.push(`(\n${planted}\n)`);
+  const { w, base } = world(t, { stub });
+  const steps = [];
+  for (const s of WF.jobs.chain.steps.filter((x) => x.run)) {
+    steps.push({ id: s.id, if: s.if, script: stepScript(FILE, s.id, MUST[s.id]) });
+    if (planted && s.id === after) steps.push({ id: 'planted', if: undefined, script: planted });
   }
+  const job = ['first=0'];
+  for (const s of steps) {
+    const file = join(w, `step-${s.id}.sh`);
+    writeFileSync(file, `${PRELUDE}${s.script}\n`);
+    const cond = CONDITIONS[String(s.if)];
+    if (cond === undefined) throw new Error(`the step ${s.id} has an if this harness does not read: ${s.if}`);
+    job.push(
+      `outcome_${s.id}=skipped`,
+      `if ${cond}; then`,
+      '  rc=0',
+      `  bash "${posix(file)}" || rc=$?`,
+      `  if [ "$rc" -eq 0 ]; then outcome_${s.id}=success; else outcome_${s.id}=failure; if [ "$first" -eq 0 ]; then first=$rc; fi; fi`,
+      'fi',
+      `echo "outcome ${s.id} $outcome_${s.id}" >&2`,
+    );
+  }
+  job.push('exit "$first"');
   const env = { ...base, ...envOf('start', { GH_TOKEN: 'placeholder' }) };
-  const r = runStep(t, `${PRELUDE}${parts.join('\n')}\n`, { fake, env });
-  return { ...r, text: `${r.stdout}\n${r.stderr}` };
+  const r = runStep(t, `${job.join('\n')}\n`, { fake, env });
+  const outcomes = Object.fromEntries([...r.stderr.matchAll(/^outcome (\S+) (\S+)$/gm)].map((m) => [m[1], m[2]]));
+  return { ...r, outcomes, text: `${r.stdout}\n${r.stderr}` };
 }
 const DISPATCH = `workflow run ingest-live.yml --ref main --repo ${REPO}`;
 const PLANTED = 'echo "planted failure" >> "$FAKE_LOG"\nexit 1';
+const START = 'node scripts/ingest/chain.mjs start';
+const DUE = 'node scripts/ingest/chain.mjs due';
+const SLEEP = ['node scripts/ingest/chain.mjs sleep', 'sleep 300'];
 
-test("ingest-live: chain: 'Start the successor' is the first step of its job that runs a script, and it alone holds the token that dispatches", () => {
+test("ingest-live: chain: 'Start the successor' is the first step of its job that runs a script, then the due step, and they alone hold the token that dispatches", () => {
   const steps = WF.jobs.chain.steps;
   const first = steps.findIndex((s) => typeof s.run === 'string');
   assert.equal(steps[first].id, 'start');
   for (const s of steps.slice(0, first)) assert.match(String(s.uses), /^actions\/(?:checkout|setup-node)@/, 'only the checkout and node come before it');
   assert.deepEqual(steps[first].env, { GH_TOKEN: TOKEN });
+  assert.deepEqual(steps.find((s) => s.id === 'due').env, { GH_TOKEN: TOKEN });
   assert.equal(steps.find((s) => s.id === 'sleep').env, undefined);
   assert.deepEqual(
-    steps.filter((s) => s.run).map((s) => s.id),
-    ['start', 'sleep'],
+    steps.filter((s) => s.run).map((s) => [s.id, s.if]),
+    [
+      ['start', undefined],
+      ['due', undefined],
+      // The sleep runs after a failed due step, never after a failed start.
+      ['sleep', "${{ !cancelled() && steps.start.outcome == 'success' }}"],
+    ],
   );
+  assert.equal(steps.find((s) => s.id === 'due')['continue-on-error'], undefined, 'a due step that fails fails the job');
 });
 
-test('ingest-live: chain: with a planted failing step after the start, the dispatch is in the log before the failure and the job ends failed', { skip: SKIP }, (t) => {
+test('ingest-live: chain: with a planted failing step after the start, the dispatch is in the log before the failure, the sleep still runs, and the job ends failed', { skip: SKIP }, (t) => {
   const r = chainJob(t, { planted: PLANTED });
   assert.notEqual(r.status, 0, r.text);
-  assert.deepEqual(r.calls, ['node scripts/ingest/chain.mjs start', DISPATCH, 'planted failure']);
+  assert.deepEqual(r.calls, [START, DISPATCH, 'planted failure', ...SLEEP]);
+  assert.deepEqual(r.outcomes, { start: 'success', planted: 'failure', due: 'skipped', sleep: 'success' });
   assert.match(r.text, /chain started: the successor is dispatched/);
-  // Without the plant the job dispatches, then sleeps to the boundary.
+  // Without the plant the job dispatches, runs the due step, then sleeps to the boundary.
   const clean = chainJob(t);
   assert.equal(clean.status, 0, clean.text);
-  assert.deepEqual(clean.calls, ['node scripts/ingest/chain.mjs start', DISPATCH, 'node scripts/ingest/chain.mjs sleep', 'sleep 300']);
+  assert.deepEqual(clean.calls, [START, DISPATCH, DUE, ...SLEEP]);
+  assert.deepEqual(clean.outcomes, { start: 'success', due: 'success', sleep: 'success' });
 });
 
-test('ingest-live: chain: a dispatch that fails fails the job before its sleep, and every exit of chain.mjs is kept', { skip: SKIP }, (t) => {
+test('ingest-live: chain: a dispatch that fails fails the job before its due step and its sleep, and every exit of chain.mjs is kept', { skip: SKIP }, (t) => {
   const broken = chainJob(t, { fake: { dispatch: 'fail' } });
   assert.equal(broken.status, 1, broken.text);
-  assert.deepEqual(broken.calls, ['node scripts/ingest/chain.mjs start', DISPATCH]);
+  assert.deepEqual(broken.calls, [START, DISPATCH]);
+  assert.deepEqual(broken.outcomes, { start: 'failure', due: 'skipped', sleep: 'skipped' });
   assert.match(broken.text, /::error::scripts\/ingest\/chain\.mjs start exited 1 \(1 the successor was not dispatched in 3 tries/);
   for (const rc of [2, 70]) {
     const r = chainJob(t, { stub: { 'chain.start.rc': String(rc) } });
     assert.equal(r.status, rc, r.text);
+    assert.deepEqual(r.calls, [START], 'neither the due step nor the sleep runs');
     assert.match(r.text, new RegExp(`::error::scripts/ingest/chain\\.mjs start exited ${rc} `));
     const s = chainJob(t, { stub: { 'chain.sleep.rc': String(rc) } });
     assert.equal(s.status, rc, s.text);
     assert.match(s.text, new RegExp(`::error::scripts/ingest/chain\\.mjs sleep exited ${rc} `));
   }
+});
+
+test('ingest-live: chain: a due step that exits 2 or 70 fails the job with its error, and the sleep still runs', { skip: SKIP }, (t) => {
+  for (const rc of [2, 70]) {
+    // A row's line printed before the exit is still printed.
+    const met = 'due compact-daily.yml: met by run 1 (schedule, 2026-11-01T07:27:09Z)';
+    const r = chainJob(t, { stub: { 'chain.due.rc': String(rc), 'due.txt': `${met}\n` } });
+    assert.equal(r.status, rc, r.text);
+    assert.ok(r.stdout.split('\n').includes(met), r.text);
+    assert.deepEqual(r.calls, [START, DISPATCH, DUE, ...SLEEP]);
+    assert.deepEqual(r.outcomes, { start: 'success', due: 'failure', sleep: 'success' });
+    assert.match(r.text, new RegExp(`::error::scripts/ingest/chain\\.mjs due exited ${rc} \\(2 could not run: .+; 70 an internal error\\); the start ran before it, and the sleep still runs`));
+  }
+});
+
+test("ingest-live: chain: the due step prints chain.mjs's lines, and each warn line again as a warning, and exits 0", { skip: SKIP }, (t) => {
+  const lines = [
+    'due compact-daily.yml: warn the runs did not list (gh exited 1: HTTP 502: Bad Gateway); nothing is dispatched, and the next run of the chain lists them again',
+    'due compact-weekly.yml: met by run 41300000005 (workflow_dispatch, 2026-11-02T04:10:12Z)',
+    'due compact-monthly.yml: dispatched for 2026-11-01T04:50:00Z',
+    'due compact-yearly.yml: not before 2026-11-01T00:00:00Z (its last instant is 2026-01-01T05:50:00Z)',
+    'due ref-refresh.yml: warn gh workflow run exited 1 (HTTP 500: Internal Server Error); the next run of the chain tries again',
+  ];
+  const r = step(t, 'due', MUST.due, { env: { GH_TOKEN: 'placeholder' }, stub: { 'due.txt': `${lines.join('\n')}\n` } });
+  assert.equal(r.status, 0, r.text);
+  assert.deepEqual(r.nodes, [DUE]);
+  const out = r.stdout.split('\n').filter(Boolean);
+  assert.deepEqual(out, [...lines, `::warning::${lines[0]}`, `::warning::${lines[4]}`]);
+  assert.doesNotMatch(r.text, /::error::/);
+  // A line that only holds the word warn later, a word that starts with warn,
+  // a line that does not start with `due `, and another first word are no warning.
+  for (const line of [
+    'due compact-daily.yml: met by run 1 (schedule, 2026-11-01T07:27:09Z): warn',
+    'due compact-daily.yml: met by run 1 (schedule, 2026-11-01T07:27:09Z): warn x',
+    'due compact-daily.yml: warned',
+    'xx due compact-daily.yml: warn y',
+    'chain off: warn x',
+  ]) {
+    const quiet = step(t, 'due', MUST.due, { env: { GH_TOKEN: 'placeholder' }, stub: { 'due.txt': `${line}\n` } });
+    assert.equal(quiet.status, 0, quiet.text);
+    assert.deepEqual(quiet.stdout.split('\n').filter(Boolean), [line]);
+  }
+});
+
+test('ingest-live: chain: a due step ended by its timeout has printed the lines of the rows done', { skip: SKIP }, (t) => {
+  const done = 'due compact-daily.yml: dispatched for 2026-11-02T01:35:00Z';
+  const r = step(t, 'due', MUST.due, { env: { GH_TOKEN: 'placeholder' }, stub: { 'due.txt': `${done}\n`, 'chain.due.die': '' } });
+  assert.notEqual(r.status, 0, r.text);
+  assert.deepEqual(r.stdout.split('\n').filter(Boolean), [done]);
+  assert.deepEqual(r.nodes, [DUE]);
 });

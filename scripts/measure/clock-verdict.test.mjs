@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEFAULT_INTERVAL_MIN, readClock } from '../ingest/chain.mjs';
+import { DEFAULT_INTERVAL_MIN, DUE_GRACE_S, readClock } from '../ingest/chain.mjs';
 import { RULE } from './clock-gaps.mjs';
 import { CLOCKS, checkClockFile, DEFAULT_CLOCK_FILE, decide, HOURS, INTERVAL_MIN, judge, judgeFiles, lines, main, passes, TABLE_HEAD, tableRows } from './clock-verdict.mjs';
 
@@ -369,11 +369,12 @@ test('clock verdict: every number in the prose of docs/clock.md comes from the f
     `At an interval of ${INTERVAL_MIN} minutes the p90 gap is expected to be about ${INTERVAL_MIN} minutes [E]`,
     `the measured chain used ${runnerS.toLocaleString('en-US')} s, about ${Math.round(runnerS / 360) / 10} hours, of runner time`,
     `The chain at ${INTERVAL_MIN} minutes is not measured`,
+    `the grace of ${DUE_GRACE_S / 60} minutes`,
   ];
   for (const f of facts) assert.ok(flat(proseText).includes(f), `docs/clock.md lacks: ${f}`);
   assert.equal(INTERVAL_MIN, DEFAULT_INTERVAL_MIN, 'docs/clock.md calls the interval the default of chain.mjs');
   // Every other number is one of the same: ids, rulings and section numbers aside.
-  const allowed = new Set([HOURS, p, m, INTERVAL_MIN, runnerS.toLocaleString('en-US'), Math.round(runnerS / 360) / 10].map(String));
+  const allowed = new Set([HOURS, p, m, INTERVAL_MIN, runnerS.toLocaleString('en-US'), Math.round(runnerS / 360) / 10, DUE_GRACE_S / 60].map(String));
   const bare = flat(proseText)
     .replace(/`[^`]*`/g, ' ')
     .replace(/\bDOM-\d+\b/g, ' ')

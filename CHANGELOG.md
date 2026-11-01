@@ -2,6 +2,10 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-11-01
+
+- The chain dispatches the scheduled workflows when due (DOM-023, partial): GitHub started the crons of `compact-daily.yml` and `ref-refresh.yml` 5 h 42 min to 6 h 10 min late in the 3 runs read, and the weekly, monthly and yearly crons have not fired yet, so the job `chain` of `ingest-live.yml` dispatches each of the five 20 minutes or more after its cron's instant when no run of it exists since that instant. The crons stay, and start the runs when the chain is off.
+
 ## 2026-10-31
 
 - The first adapter, `oi-nrd` (DOM-026, partial): OpenINTEL's three newly registered topics as the sources `oi-nrd`, `oi-nrd-fqdn` and `oi-nrd-confirmed`, in the kafka lane of `config/lanes.json`. `packages/adapter` gains a TCP door for adapters (`ctx.connect`, with TCP recordings, their replay and a tap), the pinned list in the context (`ctx.psl`), a sandbox for an adapter's contract tests, and the shared Kafka client; the protocol and snappy decoders move there from the probe. A segment of `oi-nrd` carries the certificate ages of its events in a new layer `facts.json` (`docs/format.md` section 19), which the hour and day builds read, so a domain with an old certificate is `suspect`. Kafka members of the raw lane name their topic, partition and offsets. No WebSocket fallback is built. No deploy: the first chain run on the pushed commit is the live run, and DOM-026's Waiting line names what closes it.

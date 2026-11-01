@@ -46,9 +46,15 @@
 #             scripts/ingest/chain.mjs reads config/clock.json (DOM-003). Under
 #             the clock actions-chain it dispatches the next run of this
 #             workflow, which waits in the group ingest-live until this run
-#             ends, then sleeps to the next boundary of the interval. With no
-#             file, or with another clock, it dispatches nothing and does not
-#             sleep: only the cron backstop and the dispatches start runs.
+#             ends. Then it dispatches each scheduled workflow of the table
+#             DUE of chain.mjs (the compactions and ref-refresh.yml) whose
+#             cron instant passed 20 minutes ago or more with no run of it
+#             after that instant: GitHub started the crons of
+#             compact-daily.yml and ref-refresh.yml hours late (DOM-023).
+#             Last it sleeps to the next boundary of the interval, also after
+#             a failed due step. With no file, or with another clock, it
+#             dispatches nothing and does not sleep: only the crons and the
+#             dispatches start runs.
 #
 # Every run waits in the group ingest-live (queue: max, no cancel), so one run
 # at a time reads and moves the cursors. A dispatch with sources reads the
@@ -470,11 +476,15 @@ jobs:
   # The successor is dispatched at the start of the run, so a fault of any
   # other job cannot break the chain (the Decision of DOM-024). The cron is
   # the backstop: a run it starts dispatches a successor only when none waits.
+  # The due step then dispatches the scheduled workflows of the table DUE
+  # (DOM-023), with this job's token: each such workflow holds its own grants.
   chain:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    # The sleep is at most interval_min minutes of config/clock.json, 12 at most.
-    timeout-minutes: 15
+    # The start and the due step take 2 minutes each at most (their
+    # timeouts), and the sleep at most interval_min minutes of
+    # config/clock.json, 12 at most: 16 minutes and the checkout.
+    timeout-minutes: 17
     permissions:
       actions: write
       contents: read
@@ -505,9 +515,38 @@ jobs:
           fi
           exit "$rc"
 
-      # Sleeps to the next boundary of the interval of the clock, which keeps the chain on the grid.
+      # After the start, which dispatched the successor, so this step cannot
+      # break the chain. For each row of DUE: one listing, and one dispatch
+      # when the row is due and no run meets it (scripts/ingest/chain.mjs). A
+      # row whose listing or dispatch fails prints `due FILE: warn ...`, which
+      # this step also prints as a warning, and chain.mjs still exits 0: the
+      # next run of the chain tries again in one interval. tee prints each
+      # line as chain.mjs writes it, so a step that its timeout ends keeps the
+      # lines of the rows done (each gh call may take 60 s); the exit is
+      # chain.mjs's own, and `wait` lets tee finish before awk reads the file.
+      - name: Dispatch the scheduled workflows when due
+        id: due
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/ingest/chain.mjs due > >(tee "$RUNNER_TEMP/due.txt") || rc=$?
+          wait "$!" || true
+          awk '/^due [^ ]+: warn / { print "::warning::" $0 }' "$RUNNER_TEMP/due.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/chain.mjs due exited $rc (2 could not run: a usage error, a config/clock.json that does not validate, no GITHUB_REPOSITORY, or a cron of DUE that it refuses; 70 an internal error); the start ran before it, and the sleep still runs"
+          fi
+          exit "$rc"
+
+      # Sleeps to the next boundary of the interval of the clock, which keeps
+      # the chain on the grid. It runs after a failed due step too, never after
+      # a failed start: with no successor dispatched, the sleep holds no grid,
+      # and it would hold back the cron's run that restarts the chain.
       - name: Sleep to the next boundary
         id: sleep
+        if: ${{ !cancelled() && steps.start.outcome == 'success' }}
         timeout-minutes: 13
         run: |
           set -uo pipefail
