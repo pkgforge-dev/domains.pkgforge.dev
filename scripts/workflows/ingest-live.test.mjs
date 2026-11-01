@@ -16,7 +16,7 @@
 //
 //   node scripts/test.mjs scripts/workflows --name ingest-live
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -625,7 +625,7 @@ test("ingest-live: 'Move state:latest' writes add from the first 500 owed refs i
 
 const MUST = {
   start: /node scripts\/ingest\/chain\.mjs start \|\| rc=\$\?/,
-  due: /node scripts\/ingest\/chain\.mjs due > >\(tee "\$RUNNER_TEMP\/due\.txt"\) \|\| rc=\$\?\nwait "\$!" \|\| true\n/,
+  due: /exec 3> >\(tee "\$RUNNER_TEMP\/due\.txt"\)\ntee_pid=\$!\nnode scripts\/ingest\/chain\.mjs due >&3 \|\| rc=\$\?\nexec 3>&-\nwait "\$tee_pid" \|\| true\n/,
   sleep: /node scripts\/ingest\/chain\.mjs sleep \|\| rc=\$\?/,
 };
 // The `if` of a step as bash reads the outcomes of the steps before it. A
@@ -764,6 +764,48 @@ test("ingest-live: chain: the due step prints chain.mjs's lines, and each warn l
     const quiet = step(t, 'due', MUST.due, { env: { GH_TOKEN: 'placeholder' }, stub: { 'due.txt': `${line}\n` } });
     assert.equal(quiet.status, 0, quiet.text);
     assert.deepEqual(quiet.stdout.split('\n').filter(Boolean), [line]);
+  }
+});
+
+// The node of a runner is a program, and bash opens the redirections of a
+// program in the forked child, where a shell function opens them in the
+// step's shell. So this double is a program first on PATH: a step that read
+// $! after a process substitution on node's own line passed under the
+// function and failed on the runner with `$!: unbound variable` (run
+// 41266148219).
+function dueAsProgram(t, stub) {
+  const { w, base } = world(t, { stub });
+  const bin = join(w, 'bin');
+  mkdirSync(bin);
+  const program = [
+    '#!/usr/bin/env bash',
+    `{ printf 'node'; printf ' %q' "$@"; printf '\\n'; } >> "$FAKE_LOG"`,
+    'if [ -f "$STUB/due.txt" ]; then cat "$STUB/due.txt"; fi',
+    'if [ -f "$STUB/chain.due.rc" ]; then exit "$(cat "$STUB/chain.due.rc")"; fi',
+    'exit 0',
+    '',
+  ].join('\n');
+  writeFileSync(join(bin, 'node'), program);
+  chmodSync(join(bin, 'node'), 0o755);
+  const path = `unset -f node\nif command -v cygpath >/dev/null 2>&1; then PATH="$(cygpath -u "${posix(bin)}"):$PATH"; else PATH="${posix(bin)}:$PATH"; fi\n`;
+  const r = runStep(t, `${PRELUDE}${path}${stepScript(FILE, 'due', MUST.due)}`, { env: { ...base, ...envOf('due', { GH_TOKEN: 'placeholder' }) } });
+  return { ...r, text: `${r.stdout}\n${r.stderr}`, nodes: r.calls.filter((c) => c.startsWith('node ')) };
+}
+
+test('ingest-live: chain: the due step runs chain.mjs as a program, prints its lines and warnings, and keeps its exit', { skip: SKIP }, (t) => {
+  const warn = 'due ref-refresh.yml: warn gh workflow run exited 1 (HTTP 500: Internal Server Error); the next run of the chain tries again';
+  const lines = ['due compact-daily.yml: dispatched for 2026-11-01T01:35:00Z', warn];
+  const r = dueAsProgram(t, { 'due.txt': `${lines.join('\n')}\n` });
+  assert.equal(r.status, 0, r.text);
+  assert.doesNotMatch(r.text, /unbound variable/);
+  assert.deepEqual(r.nodes, [DUE]);
+  assert.deepEqual(r.stdout.split('\n').filter(Boolean), [...lines, `::warning::${warn}`]);
+  for (const rc of [2, 70]) {
+    const bad = dueAsProgram(t, { 'due.txt': `${lines[0]}\n`, 'chain.due.rc': String(rc) });
+    assert.equal(bad.status, rc, bad.text);
+    assert.doesNotMatch(bad.text, /unbound variable/);
+    assert.match(bad.stdout, new RegExp(`^${lines[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
+    assert.match(bad.stdout, new RegExp(`::error::scripts/ingest/chain\\.mjs due exited ${rc} `));
   }
 });
 

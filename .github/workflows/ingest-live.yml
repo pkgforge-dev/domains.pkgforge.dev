@@ -524,6 +524,9 @@ jobs:
       # line as chain.mjs writes it, so a step that its timeout ends keeps the
       # lines of the rows done (each gh call may take 60 s); the exit is
       # chain.mjs's own, and `wait` lets tee finish before awk reads the file.
+      # tee is opened by exec, in this shell, so $! is its PID: bash opens the
+      # redirections of an external command in the forked child, so a process
+      # substitution on node's own line leaves $! unset (run 41266148219).
       - name: Dispatch the scheduled workflows when due
         id: due
         timeout-minutes: 2
@@ -532,8 +535,11 @@ jobs:
         run: |
           set -uo pipefail
           rc=0
-          node scripts/ingest/chain.mjs due > >(tee "$RUNNER_TEMP/due.txt") || rc=$?
-          wait "$!" || true
+          exec 3> >(tee "$RUNNER_TEMP/due.txt")
+          tee_pid=$!
+          node scripts/ingest/chain.mjs due >&3 || rc=$?
+          exec 3>&-
+          wait "$tee_pid" || true
           awk '/^due [^ ]+: warn / { print "::warning::" $0 }' "$RUNNER_TEMP/due.txt"
           if [ "$rc" -ne 0 ]; then
             echo "::error::scripts/ingest/chain.mjs due exited $rc (2 could not run: a usage error, a config/clock.json that does not validate, no GITHUB_REPOSITORY, or a cron of DUE that it refuses; 70 an internal error); the start ran before it, and the sleep still runs"

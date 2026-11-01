@@ -4,6 +4,7 @@ What shipped and when, newest first. Times are UTC.
 
 ## 2026-11-01
 
+- The step `due` of the chain opens tee in its own shell (DOM-023): on the runner, `$!` was unset after a process substitution on `node`'s own line, so every run of `ingest-live.yml` from 02:40Z concluded failure, though the chain, the dispatch and the ingest ran.
 - The chain dispatches the scheduled workflows when due (DOM-023, partial): GitHub started the crons of `compact-daily.yml` and `ref-refresh.yml` 5 h 42 min to 6 h 10 min late in the 3 runs read, and the weekly, monthly and yearly crons have not fired yet, so the job `chain` of `ingest-live.yml` dispatches each of the five 20 minutes or more after its cron's instant when no run of it exists since that instant. The crons stay, and start the runs when the chain is off.
 
 ## 2026-10-31
