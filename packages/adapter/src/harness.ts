@@ -2,20 +2,28 @@
 // hold it to the adapter contract (docs/architecture.md section 5.6).
 //
 //   const recordings = readRecordings(fixtureDir);          // @domains/adapter/node
-//   const { first, again, next } = await runAdapter(adapter, { recordings, cursor, now });
+//   const tcp = readTcpRecordings(fixtureDir);               // @domains/adapter/node
+//   const psl = await loadPsl(listBytes);                    // @domains/names
+//   const { first, again, next } = await runAdapter(adapter, { recordings, tcp, psl, cursor, now });
 //
-// runAdapter runs `adapter.run` three times, each with a fresh in-memory writer
-// and a fake fetch that answers from the recordings:
+// runAdapter runs `adapter.run` three times, each with a fresh in-memory writer,
+// a fake fetch that answers from the HTTP recordings, a fake connect that
+// answers from the TCP recordings (replayConnect of connect.ts), and the list:
 //   first  from `cursor`;
 //   again  from `cursor` again, which must return equal segments and cursor;
 //   next   from the cursor `first` returned, which must not write a window of
 //          `first` again: the cursor moved past what it wrote.
 // It throws ContractError, naming the check, when:
-//   unrecorded     a request matched no recording, even one the adapter caught;
+//   unrecorded     a request, a connection or a write on one matched no
+//                  recording, even one the adapter caught;
 //   global-fetch   the adapter called the global fetch, or opened a WebSocket,
 //                  an XMLHttpRequest or an EventSource, instead of ctx.fetch
-//                  (a fetch captured before the run, or node:net, is not caught);
-//   user-agent     a request did not send ctx.userAgent (ruling 11);
+//                  (a fetch captured before the run, or node:net, is not caught
+//                  here: runSandboxed of @domains/adapter/node runs an adapter
+//                  where neither reaches the network);
+//   user-agent     a request did not send ctx.userAgent (ruling 11); a TCP
+//                  client sends it inside its bytes, so a recording made with
+//                  it matches only a request that sends it;
 //   threw          run() threw;
 //   result         the result is not { segments, cursor, stats, errors };
 //   segment, cursor  a segment or a cursor breaks its grammar, or a cursor is over 4 KiB;
@@ -37,10 +45,18 @@
 // error. The body of a request is not matched. Redirects are followed as fetch
 // follows them, each hop answered by its own recording.
 //
+// A TCP recording is `NAME.tcp.json` (connect.ts holds its format): an address
+// and its exchanges, each the bytes of one write and the bytes answered. A
+// write is answered when its bytes equal a recorded request. ⚠ So a TCP client
+// writes each request in one write() call: one request split over two writes,
+// or two requests in one, finds no recording.
+//
 // The harness replaces the global fetch while it runs, so two runAdapter calls
 // in one process do not overlap: the second is refused as `options`. node:test
 // runs a file's tests one at a time.
-import { canonicalJson, jsonEqual } from "./json.ts";
+import type { Psl } from "@domains/names";
+import { type ConnectionLog, replayConnect, type TcpRecording } from "./connect.ts";
+import { bytesOfBase64, canonicalJson, jsonEqual } from "./json.ts";
 import type { AdapterContext, AdapterModule, Cursor, Fetch, RunResult, Segment, Source } from "./types.ts";
 import { ContractError, checkCursor, isIsoUtc, validateSegment } from "./validate.ts";
 import { memoryWriter, type Written } from "./writer.ts";
@@ -52,7 +68,6 @@ export const HARNESS_USER_AGENT = "domains.pkgforge.dev-harness/1 (test run, no 
 const MAX_REDIRECTS = 20;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 const NULL_BODY = new Set([204, 205, 304]);
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 export interface Recording {
   readonly name: string;
@@ -83,11 +98,9 @@ function stringMap(v: unknown, name: string, field: string): Record<string, stri
 }
 
 function decodeBase64(text: unknown, name: string): Uint8Array {
-  if (typeof text !== "string" || !BASE64.test(text)) throw bad(name, "response.body_base64 is not base64");
-  const bin = atob(text);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  const bytes = bytesOfBase64(text);
+  if (bytes === null) throw bad(name, "response.body_base64 is not base64");
+  return bytes;
 }
 
 // One recording file's JSON, checked field by field.
@@ -203,6 +216,11 @@ export function replayFetch(recordings: readonly Recording[]): Replay {
 
 export interface HarnessOptions {
   readonly recordings: readonly Recording[];
+  // The TCP recordings ctx.connect answers from; none by default, so every
+  // connection is a miss.
+  readonly tcp?: readonly TcpRecording[];
+  // The loaded list, passed as ctx.psl.
+  readonly psl: Psl;
   readonly cursor: Cursor;
   // The run's time, ISO 8601 UTC, passed as ctx.now.
   readonly now: string;
@@ -214,6 +232,7 @@ export interface HarnessOptions {
 export interface HarnessRun {
   readonly result: RunResult;
   readonly requests: readonly RequestLog[];
+  readonly connections: readonly ConnectionLog[];
   readonly written: readonly Written[];
 }
 
@@ -304,8 +323,9 @@ export function checkSources(segments: readonly Segment[], sources: readonly Sou
 
 async function runOnce(adapter: AdapterModule, cursor: Cursor, options: HarnessOptions, userAgent: string, globalCalls: string[], what: string): Promise<HarnessRun> {
   const replay = replayFetch(options.recordings);
+  const sockets = replayConnect(options.tcp ?? []);
   const writer = memoryWriter();
-  const ctx: AdapterContext = Object.freeze({ fetch: replay.fetch, now: options.now, userAgent, writer });
+  const ctx: AdapterContext = Object.freeze({ fetch: replay.fetch, connect: sockets.connect, psl: options.psl, now: options.now, userAgent, writer });
   const before = globalCalls.length;
   let result: unknown;
   let thrown: { error: unknown } | null = null;
@@ -315,7 +335,8 @@ async function runOnce(adapter: AdapterModule, cursor: Cursor, options: HarnessO
     thrown = { error };
   }
   // A network fault is named before the throw it may have caused.
-  if (replay.misses.length > 0) throw new ContractError("unrecorded", `${what}: no recording for ${replay.misses.map((m) => `${m.method} ${m.url}`).join(", ")}`);
+  const misses = [...replay.misses.map((m) => `${m.method} ${m.url}`), ...sockets.misses.map((m) => m.detail)];
+  if (misses.length > 0) throw new ContractError("unrecorded", `${what}: no recording for ${misses.join(", ")}`);
   if (globalCalls.length > before)
     throw new ContractError("global-fetch", `${what}: the global fetch, WebSocket, XMLHttpRequest or EventSource was called for ${globalCalls.slice(before).join(", ")}`);
   const noUa = replay.requests.filter((r) => r.userAgent !== userAgent);
@@ -325,7 +346,7 @@ async function runOnce(adapter: AdapterModule, cursor: Cursor, options: HarnessO
   const wrote = writer.written.map((w) => w.segment);
   if (!jsonEqual(checked.segments, wrote)) throw new ContractError("reported", `${what}: run() returned ${checked.segments.length} segments and wrote ${wrote.length}, or not the same ones`);
   if (options.sources !== undefined) checkSources(checked.segments, options.sources, what);
-  return { result: checked, requests: replay.requests, written: writer.written };
+  return { result: checked, requests: replay.requests, connections: sockets.connections, written: writer.written };
 }
 
 const windowOf = (s: Segment): string => canonicalJson([s.source, s.dataset, s.window]);
@@ -333,6 +354,9 @@ const windowOf = (s: Segment): string => canonicalJson([s.source, s.dataset, s.w
 export async function runAdapter(adapter: AdapterModule, options: HarnessOptions): Promise<HarnessResult> {
   if (typeof adapter?.run !== "function") throw new ContractError("options", "the adapter module has no run function");
   if (!Array.isArray(options.recordings)) throw new ContractError("options", "recordings is not a list");
+  // The TCP recordings are held to each other before any run: two that answer one request otherwise are refused.
+  replayConnect(options.tcp ?? []);
+  if (typeof options.psl?.sha256 !== "string" || typeof options.psl?.trie !== "object") throw new ContractError("options", "psl is not a list loaded by loadPsl of @domains/names");
   if (!isIsoUtc(options.now)) throw new ContractError("options", `now ${JSON.stringify(options.now)} is not an ISO 8601 UTC time`);
   checkCursor(options.cursor, "the starting cursor");
   const userAgent = options.userAgent ?? HARNESS_USER_AGENT;

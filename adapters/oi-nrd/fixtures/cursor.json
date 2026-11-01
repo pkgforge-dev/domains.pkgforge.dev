@@ -1,0 +1,21 @@
+{
+  "cursor": {
+    "through": {
+      "newly_registered_domain": "2026-10-31T10:19:53Z",
+      "newly_registered_fqdn": "2026-10-31T10:19:53Z",
+      "confirmed_newly_registered_domain": "2026-10-31T10:19:42Z"
+    },
+    "topics": {
+      "newly_registered_domain": {
+        "0": 173936937
+      },
+      "newly_registered_fqdn": {
+        "0": 182614884
+      },
+      "confirmed_newly_registered_domain": {
+        "0": 81097350
+      }
+    }
+  },
+  "now": "2026-10-31T10:20:07Z"
+}

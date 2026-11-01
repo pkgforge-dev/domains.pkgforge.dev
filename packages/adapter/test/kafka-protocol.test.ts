@@ -1,23 +1,26 @@
-// probes/worker/src/kafka-protocol.test.ts — the Worker's port of the Kafka
-// protocol (src/kafka-protocol.ts) and of snappy (src/snappy.ts) against the
-// scripts' modules that DOM-004 ran on a runner (scripts/measure/kafka-protocol.mjs,
-// scripts/measure/snappy.mjs): the same requests encode to the same bytes, the
-// broker's recorded answers parse to the same values, every batch decodes to the
-// same records, and every malformed input is refused with the same kind and
-// message. The port is a second copy of the decoder; this file is the check that
-// the two agree (docs/conventions/forbidden-patterns.md, a value in two places).
+// packages/adapter/test/kafka-protocol.test.ts — the Worker-safe port of the
+// Kafka protocol (src/kafka-protocol.ts) and of snappy (src/snappy.ts) against
+// the scripts' modules that DOM-004 ran on a runner
+// (scripts/measure/kafka-protocol.mjs, scripts/measure/snappy.mjs): the same
+// requests encode to the same bytes, the broker's recorded answers parse to the
+// same values, every batch decodes to the same records, and every malformed
+// input is refused with the same kind and message. The port is a second copy of
+// the decoder; this file is the check that the two agree
+// (docs/conventions/forbidden-patterns.md, a value in two places). It moved here
+// from probes/worker/src/ with the port (DOM-026), and stays when DOM-056
+// deletes the probe.
 //
-//   node scripts/test.mjs probes/worker --name "kafka"
+//   node scripts/test.mjs packages/adapter --name "kafka protocol|kafka snappy"
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildBatch, snappyCompress, varint, xerial } from "../../../scripts/measure/fixtures/kafka/build.mjs";
+import { buildBatch, metadataResponse, snappyCompress, varint, xerial } from "../../../scripts/measure/fixtures/kafka/build.mjs";
 import * as mjs from "../../../scripts/measure/kafka-protocol.mjs";
 import * as mjsSnappy from "../../../scripts/measure/snappy.mjs";
-import * as ts from "./kafka-protocol.ts";
-import * as tsSnappy from "./snappy.ts";
+import * as ts from "../src/kafka-protocol.ts";
+import * as tsSnappy from "../src/snappy.ts";
 
 const FIXTURES = fileURLToPath(new URL("../../../scripts/measure/fixtures/kafka/", import.meta.url));
 const recordedFrame = (name: string): Buffer => {
@@ -63,14 +66,14 @@ const reCrc = (b: Buffer): Buffer => {
   return b;
 };
 
-test("kafka protocol port: CRC-32C matches the Castagnoli check value and the script's", () => {
+test("adapter kafka protocol: CRC-32C matches the Castagnoli check value and the script's", () => {
   assert.equal(ts.crc32c(new TextEncoder().encode("123456789")), 0xe3069283);
   assert.equal(ts.crc32c(new Uint8Array(0)), 0);
   const data = randomBytes(4096);
   assert.equal(ts.crc32c(data, 21, 4000), mjs.crc32c(data, 21, 4000));
 });
 
-test("kafka protocol port: ApiVersions, ListOffsets and Fetch requests encode to the script's bytes", () => {
+test("adapter kafka protocol: ApiVersions, ListOffsets and Fetch requests encode to the script's bytes", () => {
   const body = ts.fetchBody({ topics: [{ topic: "certstream_domains", partitions: [{ partition: 3, offset: 42_689_203_481, maxBytes: 1 << 20 }] }], maxWaitMs: 500, minBytes: 1, maxBytes: 1 << 20 });
   const same = (a: Uint8Array, b: Buffer, what: string) => assert.equal(hex(a), b.toString("hex"), what);
   same(
@@ -84,10 +87,62 @@ test("kafka protocol port: ApiVersions, ListOffsets and Fetch requests encode to
     const spec = { apiKey, apiVersion: ts.VERSION[apiKey]!, correlationId: 7, clientId: "domains.pkgforge.dev", body };
     same(ts.encodeRequest(spec), mjs.encodeRequest({ ...spec, body: Buffer.from(body) }), `request ${apiKey}`);
   }
-  assert.deepEqual({ ...ts.VERSION }, { 1: mjs.VERSION[1], 2: mjs.VERSION[2], 18: mjs.VERSION[18] }, "the port speaks the script's versions");
+  assert.deepEqual({ ...ts.VERSION }, { ...mjs.VERSION }, "the port speaks the script's versions, of every API the script sends");
+  assert.deepEqual({ ...ts.API }, { ...mjs.API }, "the port names the script's APIs");
 });
 
-test("kafka protocol port: the broker's recorded answers parse to the script's values", () => {
+test("adapter kafka protocol: Metadata v0 encodes and parses as the script's", () => {
+  const same = (a: Uint8Array, b: Buffer, what: string) => assert.equal(hex(a), b.toString("hex"), what);
+  const topics = ["certstream_domains", "newly_registered_domain"];
+  same(ts.metadataBody(), mjs.metadataBody(), "every topic");
+  same(ts.metadataBody(topics), mjs.metadataBody(topics), "two topics");
+  const spec = { apiKey: ts.API.METADATA, apiVersion: ts.VERSION[ts.API.METADATA]!, correlationId: 2, clientId: "domains.pkgforge.dev", body: ts.metadataBody(topics) };
+  same(ts.encodeRequest(spec), mjs.encodeRequest({ ...spec, body: Buffer.from(spec.body) }), "the request");
+  // The broker's own answer of 2026-10-28T10:40:45Z to those two topics, and a
+  // built one with a topic error and partitions of every field.
+  const built = metadataResponse(
+    [
+      { id: 1, host: "127.0.0.1", port: 9092 },
+      { id: 2, host: "b2.test", port: 9093 },
+    ],
+    [
+      { name: "four", partitions: [0, 1, 2, 3].map((partition) => ({ partition, leader: 1 + (partition % 2), errorCode: partition === 3 ? 5 : 0 })) },
+      { name: "gone", errorCode: 3, partitions: [] },
+    ],
+  );
+  for (const [name, body] of [
+    ["metadata-v0.bin", recordedFrame("metadata-v0.bin").subarray(8)],
+    ["built", built],
+  ] as const) {
+    const port = ts.parseMetadata(new ts.Reader(body, name));
+    assert.deepEqual(port, mjs.parseMetadata(new mjs.Reader(body, name)), name);
+    assert.ok(port.topics.length >= 2, name);
+  }
+  // A trailing byte, and an answer cut inside a partition, are refused as the script refuses them.
+  for (const [name, body] of [
+    ["a trailing byte", Buffer.concat([built, Buffer.from([0])])],
+    ["cut short", built.subarray(0, built.length - 6)],
+  ] as const) {
+    const refusal = (parse: () => unknown): string => {
+      try {
+        parse();
+      } catch (err) {
+        assert.equal((err as Error).name, "ProtocolError", name);
+        return (err as Error).message;
+      }
+      return "parsed";
+    };
+    const port = refusal(() => ts.parseMetadata(new ts.Reader(body, "md")));
+    assert.notEqual(port, "parsed", name);
+    assert.equal(
+      port,
+      refusal(() => mjs.parseMetadata(new mjs.Reader(body, "md"))),
+      name,
+    );
+  }
+});
+
+test("adapter kafka protocol: the broker's recorded answers parse to the script's values", () => {
   const av = recordedFrame("api-versions-v0.bin").subarray(8);
   assert.deepEqual([...ts.parseApiVersions(new ts.Reader(av, "av")).apis], [...mjs.parseApiVersions(new mjs.Reader(av, "av")).apis]);
   const lo = recordedFrame("list-offsets-v1.bin").subarray(8);
@@ -115,7 +170,7 @@ test("kafka protocol port: the broker's recorded answers parse to the script's v
   }
 });
 
-test("kafka protocol port: batches of codec none and snappy, raw and xerial, decode to the script's records", () => {
+test("adapter kafka protocol: batches of codec none and snappy, raw and xerial, decode to the script's records", () => {
   const cases = [
     buildBatch({ baseOffset: 42_000_000_000, records: records(25), codec: "none" }),
     buildBatch({ baseOffset: 42_000_000_000, records: records(25), codec: "snappy" }),
@@ -138,7 +193,7 @@ test("kafka protocol port: batches of codec none and snappy, raw and xerial, dec
   }
 });
 
-test("kafka protocol port: a flipped byte, a broken snappy payload, a wrong record count or a bad record is refused as the script refuses it", () => {
+test("adapter kafka protocol: a flipped byte, a broken snappy payload, a wrong record count or a bad record is refused as the script refuses it", () => {
   const good = buildBatch({ baseOffset: 5, records: records(10), codec: "snappy" });
   const flipped = Buffer.from(good);
   flipped[flipped.length - 1] ^= 0x01;
@@ -173,7 +228,7 @@ test("kafka protocol port: a flipped byte, a broken snappy payload, a wrong reco
   }
 });
 
-test("kafka protocol port: gzip and zstd batches, which the script decodes with node:zlib, are refused as codec failures", () => {
+test("adapter kafka protocol: gzip and zstd batches, which the script decodes with node:zlib, are refused as codec failures", () => {
   for (const codec of ["gzip", "zstd"]) {
     const bytes = buildBatch({ baseOffset: 0, records: records(2), codec });
     const { port, script } = both(bytes);
@@ -182,7 +237,7 @@ test("kafka protocol port: gzip and zstd batches, which the script decodes with 
   }
 });
 
-test("kafka protocol port: a response with bytes left over, a dishonest count or an int64 past 2^53 is refused", () => {
+test("adapter kafka protocol: a response with bytes left over, a dishonest count or an int64 past 2^53 is refused", () => {
   const r = (h: string) => new ts.Reader(Buffer.from(h, "hex"), "x");
   assert.throws(() => ts.parseApiVersions(r("0000000000000099")), ts.ProtocolError);
   assert.throws(() => ts.parseListOffsets(r("7fffffff")), ts.ProtocolError);
@@ -196,7 +251,7 @@ test("kafka protocol port: a response with bytes left over, a dishonest count or
   }
 });
 
-test("kafka snappy port: data from an independent compressor, in every literal and copy form, decodes as the script decodes it", () => {
+test("adapter kafka snappy: data from an independent compressor, in every literal and copy form, decodes as the script decodes it", () => {
   const samples = [
     Buffer.alloc(0),
     Buffer.from("a"),
@@ -218,7 +273,7 @@ test("kafka snappy port: data from an independent compressor, in every literal a
   assert.equal(Buffer.from(tsSnappy.snappyKafka(stream)).toString(), "first block, first blocksecond");
 });
 
-test("kafka snappy port: every malformed block or stream is refused with the script's message", () => {
+test("adapter kafka snappy: every malformed block or stream is refused with the script's message", () => {
   const b = (...xs: number[]) => Uint8Array.from(xs);
   const raw: [string, Uint8Array][] = [
     ["an empty input", b()],

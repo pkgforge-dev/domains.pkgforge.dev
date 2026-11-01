@@ -4,25 +4,29 @@
 // fetch and its trap on the global fetch, the writer's Web Crypto digest, the
 // band check, and the production fetch seam.
 //
-//   POST /harness?plant=P   body { recordings, cursor, now }: runAdapter on the
-//                           synthetic day adapter with plant P. Answers
-//                           { ok: true, first, next } or { ok: false, check, message }.
+//   POST /harness?plant=P   body { recordings, psl, cursor, now }: runAdapter on
+//                           the synthetic day adapter with plant P, ctx.psl the
+//                           list text `psl` loaded here. Answers { ok: true, psl,
+//                           first, next } (psl the loaded list's sha256) or
+//                           { ok: false, check, message }.
 //   POST /band              body { days: [{ day, count }] }: the verdict of each
 //                           day against the ones before it, in date order.
 //   GET /live?url=U         ctx.fetch(U) with ctx.fetch = liveFetch.
 //   GET /method?url=U       ctx.fetch(U) with ctx.fetch = the global fetch itself.
 // Every answer is JSON. Any other path or method answers 404.
+import { loadPsl } from "@domains/names";
 import { type BandDay, ContractError, checkBand, liveFetch, parseRecording, runAdapter } from "../src/index.ts";
 import { type DayPlant, dayAdapter } from "./synthetic.ts";
 
 const json = (value: unknown, status = 200): Response => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 
 async function harness(request: Request, url: URL): Promise<Response> {
-  const body = (await request.json()) as { recordings: { name: string; json: unknown }[]; cursor: { last_day: string }; now: string };
+  const body = (await request.json()) as { recordings: { name: string; json: unknown }[]; psl: string; cursor: { last_day: string }; now: string };
   const recordings = body.recordings.map((r) => parseRecording(r.json, r.name));
+  const psl = await loadPsl(body.psl);
   try {
-    const { first, next } = await runAdapter(dayAdapter((url.searchParams.get("plant") ?? "none") as DayPlant), { recordings, cursor: body.cursor, now: body.now });
-    return json({ ok: true, first: { segments: first.result.segments, cursor: first.result.cursor, requests: first.requests }, next: { segments: next.result.segments } });
+    const { first, next } = await runAdapter(dayAdapter((url.searchParams.get("plant") ?? "none") as DayPlant), { recordings, psl, cursor: body.cursor, now: body.now });
+    return json({ ok: true, psl: psl.sha256, first: { segments: first.result.segments, cursor: first.result.cursor, requests: first.requests }, next: { segments: next.result.segments } });
   } catch (error) {
     if (error instanceof ContractError) return json({ ok: false, check: error.check, message: error.message });
     throw error;

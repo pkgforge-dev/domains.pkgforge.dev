@@ -31,6 +31,14 @@
 // write-once pack. With no segment to read the verdict is `skip`, and no pack
 // is written: a pack names at least one source.
 //
+// The facts. A domain record holds no certificate age; the segments of a
+// source that has one carry it in their layer facts.json (DOM-026,
+// docs/format.md section 19). HourOptions.facts is the lookup of the planned
+// segments' facts (eventFactsOf of facts.ts), and each merged record goes to
+// buildFeedHour with its key's facts, so an old certificate makes its row
+// suspect (bit 4 of feed_flags) and a fresh event in any segment of the hour
+// clears it.
+//
 // The filter. `ledger-filter-DATE` holds the domains table through its
 // `as_of`, and `ledger-delta` the domains first seen since (docs/format.md
 // section 15). A filter whose as_of is after the hour's start holds the
@@ -39,7 +47,7 @@
 //
 // It imports nothing from `node:` and is type-checked as Worker code
 // (tsconfig.worker.json); no test runs it in workerd.
-import { buildFeedHour, type FeedPack, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
+import { buildFeedHour, type DomainEvent, type EventFacts, type FeedPack, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
 import { repoOf, tierTag } from "@domains/ghcr";
 import { BloomFilter, HashDelta, ProvisionalFilter } from "@domains/ledger";
 import {
@@ -244,6 +252,9 @@ export interface HourOptions {
   readonly time?: { readonly sink: PackSink };
   readonly recordsPerBlock?: number;
   readonly pageEntries?: number;
+  // The facts of a key that its record does not hold (eventFactsOf of
+  // facts.ts over the planned segments' facts.json), or undefined for none.
+  readonly facts?: (key: string) => EventFacts | undefined;
 }
 
 export interface BuiltHour extends FeedPack {
@@ -257,20 +268,24 @@ export interface BuiltHour extends FeedPack {
 }
 
 // The rows of the hour pack, from the planned segments' readers: their domain
-// records merged by key, each asked of the membership and added to it
-// (buildFeedHour of @domains/feed), written with writeFeedPack.
+// records merged by key, each with its key's facts when options.facts gives
+// some, asked of the membership and added to it (buildFeedHour of
+// @domains/feed), written with writeFeedPack.
 export async function buildHour(readers: readonly PackReader<DomainRecord>[], membership: ProvisionalFilter, options: HourOptions): Promise<BuiltHour> {
   for (const [i, r] of readers.entries()) {
     if (r.index.header.dataset !== DATASET_DOMAINS) throw new CompactError("usage", `buildHour: segment ${i} is dataset ${r.index.header.dataset}, not ${DATASET_DOMAINS} (domains)`);
   }
+  if (options.facts !== undefined && typeof options.facts !== "function") throw new CompactError("usage", "buildHour: facts is not a function of a key");
   const table = sourceTable(options.registry);
   const deltaBefore = membership.delta.size;
+  const factsOf = options.facts;
   let domains = 0;
   let rows = 0;
-  async function* records(): AsyncGenerator<DomainRecord> {
+  async function* records(): AsyncGenerator<DomainEvent> {
     for await (const r of mergePacks(readers, DOMAINS_CODEC)) {
       domains += 1;
-      yield r;
+      const facts = factsOf?.(r.key);
+      yield facts === undefined ? r : { ...r, facts };
     }
   }
   async function* counted() {

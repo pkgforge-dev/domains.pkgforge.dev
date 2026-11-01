@@ -6,7 +6,7 @@ is the only one.
 
 ## State
 
-- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), is the commit that carries this record.
+- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), follows them, then the ingest skeleton (DOM-024) and the clocks (DOM-001 to DOM-003). The first adapter (DOM-026) is the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, and 18 to 25 on 2026-10-29), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). It holds `crons = []` from the deploy of 2026-10-30T18:30:46Z, and its last tick was scheduled at 18:34:24Z (DOM-002). Its version 529b760c, deployed 2026-10-30T19:51:58Z, serves `/`, `/gaps`, `/range` and `/decode` without `/kafka` (DOM-005). The bucket holds DOM-008's sample packs under `sample/v1/`. DOM-056 deletes both. The public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily at 05:13 UTC) stay (ruling 5). No serving Worker, no custom domain and no cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | none. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**62 items. 36 open, 3 partial, 0 blocked, 23 done.**
+**62 items. 35 open, 4 partial, 0 blocked, 23 done.**
 
 ## What this session did
 
@@ -92,16 +92,20 @@ is the only one.
 - Closed the clock measurements on 2026-10-30. DOM-001: the self-dispatch chain passes the rule (577 of 576 runs, p90 gap 5.02 min, max 5.9 min) and the `*/5` schedule fails it (10 of 576 runs, p90 and max gap 411.82 min); the schedule and the keepalive are disabled. DOM-002: the Worker's minute cron passes (2,875 of 2,880 ticks, p90 gap 1.01 min, max 2.73 min), and the probe runs with `crons = []`.
 - Decided the clock on 2026-10-31 (DOM-003): `scripts/measure/clock-verdict.mjs` derives `actions-chain` from the three 48-hour results, `config/clock.json` records it with an interval of 10 minutes, and `docs/clock.md` gives the numbers. DOM-025 closed on ruling 8 with no code.
 - Closed the probe's Worker measurements on 2026-10-30: DOM-005 and DOM-007 from colo KTM; DOM-008's colo was not read. DOM-008: one block of 4,096 names costs at most 2 ms of CPU at p99 and 1,000 rows at most 5 ms, so `deflate-raw` at 4,096 names a block stays. DOM-007: cold and warm Range reads at 20, 50 and 100 requests a second all answered 206 with no 429, so R2 stays a cache; the runner's place moves to DOM-054. DOM-005: a call holds 16 MiB of `max_bytes` from a Worker `connect()`, stopped by the route's 30 s cap, and the probe no longer serves `/kafka`.
+- Built DOM-026 on 2026-10-31, now partial: the first adapter, `adapters/oi-nrd/`, with its three sources in the kafka lane; the TCP door, the TCP recordings and the sandbox of `packages/adapter`; the shared Kafka client; the layer `facts.json` with its readers in the hour and day builds; and the cap of 500 owed refs a promotion of `ingest-live.yml` carries. A design, two adversarial challenges and the lead's settlement decided D1 to D20 under ruling 20, each a Decision of the entry. A dry run against the live broker wrote and verified 36 segments and 36 raw objects in 7m04s, with no push.
+- Recorded the chain reading in DOM-024 (the chain started at 2026-10-31T02:31:44Z and holds on the 10-minute grid; a backstop schedule run at 08:49:09Z fell between dispatched runs, and the run after the schedule run of 14:51:17Z came 19.15 minutes later) and DOM-026's Founds on DOM-023, DOM-029, DOM-034, DOM-036, DOM-041, DOM-050, DOM-055 and DOM-056.
+- Ran gate part (c) on DOM-026 on 2026-10-31: the door sweep, the guard mutation and the claim audit found 47 findings over the whole change. The fix pass changed each or answered it with a reason: `oi-nrd-confirmed`'s family is `ct`, a record stamped before 2026 joins its window instead of stalling its topic, the sandbox reads only what it is given and frames its answer, a replay cut short fails as unrecorded, the zone shares are the whole span's (33.5% and 25.2%), and the instruments are under `docs/research/measure/DOM-026/`. The first scheduled run of `compact-daily.yml` (07:27:09Z) is recorded in DOM-023.
 
 ## What is in progress
 
-Three entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Four entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
-| DOM-023 | the first scheduled run of `compact-daily.yml`; then its live Prove, once DOM-029's backfill has put THC's days in the root (DOM-024's guard that moves `ledger-delta` is built) |
-| DOM-024 | a first adapter in `config/lanes.json` (DOM-003 wrote `config/clock.json`); then a dispatch of `ingest-live.yml`, its queued successor and the anonymous read of `state:latest` |
+| DOM-023 | its live Prove (the first scheduled run of `compact-daily.yml`, 41180651910 at 2026-10-31T07:27:09Z, ran the job `plan` alone, its Found of 2026-10-31T16:07Z), once DOM-029's backfill has put THC's days in the root (DOM-024's guard that moves `ledger-delta` is built) |
+| DOM-024 | the chain's first run on the commit that puts `oi-nrd` in `config/lanes.json`, with no hand dispatch (D20 of DOM-026); its queued successor and the anonymous read of `state:latest` |
+| DOM-026 | the same live run: the anonymous `tags.mjs` reads and `verify-pack.mjs` of each source's newest tag, then the drain until `behind_s` of each source is under 1200, then a dispatched `compact-daily.yml` day with `facts.json` on its domains day pack (settled S10) |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
@@ -109,15 +113,16 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
    - DOM-012 closes after its 7 days.
-2. Compaction: DOM-023 is partial, built and gated. `measure-compact.yml` measured one range on 2026-10-30, and no compaction has built a pack on GitHub. Its live Prove waits on DOM-024's skeleton and DOM-029's THC backfill (items 3 and 4), and its Waiting line names what closes it.
-3. The ingest skeleton: DOM-024 is partial, built and gated. Its live Prove waits on the first adapter (item 4): `config/clock.json` names the chain, so the next run of `ingest-live.yml` on `main` starts it. After the first cron run that follows the push, read `gh run list --workflow ingest-live.yml` and record in DOM-024 whether the chain started, held or doubled (its Found of 2026-10-31T02:04Z).
-4. The feed's adapters: DOM-026, DOM-027, DOM-028, DOM-029.
-5. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
-6. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
-7. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
-8. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
-9. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
-10. The root documents and the consumer contract: DOM-059, DOM-060.
+2. The live run. The chain runs (DOM-024's Found of 2026-10-31T11:10Z), so the first chain run on the pushed commit is the live run of the first adapter, with no hand dispatch (D20 of DOM-026). The ingest skeleton, DOM-024, is partial and closes on that run, with its queued successor and the anonymous read of `state:latest`, as its Waiting line says.
+3. The first adapter: DOM-026 is partial, built and gated, and waits on the same live run. Run its Waiting line: the anonymous tag reads and the verify of each source's newest tag, the drain until `behind_s` of each source is under 1200, and the dispatched day build of settled S10.
+4. Compaction: DOM-023 is partial, built and gated. Its first day build is DOM-026's dispatched day (item 3), and its live Prove waits on DOM-029's THC backfill (item 5). Its Waiting line names what closes it.
+5. The feed's other adapters: DOM-027, DOM-028, DOM-029.
+6. The Worker and the first routes: DOM-030, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+7. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
+8. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
+9. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
+10. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
+11. The root documents and the consumer contract: DOM-059, DOM-060.
 
 `node scripts/todo/next.mjs` derives the same waves from the `Depends on` lines.
 

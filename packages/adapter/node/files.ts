@@ -4,11 +4,13 @@
 // read the disk, so they live beside it.
 //
 //   readRecordings(dir)       every DIR/*.http.json, by file name → Recording[]
+//   readTcpRecordings(dir)    every DIR/*.tcp.json, by file name → TcpRecording[]
 //   readBits(root)            ROOT/config/source-bits.json → SourceBits
 //   readSourceFiles(root)     ROOT/adapters/*/source.json → { files, problems }
 //   readRegistry(root, bits)  ROOT/config/sources.json → Registry
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseTcpRecording, TCP_RECORDING_SUFFIX, type TcpRecording } from "../src/connect.ts";
 import { parseRecording, type Recording } from "../src/harness.ts";
 import type { Registry, SourceBits } from "../src/types.ts";
 import { ContractError, type Problem, SourceError, type SourceFileText, validateBits, validateRegistry } from "../src/validate.ts";
@@ -18,9 +20,11 @@ export const BITS_PATH = "config/source-bits.json";
 export const REGISTRY_PATH = "config/sources.json";
 export const ADAPTERS_DIR = "adapters";
 
-export function readRecordings(dir: string): Recording[] {
+// Each DIR/*SUFFIX file, by file name, parsed; a file that is not JSON is
+// refused as `recording`.
+function readEach<T>(dir: string, suffix: string, parse: (json: unknown, name: string) => T): T[] {
   const names = readdirSync(dir)
-    .filter((n) => n.endsWith(RECORDING_SUFFIX))
+    .filter((n) => n.endsWith(suffix))
     .sort();
   return names.map((name) => {
     const text = readFileSync(join(dir, name), "utf8");
@@ -30,8 +34,16 @@ export function readRecordings(dir: string): Recording[] {
     } catch (err) {
       throw new ContractError("recording", `${name}: not JSON: ${(err as Error).message}`);
     }
-    return parseRecording(json, name);
+    return parse(json, name);
   });
+}
+
+export function readRecordings(dir: string): Recording[] {
+  return readEach(dir, RECORDING_SUFFIX, parseRecording);
+}
+
+export function readTcpRecordings(dir: string): TcpRecording[] {
+  return readEach(dir, TCP_RECORDING_SUFFIX, parseTcpRecording);
 }
 
 function readJson(root: string, rel: string): unknown {

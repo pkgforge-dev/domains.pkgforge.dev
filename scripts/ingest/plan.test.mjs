@@ -1,7 +1,8 @@
 // scripts/ingest/plan.mjs: the lanes of one run of ingest-live.yml and its
 // backfill window (D13 and D17 of DOM-024), over the synthetic fixtures of
 // scripts/ingest/fixtures/ (two adapters, a registry built from them, a lanes
-// file) and the tree's own config/lanes.json, which holds no adapter yet.
+// file) and the tree's own config/lanes.json, whose kafka lane holds oi-nrd
+// (DOM-026).
 //
 //   node scripts/test.mjs scripts/ingest --name plan
 import assert from 'node:assert/strict';
@@ -102,13 +103,13 @@ test('plan: a backfill window is both ends to the second, from before to, to not
     assert.equal(edge.code, EXIT.ok, edge.text);
   }));
 
-test('plan: the tree holds no adapter yet, so no lane runs one: any is false', () =>
+test("plan: the tree's kafka lane holds oi-nrd, so a run plans the kafka leg: any is true", () =>
   inTmp(async (dir) => {
     const r = await plan(dir, []);
     assert.equal(r.code, EXIT.ok, r.text);
-    assert.deepEqual(r.out, ['lane kafka none', 'lane tiles none', 'lane feeds none', 'window none']);
-    assert.deepEqual(r.json, { format: PLAN_FORMAT, lanes: { kafka: [], tiles: [], feeds: [] }, any: false, from: null, to: null });
-    assert.deepEqual(readLanes(join(ROOT, 'config', 'lanes.json'), join(ROOT, 'adapters')), { kafka: [], tiles: [], feeds: [] });
+    assert.deepEqual(r.out, ['lane kafka oi-nrd', 'lane tiles none', 'lane feeds none', 'window none']);
+    assert.deepEqual(r.json, { format: PLAN_FORMAT, lanes: { kafka: ['oi-nrd'], tiles: [], feeds: [] }, any: true, from: null, to: null });
+    assert.deepEqual(readLanes(join(ROOT, 'config', 'lanes.json'), join(ROOT, 'adapters')), { kafka: ['oi-nrd'], tiles: [], feeds: [] });
   }));
 
 test('plan: a lanes file that is not exactly the three sorted lanes of existing adapters, one lane each, is refused', () =>

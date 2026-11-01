@@ -22,7 +22,8 @@ import { emptyState, parseProposal, proposalFile } from '@domains/state';
 import { ANNOTATION_MAX_CHARS as PUSH_ANNOTATION_MAX_CHARS } from '../ghcr/push.mjs';
 import { sha } from '../root/fixture.mjs';
 import { BITS } from '../verify-pack.mjs';
-import { ADAPTERS, call, copied, inRegistry, inTmp, LANES_FILE, PSL, PSL_FILE, RECORDINGS, SOURCES, seedRoot, stateFile } from './fixture.mjs';
+import { loadPsl } from '@domains/names';
+import { ADAPTERS, call, copied, inRegistry, inTmp, LANES_FILE, PSL, PSL_BYTES, PSL_FILE, RECORDINGS, SOURCES, seedRoot, stateFile } from './fixture.mjs';
 import { EXIT, main } from './run.mjs';
 import { diskWriter, RAW_PART_BYTES, WriteFault, writeRaw } from './writer.mjs';
 
@@ -78,7 +79,10 @@ function historyState(tmp, count) {
 
 test('run: each fixture adapter keeps the adapter contract under the harness, and the fixture registry is their build', async () => {
   const stream = await import(pathToFileURL(join(ADAPTERS, 'fixture-stream', 'src', 'index.ts')).href);
-  const s = await runAdapter(stream, { recordings: readRecordings(RECORDINGS('fixture-stream')), cursor: null, now: NOW, sources: sourcesOf('fixture-stream') });
+  // The list run.mjs passes as ctx.psl, loaded from the same bytes.
+  const psl = await loadPsl(PSL_BYTES);
+  assert.equal(psl.sha256, PSL);
+  const s = await runAdapter(stream, { recordings: readRecordings(RECORDINGS('fixture-stream')), psl, cursor: null, now: NOW, sources: sourcesOf('fixture-stream') });
   assert.deepEqual(
     s.first.result.segments.map((x) => [x.dataset, x.window.start]),
     [
@@ -91,7 +95,7 @@ test('run: each fixture adapter keeps the adapter contract under the harness, an
   assert.deepEqual(s.first.result.cursor, { next: 2 });
   assert.deepEqual(s.next.result.segments, []);
   const file = await import(pathToFileURL(join(ADAPTERS, 'fixture-file', 'src', 'index.ts')).href);
-  const f = await runAdapter(file, { recordings: readRecordings(RECORDINGS('fixture-file')), cursor: null, now: NOW, sources: sourcesOf('fixture-file') });
+  const f = await runAdapter(file, { recordings: readRecordings(RECORDINGS('fixture-file')), psl, cursor: null, now: NOW, sources: sourcesOf('fixture-file') });
   assert.deepEqual(
     f.first.result.segments.map((x) => [x.window.start, x.raw.bytes]),
     [

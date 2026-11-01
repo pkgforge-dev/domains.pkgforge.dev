@@ -278,7 +278,7 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
   - `scripts/ghcr/ref-inputs.mjs` line 230 runs `validateRegistry` before it writes the copy that `ref-refresh.yml` publishes.
 - **Correction 2026-10-29T05:20Z (door sweep door #6, the harness and the network):** the build's note "the global fetch is trapped" did not mean that the adapter cannot reach the network.
   - The harness now traps `fetch`, `WebSocket`, `XMLHttpRequest` and `EventSource` for the length of a run, and restores each one after it.
-  - It does not catch a `fetch` that the adapter captured before the run, such as at import, or `node:net`, `node:tls` and `node:http`. The header of `packages/adapter/src/harness.ts` lines 15 to 17 says so.
+  - It does not catch a `fetch` that the adapter captured before the run, such as at import, or `node:net`, `node:tls` and `node:http`. The header of `packages/adapter/src/harness.ts` lines 19 to 21 (the `global-fetch` row) says so.
   - A recorded socket door, `ctx.connect`, and a harness with no outbound network go to DOM-026, in its Found of 2026-10-29T04:54Z.
 - **Decision 2026-10-29T05:20Z (the grammars that section 5.6 does not state):**
   - `cadence` is an ISO 8601 duration of days, hours, minutes and seconds, above zero (`PT10M`, `P1D`). `retention` is such a duration, `unbounded` or `unknown`. `parser` is `NAME/N`, such as `thc-lines/1`.
@@ -314,7 +314,7 @@ An entry that copies from it reads the file at `https://raw.githubusercontent.co
   - Planted guards:
     - Build: 24 guard removals on copies under `.tmp/DOM-016/` (`node .tmp/DOM-016/plant.mjs`, 2026-10-29T00:22:01Z to 00:23:00Z) each fail at least one test, and the unchanged controls pass. The guard mutation lens found that this driver copies no `node_modules`. The mutants sit in files that the tests import by relative path, so the result stands.
     - Fix group: 39 plants in a copy with its own `node_modules`, canary first, 2026-10-29T03:20:13Z. Each named test passes unplanted and fails planted: 39 caught, 0 survived. The log is in the session scratchpad, not in the tree.
-    - Lead: stats of NaN and Infinity (`packages/adapter/test/synthetic.ts` lines 140 and 142) kill the mutant that drops `Number.isFinite` from the stats check. A 64-character adapter name in `config/sources.json` is refused (`packages/adapter/test/validate.test.ts` lines 334 to 336), and the mutant that drops the length check is killed.
+    - Lead: stats of NaN and Infinity (`packages/adapter/test/synthetic.ts` lines 146 and 148) kill the mutant that drops `Number.isFinite` from the stats check. A 64-character adapter name in `config/sources.json` is refused (`packages/adapter/test/validate.test.ts` lines 334 to 336), and the mutant that drops the length check is killed.
   - Gate part (c), the wave's three lenses and the verification:
     - Door sweep: door #5 and door #6, in the Corrections above.
     - Claim audit: claim #2 and claim #16, in the Corrections above.

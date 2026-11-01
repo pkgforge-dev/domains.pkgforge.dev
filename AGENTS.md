@@ -230,7 +230,7 @@ TODO/                PROGRESS (the record), INDEX (rows, counts, ordering), RULE
 docs/                architecture, sources, clock, resources ledger, methodology, conventions, security, research
 apps/<worker>/       one Worker each: wrangler.toml, src/, tests (created by the serve entries)
 packages/<name>/     code that two Workers or workflows share, when it exists
-adapters/<source>/   one source adapter each: source.json, a module, fixtures and tests (created by the ingest entries)
+adapters/<source>/   one adapter each, of one or more sources: source.json, src/ (checked as Worker code), fixtures and tests (created by the ingest entries)
 probes/<name>/       temporary measurement Workers, such as probes/worker/ (created by DOM-061, deleted when the measurements close)
 config/              decided facts the code reads: clock.json, source-bits.json, sources.json (created by the foundation and ops entries)
 .github/workflows/   ingest, publish and check workflows (created by the ingest entries)
@@ -242,20 +242,23 @@ scripts/             the gate, the test runner, the record guard (todo/), the wo
 ledger, the methodology, the conventions and the research reports exist. So do
 `packages/core/` and `packages/testkit/` (DOM-013), `packages/names/` (DOM-015),
 `packages/adapter/` with `config/source-bits.json` and `config/sources.json`
-(DOM-016), `packages/pack/` with `docs/format.md` (DOM-017, DOM-018),
+(DOM-016), which also holds the Kafka client (`packages/adapter/src/kafka.ts`),
+the TCP recordings and the sandbox of the harness (`packages/adapter/node/sandbox.ts`)
+(DOM-026), `packages/pack/` with `docs/format.md` (DOM-017, DOM-018),
 `packages/ghcr/` with `ref-refresh.yml` (DOM-019), `packages/root/` with
 `root-promote.yml` (DOM-020), `packages/ledger/` (DOM-021), `packages/feed/`
 (DOM-022), `packages/compact/` with `compact-daily.yml`, `compact-weekly.yml`,
 `compact-monthly.yml`, `compact-yearly.yml` and `measure-compact.yml` (DOM-023),
 `packages/state/` with `config/lanes.json`, `scripts/ingest/`, `scripts/state/`,
 `scripts/workflows/` and `ingest-live.yml` (DOM-024), `config/clock.json`,
-`docs/clock.md` and `scripts/measure/clock-verdict.mjs` (DOM-003),
+`docs/clock.md` and `scripts/measure/clock-verdict.mjs` (DOM-003), the first
+adapter `adapters/oi-nrd/` (DOM-026),
 `probes/worker/` (DOM-061), the measurement workflows and `ci.yml` under
 `.github/workflows/`, and `docs/research/measure/`, where each measurement
 writes its results under its entry id.
 
 ⚠ Not yet created, each by the entry whose row says so: `apps/<worker>/`,
-`adapters/<source>/`, and every other `packages/<name>/`,
+every other `adapters/<source>/`, every other `packages/<name>/`,
 `probes/<name>/` and `.github/workflows/<name>.yml`.
 
 ## 7. What a session owes at its end

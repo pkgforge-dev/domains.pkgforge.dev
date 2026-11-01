@@ -1,0 +1,2 @@
+# node docs/research/measure/DOM-026/16-facts-size.mjs, 2026-10-31T16:05:12Z, exit 0
+bytes 20053375 per key 50.13 64MiB 67108864 ratio 14.2MB cap 4.73

@@ -1,0 +1,13 @@
+{
+ "topic": "newly_registered_fqdn",
+ "first": 179754818,
+ "last": 182684487,
+ "got": 2929669,
+ "recordTsStepBacks": 0,
+ "recordMaxStepBackMs": 0,
+ "firstExample": null,
+ "jsonStepBacks": 0,
+ "jsonMaxStepBackS": 0,
+ "secs": 805.411,
+ "at": "2026-10-31T15:46:58.511Z"
+}

@@ -10,8 +10,13 @@ import {
   buildRegistry,
   ContractError,
   checkCursor,
+  checkRawMember,
+  checkRawMemberBytes,
+  factKeysWalk,
+  factsProblem,
   MAX_CURSOR_BYTES,
   MAX_ID,
+  MAX_RAW_MEMBER_BYTES,
   MAX_URLS_CHARS,
   parseDuration,
   REGISTRY_COMMENT,
@@ -415,4 +420,125 @@ test("adapter validate: a segment is refused for each fault of its shape", () =>
   assert.throws(() => validateSegment(noCount, "s"), /missing count/);
   // A second source's window may hold a time of day.
   validateSegment({ ...SEG, precision: "second", window: { start: "2026-10-26T06:00:00Z", end: "2026-10-26T06:10:00Z" } }, "s");
+});
+
+test("adapter validate: a segment's facts is { bytes, sha256 }, as its raw is, and may be absent", () => {
+  validateSegment({ ...SEG, facts: { bytes: 44, sha256: "b".repeat(64) } }, "s");
+  validateSegment({ ...SEG, raw: { bytes: 1, sha256: "a".repeat(64) }, facts: { bytes: 44, sha256: "b".repeat(64) } }, "s");
+  const cases: [unknown, RegExp][] = [
+    [{ bytes: 44 }, /facts is not \{ bytes, sha256 \}/],
+    [{ bytes: -1, sha256: "b".repeat(64) }, /facts is not/],
+    [{ bytes: 1.5, sha256: "b".repeat(64) }, /facts is not/],
+    [{ bytes: 44, sha256: "B".repeat(64) }, /facts is not/],
+    [{ bytes: 44, sha256: "b".repeat(64), layer: "facts.json" }, /facts is not/],
+    [[44, "b".repeat(64)], /facts is not/],
+    [null, /facts is not/],
+  ];
+  for (const [facts, why] of cases)
+    assert.throws(
+      () => validateSegment({ ...SEG, facts }, "s"),
+      (e: unknown) => e instanceof ContractError && e.check === "segment" && why.test(e.message),
+      JSON.stringify(facts),
+    );
+});
+
+test("adapter validate: a raw lane member's fields are named words of strings and whole numbers, never the writer's own, on a second-precision write with raw bytes", () => {
+  const member = { topic: "newly_registered_domain", partition: 0, base_offset: 173858847, last_offset: 173860323, batches: 1477 };
+  checkRawMember(undefined, "day", "s");
+  checkRawMember(member, "second", "s");
+  checkRawMember({}, "second", "s");
+  checkRawMember(Object.assign(Object.create(null), { topic: "t" }), "second", "s");
+  const draft =
+    (v: unknown, precision = "second") =>
+    () =>
+      checkRawMember(v, precision, "s");
+  const cases: [() => void, RegExp][] = [
+    [draft(member, "day"), /a day source keeps its file in its segment's own layer raw/],
+    [draft([1]), /rawMember is not a plain object of fields/],
+    [draft(new Map([["topic", "t"]])), /rawMember is not a plain object of fields/],
+    [draft("topic=t"), /rawMember is not a plain object of fields/],
+    [draft(null), /rawMember is not a plain object of fields/],
+    [draft({ Topic: "t" }), /field "Topic" is not \[a-z\]\[a-z0-9_\]\*/],
+    [draft({ "base-offset": 1 }), /field "base-offset"/],
+    [draft({ _x: 1 }), /field "_x"/],
+    [draft({ offset: 0 }), /field offset is one the writer writes/],
+    [draft({ length: 5 }), /field length is one the writer writes/],
+    [draft({ sha256: "a".repeat(64) }), /field sha256 is one the writer writes/],
+    [draft({ partition: -1 }), /field partition is -1, not a string or a safe whole number/],
+    [draft({ partition: 1.5 }), /field partition is 1\.5/],
+    [draft({ partition: 2 ** 53 }), /field partition is 9007199254740992/],
+    [draft({ codec: null }), /field codec is null/],
+    [draft({ codec: true }), /field codec is true/],
+    [draft({ offsets: [1, 2] }), /field offsets is \[1,2\]/],
+    [draft({ topic: "t".repeat(MAX_RAW_MEMBER_BYTES) }), /rawMember is 1036 bytes of JSON, over 1024/],
+  ];
+  for (const [fn, why] of cases) assert.throws(fn, (e: unknown) => e instanceof ContractError && e.check === "draft" && why.test(e.message), String(why));
+  // {"topic":"..."} is 12 bytes beside the string: 1024 bytes in all is taken.
+  checkRawMember({ topic: "t".repeat(MAX_RAW_MEMBER_BYTES - 12) }, "second", "s");
+  // A member names raw bytes: none, or none of a byte, is refused; no rawMember needs none.
+  checkRawMemberBytes(member, 1, "s");
+  checkRawMemberBytes(undefined, null, "s");
+  checkRawMemberBytes(undefined, 0, "s");
+  for (const bytes of [null, 0])
+    assert.throws(
+      () => checkRawMemberBytes(member, bytes, "s"),
+      (e: unknown) => e instanceof ContractError && e.check === "draft" && /the write has no raw byte, so it makes no raw lane object/.test(e.message),
+    );
+});
+
+test("adapter validate: a draft's facts are a list of { key, cert_age }, keys strictly ascending, each age a safe whole number of at least 0", () => {
+  assert.equal(factsProblem(undefined), null);
+  assert.equal(factsProblem([]), null);
+  assert.equal(
+    factsProblem([
+      { key: "com.example", cert_age: 0 },
+      { key: "net.example", cert_age: 3_456_789 },
+    ]),
+    null,
+  );
+  const cases: [unknown, RegExp][] = [
+    [{ "com.example": 1 }, /^facts is not a list$/],
+    [[["com.example", 1]], /facts\[0\] is not \{ key, cert_age \}/],
+    [[{ key: "com.example" }], /facts\[0\] is not \{ key, cert_age \}/],
+    [[{ key: "com.example", cert_age: 1, bit: 1 }], /facts\[0\] is not \{ key, cert_age \}/],
+    [[{ key: "", cert_age: 1 }], /facts\[0\]: the key is not a non-empty string/],
+    [[{ key: 5, cert_age: 1 }], /facts\[0\]: the key is not a non-empty string/],
+    [
+      [
+        { key: "net.example", cert_age: 1 },
+        { key: "com.example", cert_age: 1 },
+      ],
+      /facts\[1\]: the key "com\.example" does not sort after "net\.example"/,
+    ],
+    [
+      [
+        { key: "com.example", cert_age: 1 },
+        { key: "com.example", cert_age: 2 },
+      ],
+      /facts\[1\]: the key "com\.example" does not sort after "com\.example"/,
+    ],
+    [[{ key: "com.example", cert_age: -1 }], /facts\[0\]: the cert_age -1 of "com\.example" is not a safe whole number of at least 0/],
+    [[{ key: "com.example", cert_age: 0.5 }], /the cert_age 0\.5/],
+    [[{ key: "com.example", cert_age: "7" }], /the cert_age "7"/],
+    [[{ key: "com.example", cert_age: Number.MAX_SAFE_INTEGER + 1 }], /the cert_age 9007199254740992/],
+  ];
+  for (const [facts, why] of cases) assert.match(factsProblem(facts) ?? "", why, JSON.stringify(facts));
+});
+
+test("adapter validate: the facts' walk names the first fact whose key no record has: before the first, between two, past the last, or with no record", () => {
+  const facts = (...keys: string[]) => keys.map((key) => ({ key, cert_age: 1 }));
+  const walked = (f: { key: string; cert_age: number }[], keys: string[]) => {
+    const walk = factKeysWalk(f);
+    for (const k of keys) walk.see(k);
+    return walk.problem();
+  };
+  const records = ["com.b", "com.d", "com.f"];
+  assert.equal(walked(facts(), records), null);
+  assert.equal(walked(facts("com.b", "com.f"), records), null);
+  assert.equal(walked(facts("com.b", "com.d", "com.f"), records), null);
+  assert.equal(walked(facts("com.a", "com.b"), records), 'the fact of "com.a" names a key no record of the segment has');
+  assert.equal(walked(facts("com.b", "com.c", "com.d"), records), 'the fact of "com.c" names a key no record of the segment has');
+  assert.equal(walked(facts("com.f", "com.g"), records), 'the fact of "com.g" names a key no record of the segment has');
+  assert.equal(walked(facts("com.c", "com.e"), records), 'the fact of "com.c" names a key no record of the segment has');
+  assert.equal(walked(facts("com.b"), []), 'the fact of "com.b" names a key no record of the segment has');
 });

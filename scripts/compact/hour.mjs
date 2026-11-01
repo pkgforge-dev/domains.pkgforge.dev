@@ -14,6 +14,18 @@
 // overlaps another of its source is refused; a source whose segments leave a
 // hole in the hour is `wait`, exit 3, and nothing is written.
 //
+// The facts (DOM-026, docs/format.md section 19). A domain record holds no
+// certificate age: a segment whose source has one carries it in its layer
+// facts.json, which its manifest names. Of each segment the pack reads, that
+// layer is read: DIR/<tag>/facts.json held to the digest its manifest names
+// (a manifest that names it when the file is not there is exit 2), or its
+// blob from obs, FACTS_CONCURRENCY at a time. Each must parse (parseFacts of
+// @domains/adapter) and name no bit but its segment's source's, else exit 1.
+// Their merge, the minimum age per key and bit (eventFactsOf of
+// packages/compact), goes with each record to the feed's confidence: an old
+// certificate makes the row suspect, and a fresh event of the domain in any
+// segment of the hour clears it.
+//
 // The filter and its delta are --filter FILE, the layer of ledger-filter-DATE
 // (DLBF), and --delta FILE, the layer of ledger-delta (DLBD): the delta must
 // pair with the filter, and the filter must hold the table through no later
@@ -63,18 +75,21 @@
 //     --records-per-block N, --page-entries N   the writer (defaults 4096 and 64)
 // stdout: `verdict VERDICT feed:TAG START END`, `reason ...`, one line for
 // each segment read (`input`) or left (`skip`), each hole (`missing`), then
-// `present feed:TAG ...`, or the files written and
+// `present feed:TAG ...`, or `facts SEGMENTS KEYS` (the segments read that
+// carry facts.json, and the keys of their merge), the files written and
 // `hour feed:TAG sha256:DIGEST rows N domains N delta N to N`.
 // Exit codes: 0 written, present, or skip (no segment to read) · 1 a fault: a
 // segment that crosses an edge of the hour, lies outside it or overlaps one of
 // its source, a segment of a dataset other than names and domains, an idx
 // that is not its manifest's, a manifest the promotion refuses, segments
-// built under two PSL hashes, a filter newer than the hour, a delta of
-// another filter, a row outside the hour, a tag list GHCR cut short, a build
-// of the hour that the tag list names and whose manifest GHCR does not give
-// or carries no sha256 · 2 could not run (bad arguments, a file that does not
-// read, an output file that exists, an output path that is a file, lies under
-// a file or cannot be written, GHCR unreachable) · 3 wait: a source's
+// built under two PSL hashes, a facts.json that is not its manifest's, does
+// not parse or names a bit other than its source's, a filter newer than the
+// hour, a delta of another filter, a row outside the hour, a tag list GHCR cut
+// short, a build of the hour that the tag list names and whose manifest GHCR
+// does not give or carries no sha256 · 2 could not run (bad arguments, a file
+// that does not read, a manifest that names facts.json when the file is not
+// there, an output file that exists, an output path that is a file, lies
+// under a file or cannot be written, GHCR unreachable) · 3 wait: a source's
 // segments leave a hole in the hour · 4 PRIVATE PACKAGE: a segment did not
 // read with no credential · 70 an internal error, a defect of this script
 // (its stack goes to stderr).
@@ -82,7 +97,8 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { buildHour, CompactError, DELTA_TITLE, EMPTY_CONFIG, hourOf, membershipOf, packManifest, planHour, tagDecision, WORKFLOW_RUN_ID } from '@domains/compact';
+import { FACTS_MAX_BYTES, FACTS_MEDIA_TYPE, FACTS_TITLE, FactsError, mergeFacts, parseFacts } from '@domains/adapter';
+import { buildHour, CompactError, DELTA_TITLE, EMPTY_CONFIG, eventFactsOf, hourOf, membershipOf, packManifest, planHour, tagDecision, WORKFLOW_RUN_ID } from '@domains/compact';
 import { DirPartsSink, fileDigest, titlesOf } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
 import { checkRef, GhcrError, LayoutError, LEDGER_DELTA_TAG, packageOfDataset, repoOf } from '@domains/ghcr';
@@ -107,6 +123,9 @@ const FLAGS = [...VALUED, 'rebuild'];
 const TITLE = 'org.opencontainers.image.title';
 // The manifests of the obs package are small: a segment has one part or a few.
 const MANIFEST_MAX_BYTES = 64 * 1024;
+// The reads of facts.json in flight at once, as missingPacks of
+// scripts/root/lib.mjs reads manifests: a day has hundreds of segments.
+export const FACTS_CONCURRENCY = 8;
 
 const sha = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
@@ -210,6 +229,103 @@ async function ghcrSegments(tags, reader, deps) {
   return out;
 }
 
+// ---------------------------------------------------------------- facts.json
+// The readers of the layer facts.json (docs/format.md section 19), which
+// day.mjs shares: one way a compaction finds, reads and holds a pack's facts.
+
+// `fn` of each item, at most `limit` at once, the answers in the items'
+// order. After a failure no item is started, and the first failure is thrown.
+export async function mapAtMost(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const i = next++;
+      try {
+        out[i] = await fn(items[i], i);
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+// The layer facts.json that the manifest `json` of `what` names, or null when
+// it names none. Two of them, or one of another media type, is a fault.
+export function factsLayerOf(json, what) {
+  const layers = (json?.layers ?? []).filter((l) => l?.annotations?.[TITLE] === FACTS_TITLE);
+  if (layers.length === 0) return null;
+  if (layers.length > 1) throw new Fault(`${what} names ${layers.length} layers ${FACTS_TITLE}; a pack carries one`);
+  const [layer] = layers;
+  if (layer.mediaType !== FACTS_MEDIA_TYPE) throw new Fault(`${what}: its layer ${FACTS_TITLE} is ${JSON.stringify(layer.mediaType ?? null)}, not ${FACTS_MEDIA_TYPE}`);
+  return layer;
+}
+
+// The bytes of the layer facts.json `desc` of the pack `tag`: with `dir`,
+// DIR/<tag>/facts.json held to the digest and size its manifest names (a file
+// that is not there is exit 2, as an index that is not there); else its blob
+// from `repo`, read with no credential and held to its digest (readBlob, at
+// most FACTS_MAX_BYTES).
+export async function factsBytes(desc, tag, { dir, repo, reader, deps }) {
+  if (dir === undefined) return readBlob(reader, repo, desc, deps, FACTS_MAX_BYTES);
+  const path = join(dir, tag, FACTS_TITLE);
+  if (!existsSync(path)) throw new UsageError(`${path} does not exist, and the manifest of ${tag} names the layer ${FACTS_TITLE}`);
+  const bytes = readFile(path, `the ${FACTS_TITLE} of ${tag}`);
+  if (bytes.length !== desc.size || sha(bytes) !== desc.digest)
+    throw new Fault(`${path} is ${bytes.length} B hashing to ${sha(bytes)}; the manifest of ${tag} names its ${FACTS_TITLE} as ${desc.size} B, ${desc.digest}`);
+  return bytes;
+}
+
+// The bits of the source ids `sources` (registry rows with a bit).
+export function bitsOf(registry, sources, what) {
+  const out = new Set();
+  for (const id of sources) {
+    const row = registry.find((r) => r.id === id && typeof r.bit === 'number');
+    if (row === undefined) throw new Fault(`${what}: the source ${id} has no row with a bit in the registry`);
+    out.add(row.bit);
+  }
+  return out;
+}
+
+// The table of facts.json `bytes` (parseFacts of @domains/adapter), every bit
+// one of `bits`, the bits of the sources of the pack that carries it: the
+// records of the pack hold no other, and the feed's confidence refuses a fact
+// of a bit its record lacks. A layer that does not parse, or that names
+// another bit, is a fault.
+export function factsTableOf(bytes, bits, what) {
+  let table;
+  try {
+    table = parseFacts(bytes);
+  } catch (e) {
+    if (e instanceof FactsError) throw new Fault(`${what}: its ${FACTS_TITLE} does not read: ${e.message}`);
+    throw e;
+  }
+  for (const [key, byBit] of table) {
+    for (const bit of byBit.keys()) {
+      if (!bits.has(bit))
+        throw new Fault(`${what}: its ${FACTS_TITLE} gives ${JSON.stringify(key.slice(0, 80))} the source bit ${bit}; the pack is of the source bit(s) ${[...bits].sort((a, b) => a - b).join(', ')}`);
+    }
+  }
+  return table;
+}
+
+// The facts of the segments the hour reads: the facts.json of each whose
+// manifest names one, held to its source's bit, and their merge.
+async function plannedFacts(plan, manifests, registry, io) {
+  const tables = await mapAtMost(plan.inputs, FACTS_CONCURRENCY, async (p) => {
+    const what = `obs:${p.tag}`;
+    const layer = factsLayerOf(manifests.get(p.tag), what);
+    if (layer === null) return null;
+    return factsTableOf(await factsBytes(layer, p.tag, io), bitsOf(registry, p.sources, what), what);
+  });
+  const read = tables.filter((t) => t !== null);
+  return { segments: read.length, table: mergeFacts(read) };
+}
+
 // The feed package's tags: --tags FILE, or every page of its tag list in GHCR.
 // A package that does not exist yet holds no tag: the first push creates it.
 async function tagsOf(args, reader, deps) {
@@ -263,6 +379,11 @@ async function hourJob(argv, { reader = anonymousReader(), out = console.log, er
       return EXIT.ok;
     }
 
+    // Read before --out is made: a facts.json missing or refused writes nothing.
+    const manifests = new Map(segments.map((s) => [s.tag, s.json]));
+    const facts = await plannedFacts(plan, manifests, registry, { dir: args.segments, repo: repoOf('obs'), reader, deps });
+    out(`facts ${facts.segments} ${facts.table.size}`);
+
     freshDir(args.out, 'hour');
     const opened = await openInputs({ inputs: plan.inputs }, 'key', DOMAINS_CODEC, args.segments, reader, deps);
     const keySink = new DirPartsSink(args.out, 'key');
@@ -277,6 +398,7 @@ async function hourJob(argv, { reader = anonymousReader(), out = console.log, er
         time: { sink: timeSink },
         recordsPerBlock: args.recordsPerBlock,
         pageEntries: args.pageEntries,
+        ...(facts.table.size === 0 ? {} : { facts: eventFactsOf([facts.table]) }),
       });
     } finally {
       await keySink.close();
@@ -342,7 +464,7 @@ async function hourJob(argv, { reader = anonymousReader(), out = console.log, er
       err(`hour: FAIL ${e.code} ${e.message}`);
       return e.code === 'usage' ? EXIT.usage : EXIT.fault;
     }
-    if (e instanceof LedgerError || e instanceof FeedError || e instanceof PackError || e instanceof Fault) {
+    if (e instanceof LedgerError || e instanceof FeedError || e instanceof PackError || e instanceof FactsError || e instanceof Fault) {
       err(`hour: FAIL ${e.code ?? 'fault'} ${e.message}`);
       return EXIT.fault;
     }

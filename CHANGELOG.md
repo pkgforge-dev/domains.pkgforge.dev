@@ -4,6 +4,7 @@ What shipped and when, newest first. Times are UTC.
 
 ## 2026-10-31
 
+- The first adapter, `oi-nrd` (DOM-026, partial): OpenINTEL's three newly registered topics as the sources `oi-nrd`, `oi-nrd-fqdn` and `oi-nrd-confirmed`, in the kafka lane of `config/lanes.json`. `packages/adapter` gains a TCP door for adapters (`ctx.connect`, with TCP recordings, their replay and a tap), the pinned list in the context (`ctx.psl`), a sandbox for an adapter's contract tests, and the shared Kafka client; the protocol and snappy decoders move there from the probe. A segment of `oi-nrd` carries the certificate ages of its events in a new layer `facts.json` (`docs/format.md` section 19), which the hour and day builds read, so a domain with an old certificate is `suspect`. Kafka members of the raw lane name their topic, partition and offsets. No WebSocket fallback is built. No deploy: the first chain run on the pushed commit is the live run, and DOM-026's Waiting line names what closes it.
 - The clock decided (DOM-003): `scripts/measure/clock-verdict.mjs` derives the verdict from the three 48-hour results, and `config/clock.json` records `actions-chain`, the self-dispatch chain, at 10 minutes. `docs/clock.md` gives the numbers. The Worker hot tier (DOM-025) is not built: an Actions clock passes first.
 
 ## 2026-10-30

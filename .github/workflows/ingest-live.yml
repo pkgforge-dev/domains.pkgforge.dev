@@ -386,8 +386,12 @@ jobs:
       # Last in the job, and also after a failed hours step: the cursors the
       # proposals moved are kept, with the packs pushed so far owed. A
       # refusal keeps the live state, warns and fails the job, so nothing is
-      # promoted. The output add is every pack the state owes, the earlier
-      # runs' among them, since only the live root settles an owed pack.
+      # promoted. The output add is the first 500 packs the state owes, in the
+      # state's order, the earlier runs' among them, since only the live root
+      # settles an owed pack; the rest stay owed for a later run, and the step
+      # says how many. add reaches root-promote.yml's step as one environment
+      # string, and Linux refuses one over 128 KiB (E2BIG): about 2,550 refs of
+      # 51.3 B (settled S9 of DOM-026). Each ref is checked, those past 500 too.
       - name: Move state:latest
         id: move
         if: ${{ !cancelled() && steps.advance.outcome == 'success' }}
@@ -436,11 +440,17 @@ jobs:
               refs+=("$ref")
             done <<< "$owed"
           fi
-          echo "add=${refs[*]}" >> "$GITHUB_OUTPUT"
+          max=500
+          add=("${refs[@]:0:max}")
+          stay=$(( ${#refs[@]} - ${#add[@]} ))
+          echo "add=${add[*]}" >> "$GITHUB_OUTPUT"
           if [ "${#refs[@]}" -eq 0 ]; then
             echo "state owes no pack: nothing to promote"
           else
-            echo "state owes ${#refs[@]} pack(s) to the root: ${refs[*]}"
+            echo "state owes ${#refs[@]} pack(s) to the root; add holds the first ${#add[@]} in the state's order, and $stay stay owed for a later run: ${add[*]}"
+          fi
+          if [ "$stay" -gt 0 ]; then
+            echo "::warning::state owes ${#refs[@]} packs, past the $max one promotion takes: $stay stay owed, and the root falls behind its segments until the promotions catch up"
           fi
 
   # Ruling 18: this job only calls root-promote.yml, which holds the group

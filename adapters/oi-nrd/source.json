@@ -1,0 +1,75 @@
+{
+  "format": "domains.source.v1",
+  "sources": [
+    {
+      "id": "oi-nrd",
+      "bit": 1,
+      "family": "ct",
+      "datasets": ["domains"],
+      "precision": "second",
+      "kind": "claimed_new",
+      "basis": ["nrd-list"],
+      "cadence": "PT10M",
+      "band": { "metric": "count", "min": 0.5, "max": 2, "relative": true },
+      "urls": ["kafka://kafka.zonestream.openintel.nl:9092/newly_registered_domain"],
+      "retention": "P6D",
+      "parser": "oi-nrd/1",
+      "failure_modes": [
+        "Port 9092 does not answer or the broker stops: the fault broker fails the kafka leg, the cursor holds, and the next run reads the backlog from the stored offset. P6D is a declared floor, READ from two offset readings (2026-10-28 and 2026-10-31, DOM-026): the broker deletes whole segments of about 7 days.",
+        "The cursor falls below the earliest retained offset: the fault retention-gap names the lost offsets and times, and the read resumes at the earliest retained offset with a fresh window. The lost days become a gap of the root only by --gap of scripts/root/promote.mjs, which no workflow passes yet (DOM-034), and until then the source's later packs wait.",
+        "The log changes under the cursor (an offset above the latest, or a first record more than an hour before the cursor's through): the fault offset-ahead or cursor-mismatch, and the read relocates to the first offset whose record time is at or after through.",
+        "A batch fails its CRC-32C, or is compressed with a codec other than none or snappy: the fault decode, and the topic stops before that batch on every run until a code change reads it or the retention deletes it; the leg is red every run.",
+        "A record time more than 300 s after the run's time: the fault clock, and the topic stops before that record until the clock passes it. A record time before 2026-01-01, which no record stores: the fault clock-low, and the record joins its window at the window's start, counted late.",
+        "A message is not JSON or lacks its name: counted malformed, one fault a run; the window is written and the raw lane keeps the bytes.",
+        "Zone rows (ct_name zone_data, no registration date) arrive in registry bursts: 33.5% of the topic over the retained span (1,294,264 of 3,866,241 messages), up to 95.1% of an hour, and 140,503 messages in one minute (MEASURED 2026-10-31, DOM-026). Each is T2 nrd-list, and a window closes early at a second once it holds 200,000 messages.",
+        "Between a third and a half of the events carry a certificate older than 7 days, by sample (51.1% of the newest 19,951 with both times, 32.5% of the earliest; MEASURED 2026-10-31, DOM-026): the minimum age of a key goes to facts.json, and the feed marks the row suspect."
+      ]
+    },
+    {
+      "id": "oi-nrd-fqdn",
+      "bit": 2,
+      "family": "ct",
+      "datasets": ["names"],
+      "precision": "second",
+      "kind": "claimed_new",
+      "basis": ["nrd-list"],
+      "cadence": "PT10M",
+      "band": { "metric": "count", "min": 0.5, "max": 2, "relative": true },
+      "urls": ["kafka://kafka.zonestream.openintel.nl:9092/newly_registered_fqdn"],
+      "retention": "P6D",
+      "parser": "oi-nrd/1",
+      "failure_modes": [
+        "Port 9092 does not answer or the broker stops: the fault broker fails the kafka leg, the cursor holds, and the next run reads the backlog from the stored offset. P6D is a declared floor, READ from two offset readings (2026-10-28 and 2026-10-31, DOM-026).",
+        "The cursor falls below the earliest retained offset: the fault retention-gap names the lost offsets and times, and the read resumes at the earliest retained offset with a fresh window.",
+        "The log changes under the cursor: the fault offset-ahead or cursor-mismatch, and the read relocates to the first offset whose record time is at or after the cursor's through.",
+        "A batch fails its CRC-32C or its decode: the fault decode, and the topic stops before that batch on every run until a code change reads it or the retention deletes it.",
+        "A record time more than 300 s after the run's time: the fault clock, and the topic stops before that record until the clock passes it. A record time before 2026-01-01: the fault clock-low, and the record joins its window at the window's start, counted late.",
+        "A message is not JSON or lacks its name: counted malformed, one fault a run; the raw lane keeps the bytes.",
+        "Between a third and a half of the events carry a certificate older than 7 days, by sample (48.6% of the newest 20,000, 30.4% of the earliest; MEASURED 2026-10-31, DOM-026). Its names segments carry no facts layer, since names reach no feed; the raw lane keeps the ages."
+      ]
+    },
+    {
+      "id": "oi-nrd-confirmed",
+      "bit": 3,
+      "family": "ct",
+      "datasets": ["domains"],
+      "precision": "second",
+      "kind": "registered_claim",
+      "basis": ["nrd-list", "nrd-ct+rdap"],
+      "cadence": "PT10M",
+      "band": { "metric": "count", "min": 0.5, "max": 2, "relative": true },
+      "urls": ["kafka://kafka.zonestream.openintel.nl:9092/confirmed_newly_registered_domain"],
+      "retention": "P6D",
+      "parser": "oi-nrd/1",
+      "failure_modes": [
+        "Port 9092 does not answer or the broker stops: the fault broker fails the kafka leg, the cursor holds, and the next run reads the backlog from the stored offset. P6D is a declared floor, READ from two offset readings (2026-10-28 and 2026-10-31, DOM-026).",
+        "The cursor falls below the earliest retained offset: the fault retention-gap names the lost offsets and times, and the read resumes at the earliest retained offset with a fresh window.",
+        "The log changes under the cursor: the fault offset-ahead or cursor-mismatch, and the read relocates to the first offset whose record time is at or after the cursor's through.",
+        "A batch fails its CRC-32C or its decode: the fault decode, and the topic stops before that batch on every run until a code change reads it or the retention deletes it.",
+        "A record time more than 300 s after the run's time: the fault clock, and the topic stops before that record until the clock passes it. A record time before 2026-01-01: the fault clock-low, and the record joins its window at the window's start, counted late. The JSON timestamp of this topic steps back up to 25,556 s over the retained span (8,389 s in the newest 20,000 messages; MEASURED 2026-10-31, DOM-026), so windows are cut on the Kafka record time.",
+        "A message is not JSON, lacks its name, or holds a confidence that is not a whole number from 1 to 10: counted malformed, one fault a run; the raw lane keeps the bytes.",
+        "Zone rows (ct_name zone_data, no certificate) are 25.2% of the retained span (476,562 of 1,894,990 messages), up to 91.4% of an hour, in registry bursts, 95.4% of them with confidence 8 to 10 (MEASURED 2026-10-31, DOM-026): each is T2 nrd-list with its confidence, and only a row with a certificate is nrd-ct+rdap. The topic has no submission_timestamp, so no certificate age."
+      ]
+    }
+  ]
+}

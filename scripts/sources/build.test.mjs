@@ -70,8 +70,20 @@ test('sources build: with no adapters it writes a registry of no source, and --c
   assert.equal(json.format, 'domains.sources.v1');
   assert.deepEqual(json.sources, []);
   assert.equal(run(['--check', '--root', dir]).status, 0);
-  // The committed file of this checkout is that same text.
-  assert.equal(readFileSync(join(dir, 'config', 'sources.json'), 'utf8'), readFileSync(join(ROOT, 'config', 'sources.json'), 'utf8'));
+});
+
+test("sources build: this checkout's registry holds oi-nrd, oi-nrd-fqdn and oi-nrd-confirmed at bits 1, 2 and 3, of the adapter oi-nrd", () => {
+  const json = JSON.parse(readFileSync(join(ROOT, 'config', 'sources.json'), 'utf8'));
+  assert.deepEqual(
+    json.sources.map((s) => [s.id, s.bit, s.adapter, s.datasets, s.precision]),
+    [
+      ['oi-nrd', 1, 'oi-nrd', ['domains'], 'second'],
+      ['oi-nrd-fqdn', 2, 'oi-nrd', ['names'], 'second'],
+      ['oi-nrd-confirmed', 3, 'oi-nrd', ['domains'], 'second'],
+    ],
+  );
+  const r = run(['--check']);
+  assert.match(r.stdout, /^sources 3 adapters 1$/m);
 });
 
 test('sources build: an adapter is written in, and --check fails once its source.json changes or the registry is absent', () => {

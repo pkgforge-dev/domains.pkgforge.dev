@@ -24,10 +24,11 @@ import {
   timeBindFault,
 } from "@domains/pack";
 import { nodeCompress } from "@domains/pack/node";
+import { parseFacts } from "@domains/adapter";
 import { pack } from "../../root/test/helpers.ts";
-import { CompactError } from "../src/index.ts";
+import { CompactError, eventFactsOf } from "../src/index.ts";
 import { basePacks, buildDay, checkLedger, dayOf, joinInputs, rebuildLedger, SUMMARY_FORMAT, SummaryCounter } from "../src/daily.ts";
-import { collect, DAY, dayNo, domain, entryOf, HOUR, name, REGISTRY, secs, segment, tierPack } from "./daily-helpers.ts";
+import { collect, DAY, dayNo, domain, entryOf, HOUR, name, REGISTRY, secs, segment, segmentFacts, tierPack } from "./daily-helpers.ts";
 
 const D = "2026-10-27";
 const T = (hhmmss: string): number => secs(`${D}T${hhmmss}Z`);
@@ -166,6 +167,60 @@ test("daily: the day pack holds the domains the exact join keeps with since: not
     },
   });
   assert.equal(new TextDecoder().decode(built.summaryBytes), `${JSON.stringify(built.daySummary)}\n`);
+});
+
+test("daily: with the day's facts, a row whose certificate is old is suspect with bit 4, a fresh one is not, and the hour packs' verdicts are still carried", async () => {
+  const f = await dayFixture();
+  const day = dayOf(D);
+  const dayInputs = [f.thc.reader, f.oi5.reader, f.oi6.reader, f.isc.reader];
+  // oi-nrd's windows: com.fresh-synthetic under a certificate of 30 days,
+  // net.cert-synthetic under one of 50 s (its hour row is suspect already),
+  // np.com.nepal-synthetic under one of 100 s.
+  const facts = eventFactsOf([
+    parseFacts(
+      segmentFacts("oi-nrd", [
+        { key: "com.fresh-synthetic", cert_age: 2_592_000 },
+        { key: "net.cert-synthetic", cert_age: 50 },
+      ]),
+    ),
+    parseFacts(segmentFacts("oi-nrd", [{ key: "np.com.nepal-synthetic", cert_age: 100 }])),
+  ]);
+  let joined = 0;
+  const sink = new MemorySink();
+  const built = await buildDay({
+    day,
+    records: () => mergePacks(dayInputs, (f.thc.reader as PackReader<never>).codec),
+    base: [f.base.reader as never],
+    carry: mergePacks([f.hour5.reader, f.hour6.reader] as PackReader<FeedRecord>[], FEED_CODEC),
+    facts: (key) => {
+      joined += 1;
+      return facts(key);
+    },
+    registry: REGISTRY,
+    compress: nodeCompress,
+    sink,
+    time: { sink: new MemorySink() },
+  });
+  const rows = await collect((await PackReader.open(built.summary.idx, partsSource(sink.parts()), FEED_CODEC)).scan());
+  assert.deepEqual(
+    rows.map((r) => [r.key, r.feedFlags]),
+    [
+      ["com.fresh-synthetic", FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ["com.isc-synthetic", 0],
+      ["com.thc-synthetic", 0],
+      ["net.cert-synthetic", FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ["np.com.nepal-synthetic", 0],
+    ],
+  );
+  // The facts are asked once a record of the rows' scan, never by the join.
+  assert.equal(joined, built.exact.day);
+  // The carry is unchanged: the hour row of net.cert-synthetic still adds its suspect bit.
+  assert.deepEqual(built.carry, { hourRows: 3, matched: 2, carried: 1, retracted: 1 });
+  assert.equal(built.daySummary.suffixes.com.suspect, 1);
+  await assert.rejects(
+    buildDay({ day, records: () => f.thc.reader.scan(), base: [], facts: {} as never, registry: REGISTRY, compress: nodeCompress, sink: new MemorySink(), time: { sink: new MemorySink() } }),
+    (e: unknown) => e instanceof CompactError && e.code === "usage" && /facts is not a function/.test(e.message),
+  );
 });
 
 test("daily: buildDay refuses an earlier pack that is not of the dataset domains before it reads a record", async () => {

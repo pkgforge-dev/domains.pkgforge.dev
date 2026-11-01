@@ -1,0 +1,39 @@
+{
+  "recorded_at": "2026-10-31T10:20:07Z",
+  "command": "node adapters/oi-nrd/record.mjs --out adapters/oi-nrd/fixtures",
+  "client_id": "domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)",
+  "address": "kafka.zonestream.openintel.nl:9092",
+  "edge": "2026-10-31T10:20:00Z",
+  "now": "2026-10-31T10:20:07Z",
+  "psl_sha256": "0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca",
+  "recording_sha256": "b21327f5e23616f83150d1d4d24a24dad29d9159bca84bd19e343c1e875f6503",
+  "topics": {
+    "newly_registered_domain": {
+      "source": "oi-nrd",
+      "c0": 173936937,
+      "through": "2026-10-31T10:19:53Z",
+      "edge": 173936962,
+      "stop": 173937037,
+      "messages": 100,
+      "zone_rows": 0
+    },
+    "newly_registered_fqdn": {
+      "source": "oi-nrd-fqdn",
+      "c0": 182614884,
+      "through": "2026-10-31T10:19:53Z",
+      "edge": 182614909,
+      "stop": 182614984,
+      "messages": 100,
+      "zone_rows": 0
+    },
+    "confirmed_newly_registered_domain": {
+      "source": "oi-nrd-confirmed",
+      "c0": 81097350,
+      "through": "2026-10-31T10:19:42Z",
+      "edge": 81097375,
+      "stop": 81097418,
+      "messages": 68,
+      "zone_rows": 0
+    }
+  }
+}

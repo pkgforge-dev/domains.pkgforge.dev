@@ -84,3 +84,85 @@ test("adapter writer: a draft with a bad source, window or cursor is refused bef
   await rejects(w.write({ ...DRAFT, precision: "hour" as "day" }, records()), "draft", /precision/);
   assert.equal(read, false);
 });
+
+// A window of a second-precision stream, the shape oi-nrd writes (DOM-026).
+const STREAM: SegmentDraft = {
+  source: "example-stream",
+  dataset: "domains",
+  window: { start: "2026-10-30T08:00:00Z", end: "2026-10-30T08:10:00Z" },
+  cursorBefore: { next: 0 },
+  cursorAfter: { next: 1 },
+  precision: "second",
+};
+const MEMBER = { topic: "newly_registered_domain", partition: 0, base_offset: 100, last_offset: 101, batches: 2 };
+
+test("adapter writer: rawMember and facts are recorded as given, and Segment.facts is the rows' size and SHA-256, none for no facts or an empty list", async () => {
+  const w = memoryWriter();
+  const facts = [
+    { key: "com.example.a", cert_age: 3_456_789 },
+    { key: "org.example.b", cert_age: 4 },
+  ];
+  const records = [{ key: "com.example.a" }, { key: "net.example.c" }, { key: "org.example.b" }];
+  const seg = await w.write({ ...STREAM, rawMember: MEMBER, facts }, records, new Uint8Array([1, 2, 3]));
+  const rows = '[["com.example.a",3456789],["org.example.b",4]]';
+  assert.deepEqual(seg.facts, { bytes: rows.length, sha256: sha(rows) });
+  assert.deepEqual(w.written[0]!.rawMember, MEMBER);
+  assert.deepEqual(w.written[0]!.facts, facts);
+  // No facts, or an empty list: no Segment.facts; the record of what was given keeps the difference.
+  const none = await w.write({ ...STREAM, source: "example-other" }, records);
+  const empty = await w.write({ ...STREAM, source: "example-third", facts: [] }, records);
+  assert.equal(none.facts, undefined);
+  assert.equal(empty.facts, undefined);
+  assert.deepEqual(
+    w.written.slice(1).map((x) => [x.rawMember, x.facts]),
+    [
+      [null, null],
+      [null, []],
+    ],
+  );
+  // The writer's copies: a change to the draft after the write does not reach them.
+  const mutable = { ...MEMBER };
+  const later = [{ key: "com.example.a", cert_age: 1 }];
+  await w.write({ ...STREAM, source: "example-fourth", rawMember: mutable, facts: later }, records, new Uint8Array([1]));
+  mutable.partition = 9;
+  later[0]!.cert_age = 9;
+  assert.deepEqual([w.written[3]!.rawMember?.partition, w.written[3]!.facts?.[0]?.cert_age], [0, 1]);
+});
+
+test("adapter writer: a rawMember on a day write, on a write with no raw byte, or of a bad shape is refused as draft", async () => {
+  const w = memoryWriter();
+  await rejects(w.write({ ...DRAFT, rawMember: MEMBER }, [], new Uint8Array([1])), "draft", /keeps its file in its segment's own layer raw/);
+  await rejects(w.write({ ...STREAM, rawMember: MEMBER }, []), "draft", /the write has no raw byte/);
+  await rejects(w.write({ ...STREAM, rawMember: MEMBER }, [], new Uint8Array(0)), "draft", /the write has no raw byte/);
+  await rejects(w.write({ ...STREAM, rawMember: { offset: 5 } }, [], new Uint8Array([1])), "draft", /field offset is one the writer writes/);
+  assert.equal(w.written.length, 0);
+});
+
+test("adapter writer: facts out of order, of a key not written, or with an age that is not a safe whole number are refused as draft", async () => {
+  const w = memoryWriter();
+  const records = [{ key: "com.example.a" }, { key: "org.example.b" }];
+  let read = false;
+  function* counted() {
+    read = true;
+    yield* records;
+  }
+  await rejects(
+    w.write(
+      {
+        ...STREAM,
+        facts: [
+          { key: "org.example.b", cert_age: 1 },
+          { key: "com.example.a", cert_age: 1 },
+        ],
+      },
+      counted(),
+    ),
+    "draft",
+    /facts\[1\]: the key "com\.example\.a" does not sort after/,
+  );
+  await rejects(w.write({ ...STREAM, facts: [{ key: "com.example.a", cert_age: -1 }] }, counted()), "draft", /the cert_age -1/);
+  assert.equal(read, false, "a draft's facts are held before any record is read");
+  await rejects(w.write({ ...STREAM, facts: [{ key: "net.example.c", cert_age: 1 }] }, records), "draft", /facts: the fact of "net\.example\.c" names a key no record of the segment has/);
+  await rejects(w.write({ ...STREAM, facts: [{ key: "org.example.z", cert_age: 1 }] }, records), "draft", /the fact of "org\.example\.z"/);
+  assert.equal(w.written.length, 0);
+});

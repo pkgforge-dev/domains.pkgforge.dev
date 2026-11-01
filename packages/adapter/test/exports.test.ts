@@ -12,7 +12,9 @@ import { test } from "node:test";
 import { readRecordings } from "../node/files.ts";
 import * as adapter from "../src/index.ts";
 import type { Band, BandDay, Cursor, RunResult, Source } from "../src/index.ts";
-import { BandError, ContractError, checkBand, checkHistory, checkResult, checkSources, HARNESS_USER_AGENT, memoryWriter, replayFetch, runAdapter } from "../src/index.ts";
+import { BandError, ContractError, checkBand, checkHistory, checkResult, checkSources, HARNESS_USER_AGENT, memoryWriter, replayConnect, replayFetch, runAdapter } from "../src/index.ts";
+import * as node from "../node/index.ts";
+import { PSL } from "./fixture-psl.ts";
 import { DAY_SOURCE, type DayPlant, dayAdapter } from "./synthetic.ts";
 
 const RECORDINGS = readRecordings(join(import.meta.dirname, "fixtures", "http"));
@@ -45,9 +47,19 @@ async function rejection(p: Promise<unknown>): Promise<ContractError> {
 // One run of a planted adapter outside the harness: what run.mjs holds to the
 // contract itself.
 async function rawRun(plant: DayPlant): Promise<RunResult> {
-  const ctx = Object.freeze({ fetch: replayFetch(RECORDINGS).fetch, now: NOW, userAgent: HARNESS_USER_AGENT, writer: memoryWriter() });
+  const ctx = Object.freeze({ fetch: replayFetch(RECORDINGS).fetch, connect: replayConnect([]).connect, psl: PSL, now: NOW, userAgent: HARNESS_USER_AGENT, writer: memoryWriter() });
   return dayAdapter(plant).run(START, ctx);
 }
+
+test("adapter exports: the TCP door is exported, the Worker-safe half from the package and the Node half from ./node", () => {
+  for (const name of ["TCP_RECORDING_FORMAT", "TCP_RECORDING_SUFFIX", "parseTcpRecording", "REPLAY_IDLE_MS", "replayConnect", "tapConnect", "encodeTcpRecording", "base64Of", "bytesOfBase64"])
+    assert.ok(name in adapter && (adapter as Record<string, unknown>)[name] !== undefined, name);
+  for (const name of ["liveConnect", "LIVE_CONNECT_LIMITS", "SocketError", "readTcpRecordings", "runSandboxed", "SandboxCause", "SANDBOX_CHILD", "REPO_ROOT"])
+    assert.ok(name in node && (node as Record<string, unknown>)[name] !== undefined, name);
+  // The production bounds of ctx.connect (DOM-026, settled S6).
+  assert.deepEqual(node.LIVE_CONNECT_LIMITS, { connectMs: 10_000, idleMs: 60_000, lifeMs: 900_000, maxBytes: 1024 ** 3 });
+  assert.ok(Object.isFrozen(node.LIVE_CONNECT_LIMITS));
+});
 
 test("adapter exports: checkHistory is the history check of checkBand, refusing a day listed twice with checkBand's own message", () => {
   assert.equal(adapter.checkHistory, checkHistory);
@@ -80,7 +92,7 @@ test("adapter exports: checkResult is runAdapter's result check, refusing stats 
   const bad = await rawRun("bad-stats");
   const own = messageOf(() => checkResult(bad, "run 1"), ContractError);
   assert.equal(own, "result: run 1: stats is not an object of finite numbers");
-  const harness = await rejection(runAdapter(dayAdapter("bad-stats"), { recordings: RECORDINGS, cursor: START, now: NOW }));
+  const harness = await rejection(runAdapter(dayAdapter("bad-stats"), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW }));
   assert.equal(harness.check, "result");
   assert.equal(harness.message, own);
   assert.equal(
@@ -96,7 +108,7 @@ test("adapter exports: checkSources is runAdapter's source check, refusing a seg
   const foreign = await rawRun("other-source");
   const own = messageOf(() => checkSources(foreign.segments, [SOURCE], "run 1"), ContractError);
   assert.equal(own, `source: run 1: segments[0] is of example-other, which is not one of the adapter's sources (${DAY_SOURCE})`);
-  const harness = await rejection(runAdapter(dayAdapter("other-source"), { recordings: RECORDINGS, cursor: START, now: NOW, sources: [SOURCE] }));
+  const harness = await rejection(runAdapter(dayAdapter("other-source"), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW, sources: [SOURCE] }));
   assert.equal(harness.check, "source");
   assert.equal(harness.message, own);
   // Another precision is refused alike.

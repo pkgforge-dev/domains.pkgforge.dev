@@ -22,6 +22,8 @@
 //   dayOf, basePacks, joinInputs,   the day pack of feed by the exact join, its summary.json, and the
 //   buildDay, SummaryCounter,       ledger through the day's end: the live filter and delta checked,
 //   checkLedger, rebuildLedger      the filter rebuilt, the delta rebased onto it
+//   eventFactsOf                    the certificate facts of facts.json as buildHour and buildDay read
+//                                   them: the minimum age per key and source bit (DOM-026)
 //   isQuarantined                   the root's mark of a quarantined pack entry (ruling 23)
 // It imports nothing from `node:` and is type-checked as Worker code
 // (tsconfig.worker.json); no test runs it in workerd. packages/compact/node
@@ -44,6 +46,7 @@ export {
 } from "./daily.ts";
 export type { CompactErrorCode } from "./errors.ts";
 export { CompactError } from "./errors.ts";
+export { eventFactsOf } from "./facts.ts";
 export type { CopyPlan, CountFile, PlanFile, PlanFileInput, RangeFile, RangeFileInput, TimePlan } from "./files.ts";
 export { checkPlanFile, codecOf, COUNT_FORMAT, countFile, countsOf, layersOf, PLAN_FORMAT, planFile, RANGE_FORMAT, rangeCeiling, rangeFile, rangesOf, timeCodecFor } from "./files.ts";
 export type { BuiltHour, Hour, HourMissing, HourOptions, HourPlan, SegmentInput, Skipped } from "./hour.ts";

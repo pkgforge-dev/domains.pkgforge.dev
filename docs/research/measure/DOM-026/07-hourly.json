@@ -1,0 +1,1471 @@
+{
+ "at": "2026-10-31T05:48:01.911Z",
+ "earliest": {
+  "newly_registered_domain": 170127254,
+  "newly_registered_fqdn": 179754818,
+  "confirmed_newly_registered_domain": 79233962
+ },
+ "latest": {
+  "newly_registered_domain": 173885061,
+  "newly_registered_fqdn": 182556445,
+  "confirmed_newly_registered_domain": 81068897
+ },
+ "rows": [
+  {
+   "start": "2026-10-22T13:00:50.000Z",
+   "end": "2026-10-22T14:00:00.000Z",
+   "newly_registered_domain": 15072,
+   "newly_registered_fqdn": 16757,
+   "confirmed_newly_registered_domain": 9411
+  },
+  {
+   "start": "2026-10-22T14:00:00.000Z",
+   "end": "2026-10-22T15:00:00.000Z",
+   "newly_registered_domain": 15226,
+   "newly_registered_fqdn": 17066,
+   "confirmed_newly_registered_domain": 9401
+  },
+  {
+   "start": "2026-10-22T15:00:00.000Z",
+   "end": "2026-10-22T16:00:00.000Z",
+   "newly_registered_domain": 14556,
+   "newly_registered_fqdn": 16331,
+   "confirmed_newly_registered_domain": 8947
+  },
+  {
+   "start": "2026-10-22T16:00:00.000Z",
+   "end": "2026-10-22T17:00:00.000Z",
+   "newly_registered_domain": 14879,
+   "newly_registered_fqdn": 16757,
+   "confirmed_newly_registered_domain": 8531
+  },
+  {
+   "start": "2026-10-22T17:00:00.000Z",
+   "end": "2026-10-22T18:00:00.000Z",
+   "newly_registered_domain": 13447,
+   "newly_registered_fqdn": 15255,
+   "confirmed_newly_registered_domain": 8317
+  },
+  {
+   "start": "2026-10-22T18:00:00.000Z",
+   "end": "2026-10-22T19:00:00.000Z",
+   "newly_registered_domain": 12548,
+   "newly_registered_fqdn": 14343,
+   "confirmed_newly_registered_domain": 7976
+  },
+  {
+   "start": "2026-10-22T19:00:00.000Z",
+   "end": "2026-10-22T20:00:00.000Z",
+   "newly_registered_domain": 13335,
+   "newly_registered_fqdn": 14938,
+   "confirmed_newly_registered_domain": 8371
+  },
+  {
+   "start": "2026-10-22T20:00:00.000Z",
+   "end": "2026-10-22T21:00:00.000Z",
+   "newly_registered_domain": 12706,
+   "newly_registered_fqdn": 14104,
+   "confirmed_newly_registered_domain": 7503
+  },
+  {
+   "start": "2026-10-22T21:00:00.000Z",
+   "end": "2026-10-22T22:00:00.000Z",
+   "newly_registered_domain": 11956,
+   "newly_registered_fqdn": 13343,
+   "confirmed_newly_registered_domain": 7092
+  },
+  {
+   "start": "2026-10-22T22:00:00.000Z",
+   "end": "2026-10-22T23:00:00.000Z",
+   "newly_registered_domain": 11054,
+   "newly_registered_fqdn": 12301,
+   "confirmed_newly_registered_domain": 6920
+  },
+  {
+   "start": "2026-10-22T23:00:00.000Z",
+   "end": "2026-10-23T00:00:00.000Z",
+   "newly_registered_domain": 10785,
+   "newly_registered_fqdn": 11998,
+   "confirmed_newly_registered_domain": 5662
+  },
+  {
+   "start": "2026-10-23T00:00:00.000Z",
+   "end": "2026-10-23T01:00:00.000Z",
+   "newly_registered_domain": 25135,
+   "newly_registered_fqdn": 12362,
+   "confirmed_newly_registered_domain": 8481
+  },
+  {
+   "start": "2026-10-23T01:00:00.000Z",
+   "end": "2026-10-23T02:00:00.000Z",
+   "newly_registered_domain": 53277,
+   "newly_registered_fqdn": 11382,
+   "confirmed_newly_registered_domain": 9397
+  },
+  {
+   "start": "2026-10-23T02:00:00.000Z",
+   "end": "2026-10-23T03:00:00.000Z",
+   "newly_registered_domain": 27358,
+   "newly_registered_fqdn": 11845,
+   "confirmed_newly_registered_domain": 8444
+  },
+  {
+   "start": "2026-10-23T03:00:00.000Z",
+   "end": "2026-10-23T04:00:00.000Z",
+   "newly_registered_domain": 11764,
+   "newly_registered_fqdn": 12892,
+   "confirmed_newly_registered_domain": 9724
+  },
+  {
+   "start": "2026-10-23T04:00:00.000Z",
+   "end": "2026-10-23T05:00:00.000Z",
+   "newly_registered_domain": 10801,
+   "newly_registered_fqdn": 11854,
+   "confirmed_newly_registered_domain": 7226
+  },
+  {
+   "start": "2026-10-23T05:00:00.000Z",
+   "end": "2026-10-23T06:00:00.000Z",
+   "newly_registered_domain": 10701,
+   "newly_registered_fqdn": 12055,
+   "confirmed_newly_registered_domain": 5993
+  },
+  {
+   "start": "2026-10-23T06:00:00.000Z",
+   "end": "2026-10-23T07:00:00.000Z",
+   "newly_registered_domain": 12509,
+   "newly_registered_fqdn": 14013,
+   "confirmed_newly_registered_domain": 6182
+  },
+  {
+   "start": "2026-10-23T07:00:00.000Z",
+   "end": "2026-10-23T08:00:00.000Z",
+   "newly_registered_domain": 88737,
+   "newly_registered_fqdn": 14943,
+   "confirmed_newly_registered_domain": 64021
+  },
+  {
+   "start": "2026-10-23T08:00:00.000Z",
+   "end": "2026-10-23T09:00:00.000Z",
+   "newly_registered_domain": 14085,
+   "newly_registered_fqdn": 15674,
+   "confirmed_newly_registered_domain": 7402
+  },
+  {
+   "start": "2026-10-23T09:00:00.000Z",
+   "end": "2026-10-23T10:00:00.000Z",
+   "newly_registered_domain": 14529,
+   "newly_registered_fqdn": 16449,
+   "confirmed_newly_registered_domain": 7425
+  },
+  {
+   "start": "2026-10-23T10:00:00.000Z",
+   "end": "2026-10-23T11:00:00.000Z",
+   "newly_registered_domain": 14787,
+   "newly_registered_fqdn": 17175,
+   "confirmed_newly_registered_domain": 7607
+  },
+  {
+   "start": "2026-10-23T11:00:00.000Z",
+   "end": "2026-10-23T12:00:00.000Z",
+   "newly_registered_domain": 13177,
+   "newly_registered_fqdn": 15860,
+   "confirmed_newly_registered_domain": 7292
+  },
+  {
+   "start": "2026-10-23T12:00:00.000Z",
+   "end": "2026-10-23T13:00:00.000Z",
+   "newly_registered_domain": 15510,
+   "newly_registered_fqdn": 18193,
+   "confirmed_newly_registered_domain": 9308
+  },
+  {
+   "start": "2026-10-23T13:00:00.000Z",
+   "end": "2026-10-23T14:00:00.000Z",
+   "newly_registered_domain": 16891,
+   "newly_registered_fqdn": 18834,
+   "confirmed_newly_registered_domain": 11106
+  },
+  {
+   "start": "2026-10-23T14:00:00.000Z",
+   "end": "2026-10-23T15:00:00.000Z",
+   "newly_registered_domain": 14880,
+   "newly_registered_fqdn": 17762,
+   "confirmed_newly_registered_domain": 8836
+  },
+  {
+   "start": "2026-10-23T15:00:00.000Z",
+   "end": "2026-10-23T16:00:00.000Z",
+   "newly_registered_domain": 15096,
+   "newly_registered_fqdn": 17217,
+   "confirmed_newly_registered_domain": 9162
+  },
+  {
+   "start": "2026-10-23T16:00:00.000Z",
+   "end": "2026-10-23T17:00:00.000Z",
+   "newly_registered_domain": 14841,
+   "newly_registered_fqdn": 16435,
+   "confirmed_newly_registered_domain": 8845
+  },
+  {
+   "start": "2026-10-23T17:00:00.000Z",
+   "end": "2026-10-23T18:00:00.000Z",
+   "newly_registered_domain": 13824,
+   "newly_registered_fqdn": 15483,
+   "confirmed_newly_registered_domain": 8338
+  },
+  {
+   "start": "2026-10-23T18:00:00.000Z",
+   "end": "2026-10-23T19:00:00.000Z",
+   "newly_registered_domain": 13481,
+   "newly_registered_fqdn": 15068,
+   "confirmed_newly_registered_domain": 8032
+  },
+  {
+   "start": "2026-10-23T19:00:00.000Z",
+   "end": "2026-10-23T20:00:00.000Z",
+   "newly_registered_domain": 12972,
+   "newly_registered_fqdn": 14527,
+   "confirmed_newly_registered_domain": 7221
+  },
+  {
+   "start": "2026-10-23T20:00:00.000Z",
+   "end": "2026-10-23T21:00:00.000Z",
+   "newly_registered_domain": 12531,
+   "newly_registered_fqdn": 13977,
+   "confirmed_newly_registered_domain": 6712
+  },
+  {
+   "start": "2026-10-23T21:00:00.000Z",
+   "end": "2026-10-23T22:00:00.000Z",
+   "newly_registered_domain": 12804,
+   "newly_registered_fqdn": 14166,
+   "confirmed_newly_registered_domain": 6116
+  },
+  {
+   "start": "2026-10-23T22:00:00.000Z",
+   "end": "2026-10-23T23:00:00.000Z",
+   "newly_registered_domain": 12166,
+   "newly_registered_fqdn": 13518,
+   "confirmed_newly_registered_domain": 5515
+  },
+  {
+   "start": "2026-10-23T23:00:00.000Z",
+   "end": "2026-10-24T00:00:00.000Z",
+   "newly_registered_domain": 11687,
+   "newly_registered_fqdn": 12696,
+   "confirmed_newly_registered_domain": 4673
+  },
+  {
+   "start": "2026-10-24T00:00:00.000Z",
+   "end": "2026-10-24T01:00:00.000Z",
+   "newly_registered_domain": 16663,
+   "newly_registered_fqdn": 12857,
+   "confirmed_newly_registered_domain": 4609
+  },
+  {
+   "start": "2026-10-24T01:00:00.000Z",
+   "end": "2026-10-24T02:00:00.000Z",
+   "newly_registered_domain": 188671,
+   "newly_registered_fqdn": 10193,
+   "confirmed_newly_registered_domain": 7705
+  },
+  {
+   "start": "2026-10-24T02:00:00.000Z",
+   "end": "2026-10-24T03:00:00.000Z",
+   "newly_registered_domain": 22065,
+   "newly_registered_fqdn": 9929,
+   "confirmed_newly_registered_domain": 3610
+  },
+  {
+   "start": "2026-10-24T03:00:00.000Z",
+   "end": "2026-10-24T04:00:00.000Z",
+   "newly_registered_domain": 10854,
+   "newly_registered_fqdn": 11766,
+   "confirmed_newly_registered_domain": 4606
+  },
+  {
+   "start": "2026-10-24T04:00:00.000Z",
+   "end": "2026-10-24T05:00:00.000Z",
+   "newly_registered_domain": 10419,
+   "newly_registered_fqdn": 11335,
+   "confirmed_newly_registered_domain": 3793
+  },
+  {
+   "start": "2026-10-24T05:00:00.000Z",
+   "end": "2026-10-24T06:00:00.000Z",
+   "newly_registered_domain": 9377,
+   "newly_registered_fqdn": 10617,
+   "confirmed_newly_registered_domain": 3660
+  },
+  {
+   "start": "2026-10-24T06:00:00.000Z",
+   "end": "2026-10-24T07:00:00.000Z",
+   "newly_registered_domain": 80117,
+   "newly_registered_fqdn": 11747,
+   "confirmed_newly_registered_domain": 18925
+  },
+  {
+   "start": "2026-10-24T07:00:00.000Z",
+   "end": "2026-10-24T08:00:00.000Z",
+   "newly_registered_domain": 10946,
+   "newly_registered_fqdn": 12353,
+   "confirmed_newly_registered_domain": 41221
+  },
+  {
+   "start": "2026-10-24T08:00:00.000Z",
+   "end": "2026-10-24T09:00:00.000Z",
+   "newly_registered_domain": 11461,
+   "newly_registered_fqdn": 12780,
+   "confirmed_newly_registered_domain": 5185
+  },
+  {
+   "start": "2026-10-24T09:00:00.000Z",
+   "end": "2026-10-24T10:00:00.000Z",
+   "newly_registered_domain": 11237,
+   "newly_registered_fqdn": 12454,
+   "confirmed_newly_registered_domain": 5188
+  },
+  {
+   "start": "2026-10-24T10:00:00.000Z",
+   "end": "2026-10-24T11:00:00.000Z",
+   "newly_registered_domain": 11959,
+   "newly_registered_fqdn": 13289,
+   "confirmed_newly_registered_domain": 6013
+  },
+  {
+   "start": "2026-10-24T11:00:00.000Z",
+   "end": "2026-10-24T12:00:00.000Z",
+   "newly_registered_domain": 12302,
+   "newly_registered_fqdn": 13984,
+   "confirmed_newly_registered_domain": 5741
+  },
+  {
+   "start": "2026-10-24T12:00:00.000Z",
+   "end": "2026-10-24T13:00:00.000Z",
+   "newly_registered_domain": 11769,
+   "newly_registered_fqdn": 13207,
+   "confirmed_newly_registered_domain": 5659
+  },
+  {
+   "start": "2026-10-24T13:00:00.000Z",
+   "end": "2026-10-24T14:00:00.000Z",
+   "newly_registered_domain": 13057,
+   "newly_registered_fqdn": 14458,
+   "confirmed_newly_registered_domain": 6968
+  },
+  {
+   "start": "2026-10-24T14:00:00.000Z",
+   "end": "2026-10-24T15:00:00.000Z",
+   "newly_registered_domain": 12745,
+   "newly_registered_fqdn": 14231,
+   "confirmed_newly_registered_domain": 7173
+  },
+  {
+   "start": "2026-10-24T15:00:00.000Z",
+   "end": "2026-10-24T16:00:00.000Z",
+   "newly_registered_domain": 13662,
+   "newly_registered_fqdn": 15184,
+   "confirmed_newly_registered_domain": 7492
+  },
+  {
+   "start": "2026-10-24T16:00:00.000Z",
+   "end": "2026-10-24T17:00:00.000Z",
+   "newly_registered_domain": 12566,
+   "newly_registered_fqdn": 14013,
+   "confirmed_newly_registered_domain": 6575
+  },
+  {
+   "start": "2026-10-24T17:00:00.000Z",
+   "end": "2026-10-24T18:00:00.000Z",
+   "newly_registered_domain": 11439,
+   "newly_registered_fqdn": 12718,
+   "confirmed_newly_registered_domain": 5727
+  },
+  {
+   "start": "2026-10-24T18:00:00.000Z",
+   "end": "2026-10-24T19:00:00.000Z",
+   "newly_registered_domain": 12290,
+   "newly_registered_fqdn": 13802,
+   "confirmed_newly_registered_domain": 5978
+  },
+  {
+   "start": "2026-10-24T19:00:00.000Z",
+   "end": "2026-10-24T20:00:00.000Z",
+   "newly_registered_domain": 12760,
+   "newly_registered_fqdn": 14137,
+   "confirmed_newly_registered_domain": 6676
+  },
+  {
+   "start": "2026-10-24T20:00:00.000Z",
+   "end": "2026-10-24T21:00:00.000Z",
+   "newly_registered_domain": 10773,
+   "newly_registered_fqdn": 11937,
+   "confirmed_newly_registered_domain": 5128
+  },
+  {
+   "start": "2026-10-24T21:00:00.000Z",
+   "end": "2026-10-24T22:00:00.000Z",
+   "newly_registered_domain": 9853,
+   "newly_registered_fqdn": 10740,
+   "confirmed_newly_registered_domain": 4224
+  },
+  {
+   "start": "2026-10-24T22:00:00.000Z",
+   "end": "2026-10-24T23:00:00.000Z",
+   "newly_registered_domain": 8874,
+   "newly_registered_fqdn": 9960,
+   "confirmed_newly_registered_domain": 4023
+  },
+  {
+   "start": "2026-10-24T23:00:00.000Z",
+   "end": "2026-10-25T00:00:00.000Z",
+   "newly_registered_domain": 8926,
+   "newly_registered_fqdn": 10649,
+   "confirmed_newly_registered_domain": 3806
+  },
+  {
+   "start": "2026-10-25T00:00:00.000Z",
+   "end": "2026-10-25T01:00:00.000Z",
+   "newly_registered_domain": 20155,
+   "newly_registered_fqdn": 10279,
+   "confirmed_newly_registered_domain": 5285
+  },
+  {
+   "start": "2026-10-25T01:00:00.000Z",
+   "end": "2026-10-25T02:00:00.000Z",
+   "newly_registered_domain": 62254,
+   "newly_registered_fqdn": 11093,
+   "confirmed_newly_registered_domain": 6991
+  },
+  {
+   "start": "2026-10-25T02:00:00.000Z",
+   "end": "2026-10-25T03:00:00.000Z",
+   "newly_registered_domain": 8971,
+   "newly_registered_fqdn": 10003,
+   "confirmed_newly_registered_domain": 5077
+  },
+  {
+   "start": "2026-10-25T03:00:00.000Z",
+   "end": "2026-10-25T04:00:00.000Z",
+   "newly_registered_domain": 9523,
+   "newly_registered_fqdn": 10300,
+   "confirmed_newly_registered_domain": 5369
+  },
+  {
+   "start": "2026-10-25T04:00:00.000Z",
+   "end": "2026-10-25T05:00:00.000Z",
+   "newly_registered_domain": 9542,
+   "newly_registered_fqdn": 10553,
+   "confirmed_newly_registered_domain": 4562
+  },
+  {
+   "start": "2026-10-25T05:00:00.000Z",
+   "end": "2026-10-25T06:00:00.000Z",
+   "newly_registered_domain": 9168,
+   "newly_registered_fqdn": 10332,
+   "confirmed_newly_registered_domain": 4054
+  },
+  {
+   "start": "2026-10-25T06:00:00.000Z",
+   "end": "2026-10-25T07:00:00.000Z",
+   "newly_registered_domain": 10302,
+   "newly_registered_fqdn": 11206,
+   "confirmed_newly_registered_domain": 4588
+  },
+  {
+   "start": "2026-10-25T07:00:00.000Z",
+   "end": "2026-10-25T08:00:00.000Z",
+   "newly_registered_domain": 68736,
+   "newly_registered_fqdn": 12188,
+   "confirmed_newly_registered_domain": 45220
+  },
+  {
+   "start": "2026-10-25T08:00:00.000Z",
+   "end": "2026-10-25T09:00:00.000Z",
+   "newly_registered_domain": 11452,
+   "newly_registered_fqdn": 12545,
+   "confirmed_newly_registered_domain": 5599
+  },
+  {
+   "start": "2026-10-25T09:00:00.000Z",
+   "end": "2026-10-25T10:00:00.000Z",
+   "newly_registered_domain": 11392,
+   "newly_registered_fqdn": 12495,
+   "confirmed_newly_registered_domain": 4921
+  },
+  {
+   "start": "2026-10-25T10:00:00.000Z",
+   "end": "2026-10-25T11:00:00.000Z",
+   "newly_registered_domain": 11248,
+   "newly_registered_fqdn": 12411,
+   "confirmed_newly_registered_domain": 5674
+  },
+  {
+   "start": "2026-10-25T11:00:00.000Z",
+   "end": "2026-10-25T12:00:00.000Z",
+   "newly_registered_domain": 10900,
+   "newly_registered_fqdn": 12485,
+   "confirmed_newly_registered_domain": 5376
+  },
+  {
+   "start": "2026-10-25T12:00:00.000Z",
+   "end": "2026-10-25T13:00:00.000Z",
+   "newly_registered_domain": 11219,
+   "newly_registered_fqdn": 12743,
+   "confirmed_newly_registered_domain": 6014
+  },
+  {
+   "start": "2026-10-25T13:00:00.000Z",
+   "end": "2026-10-25T14:00:00.000Z",
+   "newly_registered_domain": 12081,
+   "newly_registered_fqdn": 13580,
+   "confirmed_newly_registered_domain": 6976
+  },
+  {
+   "start": "2026-10-25T14:00:00.000Z",
+   "end": "2026-10-25T15:00:00.000Z",
+   "newly_registered_domain": 11318,
+   "newly_registered_fqdn": 12983,
+   "confirmed_newly_registered_domain": 6076
+  },
+  {
+   "start": "2026-10-25T15:00:00.000Z",
+   "end": "2026-10-25T16:00:00.000Z",
+   "newly_registered_domain": 10968,
+   "newly_registered_fqdn": 12477,
+   "confirmed_newly_registered_domain": 5795
+  },
+  {
+   "start": "2026-10-25T16:00:00.000Z",
+   "end": "2026-10-25T17:00:00.000Z",
+   "newly_registered_domain": 10973,
+   "newly_registered_fqdn": 12426,
+   "confirmed_newly_registered_domain": 5948
+  },
+  {
+   "start": "2026-10-25T17:00:00.000Z",
+   "end": "2026-10-25T18:00:00.000Z",
+   "newly_registered_domain": 11248,
+   "newly_registered_fqdn": 12594,
+   "confirmed_newly_registered_domain": 6326
+  },
+  {
+   "start": "2026-10-25T18:00:00.000Z",
+   "end": "2026-10-25T19:00:00.000Z",
+   "newly_registered_domain": 11274,
+   "newly_registered_fqdn": 12633,
+   "confirmed_newly_registered_domain": 6038
+  },
+  {
+   "start": "2026-10-25T19:00:00.000Z",
+   "end": "2026-10-25T20:00:00.000Z",
+   "newly_registered_domain": 11558,
+   "newly_registered_fqdn": 12900,
+   "confirmed_newly_registered_domain": 7116
+  },
+  {
+   "start": "2026-10-25T20:00:00.000Z",
+   "end": "2026-10-25T21:00:00.000Z",
+   "newly_registered_domain": 13049,
+   "newly_registered_fqdn": 14218,
+   "confirmed_newly_registered_domain": 7731
+  },
+  {
+   "start": "2026-10-25T21:00:00.000Z",
+   "end": "2026-10-25T22:00:00.000Z",
+   "newly_registered_domain": 11618,
+   "newly_registered_fqdn": 12569,
+   "confirmed_newly_registered_domain": 6530
+  },
+  {
+   "start": "2026-10-25T22:00:00.000Z",
+   "end": "2026-10-25T23:00:00.000Z",
+   "newly_registered_domain": 9818,
+   "newly_registered_fqdn": 10976,
+   "confirmed_newly_registered_domain": 5301
+  },
+  {
+   "start": "2026-10-25T23:00:00.000Z",
+   "end": "2026-10-26T00:00:00.000Z",
+   "newly_registered_domain": 9184,
+   "newly_registered_fqdn": 10034,
+   "confirmed_newly_registered_domain": 4555
+  },
+  {
+   "start": "2026-10-26T00:00:00.000Z",
+   "end": "2026-10-26T01:00:00.000Z",
+   "newly_registered_domain": 14686,
+   "newly_registered_fqdn": 10065,
+   "confirmed_newly_registered_domain": 4281
+  },
+  {
+   "start": "2026-10-26T01:00:00.000Z",
+   "end": "2026-10-26T02:00:00.000Z",
+   "newly_registered_domain": 39642,
+   "newly_registered_fqdn": 10225,
+   "confirmed_newly_registered_domain": 7149
+  },
+  {
+   "start": "2026-10-26T02:00:00.000Z",
+   "end": "2026-10-26T03:00:00.000Z",
+   "newly_registered_domain": 14520,
+   "newly_registered_fqdn": 10105,
+   "confirmed_newly_registered_domain": 7853
+  },
+  {
+   "start": "2026-10-26T03:00:00.000Z",
+   "end": "2026-10-26T04:00:00.000Z",
+   "newly_registered_domain": 9730,
+   "newly_registered_fqdn": 10795,
+   "confirmed_newly_registered_domain": 6373
+  },
+  {
+   "start": "2026-10-26T04:00:00.000Z",
+   "end": "2026-10-26T05:00:00.000Z",
+   "newly_registered_domain": 10238,
+   "newly_registered_fqdn": 11471,
+   "confirmed_newly_registered_domain": 5433
+  },
+  {
+   "start": "2026-10-26T05:00:00.000Z",
+   "end": "2026-10-26T06:00:00.000Z",
+   "newly_registered_domain": 10564,
+   "newly_registered_fqdn": 11650,
+   "confirmed_newly_registered_domain": 5404
+  },
+  {
+   "start": "2026-10-26T06:00:00.000Z",
+   "end": "2026-10-26T07:00:00.000Z",
+   "newly_registered_domain": 64980,
+   "newly_registered_fqdn": 12494,
+   "confirmed_newly_registered_domain": 13847
+  },
+  {
+   "start": "2026-10-26T07:00:00.000Z",
+   "end": "2026-10-26T08:00:00.000Z",
+   "newly_registered_domain": 12380,
+   "newly_registered_fqdn": 14096,
+   "confirmed_newly_registered_domain": 40525
+  },
+  {
+   "start": "2026-10-26T08:00:00.000Z",
+   "end": "2026-10-26T09:00:00.000Z",
+   "newly_registered_domain": 12056,
+   "newly_registered_fqdn": 13341,
+   "confirmed_newly_registered_domain": 6382
+  },
+  {
+   "start": "2026-10-26T09:00:00.000Z",
+   "end": "2026-10-26T10:00:00.000Z",
+   "newly_registered_domain": 12607,
+   "newly_registered_fqdn": 14012,
+   "confirmed_newly_registered_domain": 7614
+  },
+  {
+   "start": "2026-10-26T10:00:00.000Z",
+   "end": "2026-10-26T11:00:00.000Z",
+   "newly_registered_domain": 12982,
+   "newly_registered_fqdn": 14452,
+   "confirmed_newly_registered_domain": 7469
+  },
+  {
+   "start": "2026-10-26T11:00:00.000Z",
+   "end": "2026-10-26T12:00:00.000Z",
+   "newly_registered_domain": 12038,
+   "newly_registered_fqdn": 13672,
+   "confirmed_newly_registered_domain": 7090
+  },
+  {
+   "start": "2026-10-26T12:00:00.000Z",
+   "end": "2026-10-26T13:00:00.000Z",
+   "newly_registered_domain": 13293,
+   "newly_registered_fqdn": 14929,
+   "confirmed_newly_registered_domain": 8102
+  },
+  {
+   "start": "2026-10-26T13:00:00.000Z",
+   "end": "2026-10-26T14:00:00.000Z",
+   "newly_registered_domain": 15307,
+   "newly_registered_fqdn": 17762,
+   "confirmed_newly_registered_domain": 10262
+  },
+  {
+   "start": "2026-10-26T14:00:00.000Z",
+   "end": "2026-10-26T15:00:00.000Z",
+   "newly_registered_domain": 14961,
+   "newly_registered_fqdn": 17395,
+   "confirmed_newly_registered_domain": 10084
+  },
+  {
+   "start": "2026-10-26T15:00:00.000Z",
+   "end": "2026-10-26T16:00:00.000Z",
+   "newly_registered_domain": 14266,
+   "newly_registered_fqdn": 16686,
+   "confirmed_newly_registered_domain": 9312
+  },
+  {
+   "start": "2026-10-26T16:00:00.000Z",
+   "end": "2026-10-26T17:00:00.000Z",
+   "newly_registered_domain": 14000,
+   "newly_registered_fqdn": 16336,
+   "confirmed_newly_registered_domain": 8887
+  },
+  {
+   "start": "2026-10-26T17:00:00.000Z",
+   "end": "2026-10-26T18:00:00.000Z",
+   "newly_registered_domain": 14871,
+   "newly_registered_fqdn": 16806,
+   "confirmed_newly_registered_domain": 9592
+  },
+  {
+   "start": "2026-10-26T18:00:00.000Z",
+   "end": "2026-10-26T19:00:00.000Z",
+   "newly_registered_domain": 14530,
+   "newly_registered_fqdn": 16305,
+   "confirmed_newly_registered_domain": 9483
+  },
+  {
+   "start": "2026-10-26T19:00:00.000Z",
+   "end": "2026-10-26T20:00:00.000Z",
+   "newly_registered_domain": 13669,
+   "newly_registered_fqdn": 15621,
+   "confirmed_newly_registered_domain": 8714
+  },
+  {
+   "start": "2026-10-26T20:00:00.000Z",
+   "end": "2026-10-26T21:00:00.000Z",
+   "newly_registered_domain": 13316,
+   "newly_registered_fqdn": 14828,
+   "confirmed_newly_registered_domain": 7965
+  },
+  {
+   "start": "2026-10-26T21:00:00.000Z",
+   "end": "2026-10-26T22:00:00.000Z",
+   "newly_registered_domain": 12277,
+   "newly_registered_fqdn": 13727,
+   "confirmed_newly_registered_domain": 7048
+  },
+  {
+   "start": "2026-10-26T22:00:00.000Z",
+   "end": "2026-10-26T23:00:00.000Z",
+   "newly_registered_domain": 12151,
+   "newly_registered_fqdn": 13564,
+   "confirmed_newly_registered_domain": 7001
+  },
+  {
+   "start": "2026-10-26T23:00:00.000Z",
+   "end": "2026-10-27T00:00:00.000Z",
+   "newly_registered_domain": 11661,
+   "newly_registered_fqdn": 13022,
+   "confirmed_newly_registered_domain": 6279
+  },
+  {
+   "start": "2026-10-27T00:00:00.000Z",
+   "end": "2026-10-27T01:00:00.000Z",
+   "newly_registered_domain": 29983,
+   "newly_registered_fqdn": 12916,
+   "confirmed_newly_registered_domain": 5865
+  },
+  {
+   "start": "2026-10-27T01:00:00.000Z",
+   "end": "2026-10-27T02:00:00.000Z",
+   "newly_registered_domain": 25628,
+   "newly_registered_fqdn": 12609,
+   "confirmed_newly_registered_domain": 12703
+  },
+  {
+   "start": "2026-10-27T02:00:00.000Z",
+   "end": "2026-10-27T03:00:00.000Z",
+   "newly_registered_domain": 43799,
+   "newly_registered_fqdn": 12383,
+   "confirmed_newly_registered_domain": 9838
+  },
+  {
+   "start": "2026-10-27T03:00:00.000Z",
+   "end": "2026-10-27T04:00:00.000Z",
+   "newly_registered_domain": 10889,
+   "newly_registered_fqdn": 12125,
+   "confirmed_newly_registered_domain": 8687
+  },
+  {
+   "start": "2026-10-27T04:00:00.000Z",
+   "end": "2026-10-27T05:00:00.000Z",
+   "newly_registered_domain": 10534,
+   "newly_registered_fqdn": 11917,
+   "confirmed_newly_registered_domain": 6964
+  },
+  {
+   "start": "2026-10-27T05:00:00.000Z",
+   "end": "2026-10-27T06:00:00.000Z",
+   "newly_registered_domain": 10085,
+   "newly_registered_fqdn": 11667,
+   "confirmed_newly_registered_domain": 5596
+  },
+  {
+   "start": "2026-10-27T06:00:00.000Z",
+   "end": "2026-10-27T07:00:00.000Z",
+   "newly_registered_domain": 11911,
+   "newly_registered_fqdn": 13538,
+   "confirmed_newly_registered_domain": 6355
+  },
+  {
+   "start": "2026-10-27T07:00:00.000Z",
+   "end": "2026-10-27T08:00:00.000Z",
+   "newly_registered_domain": 90432,
+   "newly_registered_fqdn": 14289,
+   "confirmed_newly_registered_domain": 67596
+  },
+  {
+   "start": "2026-10-27T08:00:00.000Z",
+   "end": "2026-10-27T09:00:00.000Z",
+   "newly_registered_domain": 12730,
+   "newly_registered_fqdn": 14366,
+   "confirmed_newly_registered_domain": 7488
+  },
+  {
+   "start": "2026-10-27T09:00:00.000Z",
+   "end": "2026-10-27T10:00:00.000Z",
+   "newly_registered_domain": 12422,
+   "newly_registered_fqdn": 13871,
+   "confirmed_newly_registered_domain": 6947
+  },
+  {
+   "start": "2026-10-27T10:00:00.000Z",
+   "end": "2026-10-27T11:00:00.000Z",
+   "newly_registered_domain": 12821,
+   "newly_registered_fqdn": 14373,
+   "confirmed_newly_registered_domain": 7589
+  },
+  {
+   "start": "2026-10-27T11:00:00.000Z",
+   "end": "2026-10-27T12:00:00.000Z",
+   "newly_registered_domain": 12098,
+   "newly_registered_fqdn": 13726,
+   "confirmed_newly_registered_domain": 7350
+  },
+  {
+   "start": "2026-10-27T12:00:00.000Z",
+   "end": "2026-10-27T13:00:00.000Z",
+   "newly_registered_domain": 12989,
+   "newly_registered_fqdn": 15011,
+   "confirmed_newly_registered_domain": 8592
+  },
+  {
+   "start": "2026-10-27T13:00:00.000Z",
+   "end": "2026-10-27T14:00:00.000Z",
+   "newly_registered_domain": 14723,
+   "newly_registered_fqdn": 17167,
+   "confirmed_newly_registered_domain": 10153
+  },
+  {
+   "start": "2026-10-27T14:00:00.000Z",
+   "end": "2026-10-27T15:00:00.000Z",
+   "newly_registered_domain": 15067,
+   "newly_registered_fqdn": 16628,
+   "confirmed_newly_registered_domain": 9826
+  },
+  {
+   "start": "2026-10-27T15:00:00.000Z",
+   "end": "2026-10-27T16:00:00.000Z",
+   "newly_registered_domain": 14465,
+   "newly_registered_fqdn": 16500,
+   "confirmed_newly_registered_domain": 9515
+  },
+  {
+   "start": "2026-10-27T16:00:00.000Z",
+   "end": "2026-10-27T17:00:00.000Z",
+   "newly_registered_domain": 13329,
+   "newly_registered_fqdn": 15204,
+   "confirmed_newly_registered_domain": 8851
+  },
+  {
+   "start": "2026-10-27T17:00:00.000Z",
+   "end": "2026-10-27T18:00:00.000Z",
+   "newly_registered_domain": 13916,
+   "newly_registered_fqdn": 16068,
+   "confirmed_newly_registered_domain": 9135
+  },
+  {
+   "start": "2026-10-27T18:00:00.000Z",
+   "end": "2026-10-27T19:00:00.000Z",
+   "newly_registered_domain": 12782,
+   "newly_registered_fqdn": 14770,
+   "confirmed_newly_registered_domain": 7939
+  },
+  {
+   "start": "2026-10-27T19:00:00.000Z",
+   "end": "2026-10-27T20:00:00.000Z",
+   "newly_registered_domain": 13048,
+   "newly_registered_fqdn": 14888,
+   "confirmed_newly_registered_domain": 7485
+  },
+  {
+   "start": "2026-10-27T20:00:00.000Z",
+   "end": "2026-10-27T21:00:00.000Z",
+   "newly_registered_domain": 12749,
+   "newly_registered_fqdn": 14433,
+   "confirmed_newly_registered_domain": 7293
+  },
+  {
+   "start": "2026-10-27T21:00:00.000Z",
+   "end": "2026-10-27T22:00:00.000Z",
+   "newly_registered_domain": 11427,
+   "newly_registered_fqdn": 12974,
+   "confirmed_newly_registered_domain": 6286
+  },
+  {
+   "start": "2026-10-27T22:00:00.000Z",
+   "end": "2026-10-27T23:00:00.000Z",
+   "newly_registered_domain": 10198,
+   "newly_registered_fqdn": 11499,
+   "confirmed_newly_registered_domain": 5137
+  },
+  {
+   "start": "2026-10-27T23:00:00.000Z",
+   "end": "2026-10-28T00:00:00.000Z",
+   "newly_registered_domain": 9508,
+   "newly_registered_fqdn": 10702,
+   "confirmed_newly_registered_domain": 4857
+  },
+  {
+   "start": "2026-10-28T00:00:00.000Z",
+   "end": "2026-10-28T01:00:00.000Z",
+   "newly_registered_domain": 23756,
+   "newly_registered_fqdn": 11025,
+   "confirmed_newly_registered_domain": 7991
+  },
+  {
+   "start": "2026-10-28T01:00:00.000Z",
+   "end": "2026-10-28T02:00:00.000Z",
+   "newly_registered_domain": 60213,
+   "newly_registered_fqdn": 10844,
+   "confirmed_newly_registered_domain": 8500
+  },
+  {
+   "start": "2026-10-28T02:00:00.000Z",
+   "end": "2026-10-28T03:00:00.000Z",
+   "newly_registered_domain": 34419,
+   "newly_registered_fqdn": 10501,
+   "confirmed_newly_registered_domain": 7889
+  },
+  {
+   "start": "2026-10-28T03:00:00.000Z",
+   "end": "2026-10-28T04:00:00.000Z",
+   "newly_registered_domain": 9380,
+   "newly_registered_fqdn": 10525,
+   "confirmed_newly_registered_domain": 7903
+  },
+  {
+   "start": "2026-10-28T04:00:00.000Z",
+   "end": "2026-10-28T05:00:00.000Z",
+   "newly_registered_domain": 9328,
+   "newly_registered_fqdn": 10448,
+   "confirmed_newly_registered_domain": 7600
+  },
+  {
+   "start": "2026-10-28T05:00:00.000Z",
+   "end": "2026-10-28T06:00:00.000Z",
+   "newly_registered_domain": 9223,
+   "newly_registered_fqdn": 10545,
+   "confirmed_newly_registered_domain": 7865
+  },
+  {
+   "start": "2026-10-28T06:00:00.000Z",
+   "end": "2026-10-28T07:00:00.000Z",
+   "newly_registered_domain": 10701,
+   "newly_registered_fqdn": 12248,
+   "confirmed_newly_registered_domain": 9282
+  },
+  {
+   "start": "2026-10-28T07:00:00.000Z",
+   "end": "2026-10-28T08:00:00.000Z",
+   "newly_registered_domain": 11466,
+   "newly_registered_fqdn": 13151,
+   "confirmed_newly_registered_domain": 9164
+  },
+  {
+   "start": "2026-10-28T08:00:00.000Z",
+   "end": "2026-10-28T09:00:00.000Z",
+   "newly_registered_domain": 12236,
+   "newly_registered_fqdn": 14007,
+   "confirmed_newly_registered_domain": 7873
+  },
+  {
+   "start": "2026-10-28T09:00:00.000Z",
+   "end": "2026-10-28T10:00:00.000Z",
+   "newly_registered_domain": 13286,
+   "newly_registered_fqdn": 14960,
+   "confirmed_newly_registered_domain": 8347
+  },
+  {
+   "start": "2026-10-28T10:00:00.000Z",
+   "end": "2026-10-28T11:00:00.000Z",
+   "newly_registered_domain": 13767,
+   "newly_registered_fqdn": 15431,
+   "confirmed_newly_registered_domain": 8102
+  },
+  {
+   "start": "2026-10-28T11:00:00.000Z",
+   "end": "2026-10-28T12:00:00.000Z",
+   "newly_registered_domain": 13446,
+   "newly_registered_fqdn": 15279,
+   "confirmed_newly_registered_domain": 7795
+  },
+  {
+   "start": "2026-10-28T12:00:00.000Z",
+   "end": "2026-10-28T13:00:00.000Z",
+   "newly_registered_domain": 14320,
+   "newly_registered_fqdn": 16066,
+   "confirmed_newly_registered_domain": 8368
+  },
+  {
+   "start": "2026-10-28T13:00:00.000Z",
+   "end": "2026-10-28T14:00:00.000Z",
+   "newly_registered_domain": 16691,
+   "newly_registered_fqdn": 18544,
+   "confirmed_newly_registered_domain": 10249
+  },
+  {
+   "start": "2026-10-28T14:00:00.000Z",
+   "end": "2026-10-28T15:00:00.000Z",
+   "newly_registered_domain": 15230,
+   "newly_registered_fqdn": 16961,
+   "confirmed_newly_registered_domain": 9371
+  },
+  {
+   "start": "2026-10-28T15:00:00.000Z",
+   "end": "2026-10-28T16:00:00.000Z",
+   "newly_registered_domain": 14055,
+   "newly_registered_fqdn": 15798,
+   "confirmed_newly_registered_domain": 8224
+  },
+  {
+   "start": "2026-10-28T16:00:00.000Z",
+   "end": "2026-10-28T17:00:00.000Z",
+   "newly_registered_domain": 14396,
+   "newly_registered_fqdn": 16278,
+   "confirmed_newly_registered_domain": 8840
+  },
+  {
+   "start": "2026-10-28T17:00:00.000Z",
+   "end": "2026-10-28T18:00:00.000Z",
+   "newly_registered_domain": 14396,
+   "newly_registered_fqdn": 16275,
+   "confirmed_newly_registered_domain": 8347
+  },
+  {
+   "start": "2026-10-28T18:00:00.000Z",
+   "end": "2026-10-28T19:00:00.000Z",
+   "newly_registered_domain": 13553,
+   "newly_registered_fqdn": 15457,
+   "confirmed_newly_registered_domain": 8223
+  },
+  {
+   "start": "2026-10-28T19:00:00.000Z",
+   "end": "2026-10-28T20:00:00.000Z",
+   "newly_registered_domain": 13445,
+   "newly_registered_fqdn": 15218,
+   "confirmed_newly_registered_domain": 7927
+  },
+  {
+   "start": "2026-10-28T20:00:00.000Z",
+   "end": "2026-10-28T21:00:00.000Z",
+   "newly_registered_domain": 12629,
+   "newly_registered_fqdn": 14336,
+   "confirmed_newly_registered_domain": 7492
+  },
+  {
+   "start": "2026-10-28T21:00:00.000Z",
+   "end": "2026-10-28T22:00:00.000Z",
+   "newly_registered_domain": 12399,
+   "newly_registered_fqdn": 14093,
+   "confirmed_newly_registered_domain": 7279
+  },
+  {
+   "start": "2026-10-28T22:00:00.000Z",
+   "end": "2026-10-28T23:00:00.000Z",
+   "newly_registered_domain": 11244,
+   "newly_registered_fqdn": 12752,
+   "confirmed_newly_registered_domain": 5887
+  },
+  {
+   "start": "2026-10-28T23:00:00.000Z",
+   "end": "2026-10-29T00:00:00.000Z",
+   "newly_registered_domain": 11261,
+   "newly_registered_fqdn": 12578,
+   "confirmed_newly_registered_domain": 5490
+  },
+  {
+   "start": "2026-10-29T00:00:00.000Z",
+   "end": "2026-10-29T01:00:00.000Z",
+   "newly_registered_domain": 20504,
+   "newly_registered_fqdn": 11757,
+   "confirmed_newly_registered_domain": 5399
+  },
+  {
+   "start": "2026-10-29T01:00:00.000Z",
+   "end": "2026-10-29T02:00:00.000Z",
+   "newly_registered_domain": 51478,
+   "newly_registered_fqdn": 11200,
+   "confirmed_newly_registered_domain": 12428
+  },
+  {
+   "start": "2026-10-29T02:00:00.000Z",
+   "end": "2026-10-29T03:00:00.000Z",
+   "newly_registered_domain": 27922,
+   "newly_registered_fqdn": 10958,
+   "confirmed_newly_registered_domain": 7222
+  },
+  {
+   "start": "2026-10-29T03:00:00.000Z",
+   "end": "2026-10-29T04:00:00.000Z",
+   "newly_registered_domain": 10396,
+   "newly_registered_fqdn": 11900,
+   "confirmed_newly_registered_domain": 5247
+  },
+  {
+   "start": "2026-10-29T04:00:00.000Z",
+   "end": "2026-10-29T05:00:00.000Z",
+   "newly_registered_domain": 10967,
+   "newly_registered_fqdn": 12294,
+   "confirmed_newly_registered_domain": 5041
+  },
+  {
+   "start": "2026-10-29T05:00:00.000Z",
+   "end": "2026-10-29T06:00:00.000Z",
+   "newly_registered_domain": 10835,
+   "newly_registered_fqdn": 12115,
+   "confirmed_newly_registered_domain": 4945
+  },
+  {
+   "start": "2026-10-29T06:00:00.000Z",
+   "end": "2026-10-29T07:00:00.000Z",
+   "newly_registered_domain": 11108,
+   "newly_registered_fqdn": 12654,
+   "confirmed_newly_registered_domain": 5145
+  },
+  {
+   "start": "2026-10-29T07:00:00.000Z",
+   "end": "2026-10-29T08:00:00.000Z",
+   "newly_registered_domain": 151281,
+   "newly_registered_fqdn": 12249,
+   "confirmed_newly_registered_domain": 34456
+  },
+  {
+   "start": "2026-10-29T08:00:00.000Z",
+   "end": "2026-10-29T09:00:00.000Z",
+   "newly_registered_domain": 11270,
+   "newly_registered_fqdn": 12641,
+   "confirmed_newly_registered_domain": 30278
+  },
+  {
+   "start": "2026-10-29T09:00:00.000Z",
+   "end": "2026-10-29T10:00:00.000Z",
+   "newly_registered_domain": 13030,
+   "newly_registered_fqdn": 14314,
+   "confirmed_newly_registered_domain": 7338
+  },
+  {
+   "start": "2026-10-29T10:00:00.000Z",
+   "end": "2026-10-29T11:00:00.000Z",
+   "newly_registered_domain": 12384,
+   "newly_registered_fqdn": 14066,
+   "confirmed_newly_registered_domain": 6518
+  },
+  {
+   "start": "2026-10-29T11:00:00.000Z",
+   "end": "2026-10-29T12:00:00.000Z",
+   "newly_registered_domain": 12383,
+   "newly_registered_fqdn": 13926,
+   "confirmed_newly_registered_domain": 6973
+  },
+  {
+   "start": "2026-10-29T12:00:00.000Z",
+   "end": "2026-10-29T13:00:00.000Z",
+   "newly_registered_domain": 12907,
+   "newly_registered_fqdn": 14746,
+   "confirmed_newly_registered_domain": 7407
+  },
+  {
+   "start": "2026-10-29T13:00:00.000Z",
+   "end": "2026-10-29T14:00:00.000Z",
+   "newly_registered_domain": 14435,
+   "newly_registered_fqdn": 16288,
+   "confirmed_newly_registered_domain": 9304
+  },
+  {
+   "start": "2026-10-29T14:00:00.000Z",
+   "end": "2026-10-29T15:00:00.000Z",
+   "newly_registered_domain": 14134,
+   "newly_registered_fqdn": 15923,
+   "confirmed_newly_registered_domain": 8804
+  },
+  {
+   "start": "2026-10-29T15:00:00.000Z",
+   "end": "2026-10-29T16:00:00.000Z",
+   "newly_registered_domain": 13984,
+   "newly_registered_fqdn": 15837,
+   "confirmed_newly_registered_domain": 8938
+  },
+  {
+   "start": "2026-10-29T16:00:00.000Z",
+   "end": "2026-10-29T17:00:00.000Z",
+   "newly_registered_domain": 13899,
+   "newly_registered_fqdn": 15831,
+   "confirmed_newly_registered_domain": 8777
+  },
+  {
+   "start": "2026-10-29T17:00:00.000Z",
+   "end": "2026-10-29T18:00:00.000Z",
+   "newly_registered_domain": 13405,
+   "newly_registered_fqdn": 15286,
+   "confirmed_newly_registered_domain": 8284
+  },
+  {
+   "start": "2026-10-29T18:00:00.000Z",
+   "end": "2026-10-29T19:00:00.000Z",
+   "newly_registered_domain": 13788,
+   "newly_registered_fqdn": 15492,
+   "confirmed_newly_registered_domain": 8488
+  },
+  {
+   "start": "2026-10-29T19:00:00.000Z",
+   "end": "2026-10-29T20:00:00.000Z",
+   "newly_registered_domain": 13170,
+   "newly_registered_fqdn": 14958,
+   "confirmed_newly_registered_domain": 8349
+  },
+  {
+   "start": "2026-10-29T20:00:00.000Z",
+   "end": "2026-10-29T21:00:00.000Z",
+   "newly_registered_domain": 12932,
+   "newly_registered_fqdn": 14655,
+   "confirmed_newly_registered_domain": 7747
+  },
+  {
+   "start": "2026-10-29T21:00:00.000Z",
+   "end": "2026-10-29T22:00:00.000Z",
+   "newly_registered_domain": 13092,
+   "newly_registered_fqdn": 14880,
+   "confirmed_newly_registered_domain": 7319
+  },
+  {
+   "start": "2026-10-29T22:00:00.000Z",
+   "end": "2026-10-29T23:00:00.000Z",
+   "newly_registered_domain": 12061,
+   "newly_registered_fqdn": 13596,
+   "confirmed_newly_registered_domain": 6476
+  },
+  {
+   "start": "2026-10-29T23:00:00.000Z",
+   "end": "2026-10-30T00:00:00.000Z",
+   "newly_registered_domain": 10847,
+   "newly_registered_fqdn": 12166,
+   "confirmed_newly_registered_domain": 5697
+  },
+  {
+   "start": "2026-10-30T00:00:00.000Z",
+   "end": "2026-10-30T01:00:00.000Z",
+   "newly_registered_domain": 31889,
+   "newly_registered_fqdn": 11648,
+   "confirmed_newly_registered_domain": 5636
+  },
+  {
+   "start": "2026-10-30T01:00:00.000Z",
+   "end": "2026-10-30T02:00:00.000Z",
+   "newly_registered_domain": 25629,
+   "newly_registered_fqdn": 12299,
+   "confirmed_newly_registered_domain": 9140
+  },
+  {
+   "start": "2026-10-30T02:00:00.000Z",
+   "end": "2026-10-30T03:00:00.000Z",
+   "newly_registered_domain": 30385,
+   "newly_registered_fqdn": 11678,
+   "confirmed_newly_registered_domain": 9027
+  },
+  {
+   "start": "2026-10-30T03:00:00.000Z",
+   "end": "2026-10-30T04:00:00.000Z",
+   "newly_registered_domain": 11748,
+   "newly_registered_fqdn": 12243,
+   "confirmed_newly_registered_domain": 7143
+  },
+  {
+   "start": "2026-10-30T04:00:00.000Z",
+   "end": "2026-10-30T05:00:00.000Z",
+   "newly_registered_domain": 11409,
+   "newly_registered_fqdn": 12361,
+   "confirmed_newly_registered_domain": 6122
+  },
+  {
+   "start": "2026-10-30T05:00:00.000Z",
+   "end": "2026-10-30T06:00:00.000Z",
+   "newly_registered_domain": 11479,
+   "newly_registered_fqdn": 12757,
+   "confirmed_newly_registered_domain": 5736
+  },
+  {
+   "start": "2026-10-30T06:00:00.000Z",
+   "end": "2026-10-30T07:00:00.000Z",
+   "newly_registered_domain": 11218,
+   "newly_registered_fqdn": 12383,
+   "confirmed_newly_registered_domain": 5966
+  },
+  {
+   "start": "2026-10-30T07:00:00.000Z",
+   "end": "2026-10-30T08:00:00.000Z",
+   "newly_registered_domain": 85171,
+   "newly_registered_fqdn": 11669,
+   "confirmed_newly_registered_domain": 61781
+  },
+  {
+   "start": "2026-10-30T08:00:00.000Z",
+   "end": "2026-10-30T09:00:00.000Z",
+   "newly_registered_domain": 12272,
+   "newly_registered_fqdn": 13200,
+   "confirmed_newly_registered_domain": 6915
+  },
+  {
+   "start": "2026-10-30T09:00:00.000Z",
+   "end": "2026-10-30T10:00:00.000Z",
+   "newly_registered_domain": 12704,
+   "newly_registered_fqdn": 13503,
+   "confirmed_newly_registered_domain": 6800
+  },
+  {
+   "start": "2026-10-30T10:00:00.000Z",
+   "end": "2026-10-30T11:00:00.000Z",
+   "newly_registered_domain": 12388,
+   "newly_registered_fqdn": 13488,
+   "confirmed_newly_registered_domain": 6563
+  },
+  {
+   "start": "2026-10-30T11:00:00.000Z",
+   "end": "2026-10-30T12:00:00.000Z",
+   "newly_registered_domain": 12162,
+   "newly_registered_fqdn": 13336,
+   "confirmed_newly_registered_domain": 6842
+  },
+  {
+   "start": "2026-10-30T12:00:00.000Z",
+   "end": "2026-10-30T13:00:00.000Z",
+   "newly_registered_domain": 13312,
+   "newly_registered_fqdn": 14721,
+   "confirmed_newly_registered_domain": 7833
+  },
+  {
+   "start": "2026-10-30T13:00:00.000Z",
+   "end": "2026-10-30T14:00:00.000Z",
+   "newly_registered_domain": 12647,
+   "newly_registered_fqdn": 13989,
+   "confirmed_newly_registered_domain": 7821
+  },
+  {
+   "start": "2026-10-30T14:00:00.000Z",
+   "end": "2026-10-30T15:00:00.000Z",
+   "newly_registered_domain": 13158,
+   "newly_registered_fqdn": 14617,
+   "confirmed_newly_registered_domain": 8155
+  },
+  {
+   "start": "2026-10-30T15:00:00.000Z",
+   "end": "2026-10-30T16:00:00.000Z",
+   "newly_registered_domain": 14000,
+   "newly_registered_fqdn": 15633,
+   "confirmed_newly_registered_domain": 9086
+  },
+  {
+   "start": "2026-10-30T16:00:00.000Z",
+   "end": "2026-10-30T17:00:00.000Z",
+   "newly_registered_domain": 14221,
+   "newly_registered_fqdn": 15856,
+   "confirmed_newly_registered_domain": 8893
+  },
+  {
+   "start": "2026-10-30T17:00:00.000Z",
+   "end": "2026-10-30T18:00:00.000Z",
+   "newly_registered_domain": 11973,
+   "newly_registered_fqdn": 13523,
+   "confirmed_newly_registered_domain": 7029
+  },
+  {
+   "start": "2026-10-30T18:00:00.000Z",
+   "end": "2026-10-30T19:00:00.000Z",
+   "newly_registered_domain": 11516,
+   "newly_registered_fqdn": 12979,
+   "confirmed_newly_registered_domain": 7003
+  },
+  {
+   "start": "2026-10-30T19:00:00.000Z",
+   "end": "2026-10-30T20:00:00.000Z",
+   "newly_registered_domain": 11404,
+   "newly_registered_fqdn": 12971,
+   "confirmed_newly_registered_domain": 6091
+  },
+  {
+   "start": "2026-10-30T20:00:00.000Z",
+   "end": "2026-10-30T21:00:00.000Z",
+   "newly_registered_domain": 11493,
+   "newly_registered_fqdn": 12758,
+   "confirmed_newly_registered_domain": 5805
+  },
+  {
+   "start": "2026-10-30T21:00:00.000Z",
+   "end": "2026-10-30T22:00:00.000Z",
+   "newly_registered_domain": 10484,
+   "newly_registered_fqdn": 11695,
+   "confirmed_newly_registered_domain": 5324
+  },
+  {
+   "start": "2026-10-30T22:00:00.000Z",
+   "end": "2026-10-30T23:00:00.000Z",
+   "newly_registered_domain": 10196,
+   "newly_registered_fqdn": 11435,
+   "confirmed_newly_registered_domain": 5257
+  },
+  {
+   "start": "2026-10-30T23:00:00.000Z",
+   "end": "2026-10-31T00:00:00.000Z",
+   "newly_registered_domain": 9269,
+   "newly_registered_fqdn": 10499,
+   "confirmed_newly_registered_domain": 4236
+  },
+  {
+   "start": "2026-10-31T00:00:00.000Z",
+   "end": "2026-10-31T01:00:00.000Z",
+   "newly_registered_domain": 16569,
+   "newly_registered_fqdn": 9585,
+   "confirmed_newly_registered_domain": 6107
+  },
+  {
+   "start": "2026-10-31T01:00:00.000Z",
+   "end": "2026-10-31T02:00:00.000Z",
+   "newly_registered_domain": 28979,
+   "newly_registered_fqdn": 9200,
+   "confirmed_newly_registered_domain": 5965
+  },
+  {
+   "start": "2026-10-31T02:00:00.000Z",
+   "end": "2026-10-31T03:00:00.000Z",
+   "newly_registered_domain": 36658,
+   "newly_registered_fqdn": 10216,
+   "confirmed_newly_registered_domain": 7569
+  },
+  {
+   "start": "2026-10-31T03:00:00.000Z",
+   "end": "2026-10-31T04:00:00.000Z",
+   "newly_registered_domain": 9798,
+   "newly_registered_fqdn": 10927,
+   "confirmed_newly_registered_domain": 7929
+  },
+  {
+   "start": "2026-10-31T04:00:00.000Z",
+   "end": "2026-10-31T05:00:00.000Z",
+   "newly_registered_domain": 9289,
+   "newly_registered_fqdn": 10346,
+   "confirmed_newly_registered_domain": 4702
+  }
+ ]
+}

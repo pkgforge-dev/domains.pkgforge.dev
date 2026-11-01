@@ -24,6 +24,14 @@
 // day that the root marks quarantined (ruling 23) is no input of the join: its
 // names are served, never as new.
 //
+// The facts. A domain record holds no certificate age; DayInput.facts is the
+// lookup of the facts.json of the day's segments, or of the domains day pack
+// that carries their merge (eventFactsOf of facts.ts; DOM-026), and each row's
+// record goes to buildFeedDay with its key's facts, so an old certificate
+// makes the row suspect from the day's own events. The carry of the hour rows'
+// suspect bits stays beside it: a row suspect in an hour stays suspect in its
+// day, the conservative reading.
+//
 // The layer summary.json of the day pack (docs/format.md section 16): new
 // registrable domains a suffix, and a source, as GET /v1/suffixes of DOM-033
 // sums them over the days of a window.
@@ -40,7 +48,7 @@
 //
 // It imports nothing from `node:` and is type-checked as Worker code
 // (tsconfig.worker.json); no test runs it in workerd.
-import { buildFeedDay, type CarryStats, type FeedPack, newCarryStats, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
+import { buildFeedDay, type CarryStats, type DomainEvent, type EventFacts, type FeedPack, newCarryStats, type SourceRowLike, sourceTable, writeFeedPack } from "@domains/feed";
 import { ledgerFilterTag, tierTag } from "@domains/ghcr";
 import { BloomFilter, buildFilter, type ExactStats, exactNew, HashDelta, newExactStats, ProvisionalFilter } from "@domains/ledger";
 import { fromKey } from "@domains/names";
@@ -210,6 +218,9 @@ export interface DayInput {
   readonly base: readonly PackReader<DomainRecord>[];
   // The rows of the day's hour packs of feed, merged by key (mergePacks with FEED_CODEC).
   readonly carry?: AsyncIterable<FeedRecord> | Iterable<FeedRecord>;
+  // The facts of a key that its record does not hold (eventFactsOf of
+  // facts.ts), or undefined for none. The exact join does not read them.
+  readonly facts?: (key: string) => EventFacts | undefined;
   readonly registry: readonly SourceRowLike[];
   readonly compress: Compress;
   readonly sink: PackSink;
@@ -231,6 +242,7 @@ export async function buildDay(input: DayInput): Promise<BuiltDay> {
   for (const [i, r] of input.base.entries()) {
     if (r.index.header.dataset !== DATASET_DOMAINS) throw new CompactError("usage", `buildDay: earlier pack ${i} is dataset ${r.index.header.dataset}, not ${DATASET_DOMAINS} (domains)`);
   }
+  if (input.facts !== undefined && typeof input.facts !== "function") throw new CompactError("usage", "buildDay: facts is not a function of a key");
   const table = sourceTable(input.registry);
   const window = { t0: input.day.t0, t1: input.day.t1 };
   const exact = newExactStats();
@@ -238,9 +250,16 @@ export async function buildDay(input: DayInput): Promise<BuiltDay> {
   for await (const r of exactNew(input.records(), input.base, { since: input.day.t0, precision: table.precision, stats: exact })) keys.push(r.key);
   const carry = newCarryStats();
   const counter = new SummaryCounter(input.day, table.id);
+  const factsOf = input.facts;
   let rows = 0;
+  async function* events(): AsyncGenerator<DomainEvent> {
+    for await (const r of input.records()) {
+      const facts = factsOf?.(r.key);
+      yield facts === undefined ? r : { ...r, facts };
+    }
+  }
   async function* counted(): AsyncGenerator<FeedRecord> {
-    const built = buildFeedDay(input.records(), keys, { table, window, ...(input.carry === undefined ? {} : { carry: input.carry }), carryStats: carry });
+    const built = buildFeedDay(factsOf === undefined ? input.records() : events(), keys, { table, window, ...(input.carry === undefined ? {} : { carry: input.carry }), carryStats: carry });
     for await (const row of built) {
       counter.add(row);
       rows += 1;

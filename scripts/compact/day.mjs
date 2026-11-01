@@ -4,23 +4,29 @@
 //
 // The root is root:latest (or --ref), read with no credential, or a root.json
 // file (--root). The packs are read from --inputs DIR (DIR/<tag>/idx,
-// part.NNN, as `oras pull` names a pack's layers), each index held to the
-// digest the root names, or from GHCR with no credential, each blob by its
-// digest (openInputs of scripts/compact/range.mjs).
+// part.NNN, as `oras pull` names a pack's layers, and a segment's
+// manifest.json, as `oras manifest fetch` prints it, with its facts.json),
+// each index held to the digest the root names, or from GHCR with no
+// credential, each blob by its digest (openInputs of
+// scripts/compact/range.mjs).
 //
 //   1. domains-d-DAY: planTier of packages/compact for the day of `domains`.
 //      Ready: the inputs (the hour packs and segments of the day, THC's day
 //      segment among them) merged in one process (mergeSpan), held to them by
 //      the second pass (checkMerged), written to --out/domains with
-//      manifest.json and blobs.json. Present: the live pack is read. Wait:
-//      exit 3, nothing is written. Skip (a day every source lacks, ruling 24):
-//      exit 0, nothing is written.
+//      manifest.json and blobs.json. The facts.json of each segment input
+//      whose manifest names one (see the facts, below) are merged into the
+//      pack's own layer facts.json, every key of it a key of the pack. Present:
+//      the live pack is read. Wait: exit 3, nothing is written. Skip (a day
+//      every source lacks, ruling 24): exit 0, nothing is written.
 //   2. feed-d-DAY: the exact join (exactNew of @domains/ledger, `since` the
 //      day's start and the precision of each source) of the day's records
 //      against every live domains pack that ends by the day's start; a pack
 //      the root marks quarantined is no input of the join (ruling 23). The rows
-//      (buildFeedDay of @domains/feed) take the suspect bit and its reasons from
-//      the day's hour packs of feed, merged by key. Written with its time copy
+//      (buildFeedDay of @domains/feed) take each record's certificate facts
+//      (the segments' merge, or, when the domains day pack is live, its own
+//      facts.json), and the suspect bit and its reasons from the day's hour
+//      packs of feed, merged by key. Written with its time copy
 //      (writeFeedPack) and the layer summary.json (docs/format.md section 16)
 //      to --out/feed, with manifest.json and blobs.json. The pack replaces
 //      every live feed pack of the day (planTier of feed); it does not wait on
@@ -46,9 +52,10 @@
 // manifest GHCR does not give is a fault, exit 1.
 // It writes --out/day.json (domains.compact-day.v1): every tag written, its
 // manifest digest, the manifests it replaces, and the counts of the join, the
-// carry, the summary and the ledger. It runs no aggregateToDomains: THC's day
-// enters `domains` as the domains segment its adapter writes (DOM-029). It
-// pushes nothing. The workflow, .github/workflows/compact-daily.yml, verifies
+// carry, the summary, the facts read and the ledger. It runs no
+// aggregateToDomains: THC's day enters `domains` as the domains segment its
+// adapter writes (DOM-029). It pushes nothing. The workflow,
+// .github/workflows/compact-daily.yml, verifies
 // each pack this script wrote, then pushes it, and promotes the packs pushed
 // or found present. Its job push pushes the day's
 // ledger filter when the day's domains pack verified and pushed in the run,
@@ -57,19 +64,34 @@
 // `scripts/state/move.mjs ledger-delta --onto` the newest filter it pushed,
 // rebasing the delta that is live in that job (D8 of DOM-024).
 //
+// The facts (DOM-026, docs/format.md section 19). A domain record holds no
+// certificate age: a segment whose source has one carries it in its layer
+// facts.json, which its manifest names. A segment input's manifest is
+// DIR/<tag>/manifest.json with --inputs (exit 2 when it is not there), held
+// to the digest the root names, or read from GHCR by that digest; its layer
+// is DIR/<tag>/facts.json held to the digest the manifest names (exit 2 when
+// it is not there), or its blob, FACTS_CONCURRENCY at a time. Each must parse
+// and name no bit but its segment's source's, else exit 1. A quarantined
+// input's facts go into the domains pack's layer, as its records go into the
+// pack, and not to the feed, whose join leaves its records out. The live
+// domains day pack's own facts.json is read alike, its bits held to the
+// pack's sources, and only when the feed is built.
+//
 // --out is checked before anything is read: a file, or a path under a file,
 // is exit 2, and so is an output that cannot be written. Every blob it reads
 // from GHCR is one the validated root names (openInputs of
-// scripts/compact/range.mjs), so a blob GHCR does not give with no credential
-// is a fault, exit 1: the pack is lost, or its package went private since.
-// Exit 4 is left to the root's own read. A tag list that does not read with
-// no credential is no build of the day: a package not pushed yet answers so.
+// scripts/compact/range.mjs), or a facts.json that a manifest the root names
+// names, so a blob GHCR does not give with no credential is a fault, exit 1:
+// the pack is lost, or its package went private since. Exit 4 is left to the
+// root's own read. A tag list that does not read with no credential is no
+// build of the day: a package not pushed yet answers so.
 //
 // Usage:
 //   node scripts/compact/day.mjs --day YYYY-MM-DD --out DIR (--filter FILE --delta FILE | --first-ledger | --no-ledger) [flags]
 //     --root FILE          a root.json file, in place of root:latest
 //     --ref REF            the root to read from GHCR: latest (the default), r-..., or sha256:DIGEST
-//     --inputs DIR         the packs' layers on disk, DIR/<tag>/idx and part.NNN
+//     --inputs DIR         the packs' layers on disk, DIR/<tag>/idx and part.NNN, and
+//                          a segment's or a live day pack's manifest.json and facts.json
 //     --sources FILE       the source registry (default config/sources.json)
 //     --tags FILE          the tags of the packages names and feed, a JSON object
 //                          { "names": [...], "feed": [...] } (default: read from GHCR)
@@ -78,28 +100,33 @@
 //     --run ID             the workflow run (default GITHUB_RUN_ID)
 //     --records-per-block N, --page-entries N   the writer (defaults 4096 and 64)
 // stdout: `verdict DATASET VERDICT PACKAGE:TAG`, `reason ...`, one line for
-// each input and missing span, `check ...` lines, then for each pack
+// each input and missing span, `facts SEGMENTS KEYS` (the segment inputs that
+// carry facts.json, and the keys of their merge) or `facts names:TAG KEYS`
+// (the live domains day pack's), `check ...` lines, then for each pack
 // `present PACKAGE:TAG ...` or `wrote PACKAGE:TAG sha256:DIGEST records N`,
 // `replace PACKAGE:TAG MANIFEST...`, `exact ...`, `carry ...`, `summary ...`
 // and `ledger ...`.
 // Exit codes: 0 written, present or skip · 1 a fault: a live pack crosses the
-// day's edge, the root does not validate, an index that does not hash to the
-// digest the root names, a blob the root names that GHCR does not give with
-// no credential, a merge whose check fails, inputs built under two PSL
-// hashes, a live filter newer than the day or a delta of another filter, a
-// row outside the day, an hour row the day's records lack, a time copy that
-// does not bind to its key copy, a tag list GHCR cut short, a build of the
-// day that the tag list names and whose manifest GHCR does not give or
-// carries no sha256 · 2 could not run (bad arguments, a file that does not
-// read, an output file that exists, an output path that is a file, lies
-// under a file or cannot be written, GHCR unreachable) · 3 wait: the day of
-// `domains` is not whole · 4 PRIVATE PACKAGE: the root did not read with no
-// credential · 70 an internal error, a defect of this script (its stack goes
-// to stderr).
+// day's edge, the root does not validate, an index or a manifest that does
+// not hash to the digest the root names, a blob the root names that GHCR does
+// not give with no credential, a merge whose check fails, inputs built under
+// two PSL hashes, a facts.json that is not its manifest's, does not parse,
+// names a bit other than its pack's sources' or a key the day's records lack,
+// a live filter newer than the day or a delta of another filter, a row
+// outside the day, an hour row the day's records lack, a time copy that does
+// not bind to its key copy, a tag list GHCR cut short, a build of the day
+// that the tag list names and whose manifest GHCR does not give or carries no
+// sha256 · 2 could not run (bad arguments, a file that does not read, a
+// segment's manifest.json or a facts.json it names not in --inputs, an output
+// file that exists, an output path that is a file, lies under a file or
+// cannot be written, GHCR unreachable) · 3 wait: the day of `domains` is not
+// whole · 4 PRIVATE PACKAGE: the root did not read with no credential · 70 an
+// internal error, a defect of this script (its stack goes to stderr).
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { encodeFacts, FACTS_MEDIA_TYPE, FACTS_TITLE, FactsError, factKeysWalk, mergeFacts } from '@domains/adapter';
 import {
   basePacks,
   bindFault,
@@ -110,6 +137,7 @@ import {
   DELTA_TITLE,
   dayOf,
   EMPTY_CONFIG,
+  eventFactsOf,
   FILTER_TITLE,
   isQuarantined,
   joinInputs,
@@ -124,17 +152,17 @@ import {
 } from '@domains/compact';
 import { DirPartsSink, fileDigest, openCopy, titlesOf } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
-import { checkRef, GhcrError, LATEST, LayoutError, LEDGER_DELTA_TAG, NAMESPACE, packageOfDataset } from '@domains/ghcr';
+import { checkRef, GhcrError, LATEST, LayoutError, LEDGER_DELTA_TAG, MANIFEST_LIMIT_BYTES, NAMESPACE, packageOfDataset } from '@domains/ghcr';
 import { LedgerError } from '@domains/ledger';
 import { DOMAINS_CODEC, FEED_CODEC, IDX_TITLE, mergePacks, PackError, TIME_IDX_TITLE } from '@domains/pack';
 import { nodeCompress, writerId } from '@domains/pack/node';
 import { anonymousReader, isNotPublic, PRIVATE_LINE } from '../ghcr/check-public.mjs';
-import { RateLimitError } from '../ghcr/rate.mjs';
+import { RateLimitError, readPaused } from '../ghcr/rate.mjs';
 import { parseArgs } from '../lib/args.mjs';
 import { Fault } from '../root/lib.mjs';
 import { DEFAULT_SOURCES } from '../verify-pack.mjs';
-import { registryOf } from './hour.mjs';
-import { buildTags, checkOutDir, decideRebuild, freshDir, onOutput, rootOf, writeOut } from './plan.mjs';
+import { bitsOf, FACTS_CONCURRENCY, factsBytes, factsLayerOf, factsTableOf, mapAtMost, registryOf } from './hour.mjs';
+import { buildTags, checkOutDir, decideRebuild, freshDir, lostBlob, onOutput, rootOf, writeOut } from './plan.mjs';
 import { openInputs, UsageError } from './range.mjs';
 
 export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, wait: 3, private: 4, internal: 70 });
@@ -221,6 +249,68 @@ async function tagsOf(args, pkg, reader, deps) {
   return buildTags(pkg, 'day', reader, deps);
 }
 
+// The manifest of the pack `p` the root names: DIR/<tag>/manifest.json with
+// --inputs, held to the digest the root names (one that is not there is exit
+// 2, since a segment's facts.json is found through its manifest), or read
+// from GHCR by that digest with no credential. The root named it, so GHCR
+// refusing it is a fault, never PRIVATE PACKAGE.
+async function manifestOf(p, { dir, reader, deps }) {
+  if (dir !== undefined) {
+    const path = join(dir, p.tag, 'manifest.json');
+    if (!existsSync(path)) throw new UsageError(`--inputs: ${path} does not exist: the ${FACTS_TITLE} of ${pkgTag(p)} is found through its manifest`);
+    const bytes = readFile(path, 'the manifest');
+    if (sha(bytes) !== p.manifest) throw new Fault(`${path} hashes to ${sha(bytes)}; the root names the manifest of ${pkgTag(p)} as ${p.manifest}`);
+    try {
+      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    } catch (e) {
+      throw new Fault(`${path} is not UTF-8 JSON: ${e.message}`);
+    }
+  }
+  let m;
+  try {
+    m = await readPaused(`the manifest ${p.manifest} of ${p.repo}`, () => reader.getManifest(p.repo, p.manifest, { maxBytes: MANIFEST_LIMIT_BYTES }), deps);
+  } catch (e) {
+    if (isNotPublic(e))
+      throw new Fault(
+        `the root names the manifest of ${pkgTag(p)} as ${p.manifest}, which GHCR does not give with no credential (${e.message}): the pack is lost, or its package no longer reads publicly`,
+      );
+    throw e;
+  }
+  if (m.digest !== p.manifest) throw new Fault(`GHCR answered the manifest ${p.manifest} of ${pkgTag(p)} with the digest ${m.digest}`);
+  return m.json;
+}
+
+// The facts.json of the pack `p` the root names, as a table held to the bits
+// of the pack's sources (factsTableOf of hour.mjs), or null when its manifest
+// names none.
+// The bytes of the domains day pack `tag`'s layer facts.json, the merge
+// `dayFacts` of its segments' layers, or null when it holds no fact. A merge
+// past FACTS_MAX_BYTES is a fault of the day (exit 1), never a defect: each
+// segment's layer passed the cap alone.
+export function dayFactsLayer(dayFacts, tag) {
+  if (dayFacts.size === 0) return null;
+  try {
+    return encodeFacts(dayFacts);
+  } catch (e) {
+    if (e instanceof FactsError) throw new Fault(`the ${FACTS_TITLE} of names:${tag}: ${e.message}`);
+    throw e;
+  }
+}
+
+async function factsOfPack(p, registry, io) {
+  const what = pkgTag(p);
+  const layer = factsLayerOf(await manifestOf(p, io), what);
+  if (layer === null) return null;
+  let bytes;
+  try {
+    bytes = await factsBytes(layer, p.tag, { dir: io.dir, repo: p.repo, reader: io.reader, deps: io.deps });
+  } catch (e) {
+    if (isNotPublic(e)) throw lostBlob(e, `the manifest of ${what} names its ${FACTS_TITLE} as`, layer);
+    throw e;
+  }
+  return factsTableOf(bytes, bitsOf(registry, p.sources, what), what);
+}
+
 // A directory of --out for one pack or the ledger, made with those above it.
 function subDir(path) {
   onOutput(path, 'the output directory', () => mkdirSync(path, { recursive: true }));
@@ -279,6 +369,7 @@ export async function main(argv, deps = {}) {
 async function dayJob(argv, { reader = anonymousReader(), out = console.log, err = console.error, env = process.env, sleep, random, build = buildDay, readRoot = rootOf }) {
   const deps = { sleep, random, log: (l) => err(`day: ${l}`) };
   let inputsDir;
+  let io;
   const opened = [];
   const open = async (entries, codec) => {
     const o = await openInputs({ inputs: entries, by: 'the root' }, 'key', codec, inputsDir, reader, deps);
@@ -288,6 +379,7 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
   try {
     const args = parse(argv, env);
     inputsDir = args.inputs;
+    io = { dir: inputsDir, reader, deps };
     const day = dayOf(args.day);
     const registry = registryOf(args.sources ?? DEFAULT_SOURCES);
     // The live ledger is read and held to the day before any pack is read.
@@ -306,23 +398,43 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
     const psls = dPlan.verdict === 'present' ? [dPlan.present.psl] : dPlan.psl;
     if (psls.length !== 1) throw new CompactError('psl', `the domains inputs were built under ${psls.join(' and ')}; their keys depend on the list, and recomputing them under one list is not built`);
     const psl = psls[0];
-    const report = { format: DAY_FORMAT, day: day.date, root: ref, domains: null, feed: null, exact: null, carry: null, summary: null, ledger: null };
+    const report = { format: DAY_FORMAT, day: day.date, root: ref, domains: null, feed: null, exact: null, carry: null, summary: null, facts: null, ledger: null };
     freshDir(args.out, 'day');
 
-    // 1. The day's domain records.
+    // 1. The day's domain records, and the facts the feed reads beside them:
+    // a table, or, for a live day pack, its facts.json read once the feed is built.
     let dayReader;
     let records;
     let daySources;
+    let feedFacts = null;
+    let loadFacts = null;
     if (dPlan.verdict === 'present') {
       [dayReader] = await open([dPlan.present], DOMAINS_CODEC);
       daySources = dPlan.present.sources;
       records = () => dayReader.scan();
       out(`present names:${dPlan.present.tag}: the live pack is the day's records`);
       report.domains = { action: 'present', tag: dPlan.present.tag, manifest: dPlan.present.manifest, replaces: [] };
+      loadFacts = async () => {
+        const table = await factsOfPack(dPlan.present, registry, io);
+        const keys = table?.size ?? 0;
+        out(`facts names:${dPlan.present.tag} ${keys}`);
+        report.facts = { from: `names:${dPlan.present.tag}`, layers: table === null ? 0 : 1, keys };
+        return table ?? new Map();
+      };
     } else {
       const tags = await tagsOf(args, 'names', reader, deps);
       const first = tagDecision('domains', 'd', day.start, tags, args.rebuild.includes('domains'));
       const inputs = await open(dPlan.inputs, DOMAINS_CODEC);
+      // The facts of the segment inputs, read before the merge, so the check
+      // of the merge sees every key their merge names.
+      const segs = dPlan.inputs.filter((p) => p.tier === 'seg');
+      const tables = await mapAtMost(segs, FACTS_CONCURRENCY, (p) => factsOfPack(p, registry, io));
+      const carried = tables.filter((t) => t !== null);
+      const dayFacts = mergeFacts(carried);
+      out(`facts ${carried.length} ${dayFacts.size}`);
+      report.facts = { from: 'segments', layers: carried.length, keys: dayFacts.size };
+      // A quarantined input gives the feed no row (ruling 23), so none of its facts either.
+      feedFacts = segs.some(isQuarantined) ? mergeFacts(tables.filter((t, i) => t !== null && !isQuarantined(segs[i]))) : dayFacts;
       const dir = subDir(join(args.out, 'domains'));
       const sink = new DirPartsSink(dir, 'key');
       let merged;
@@ -335,12 +447,23 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
       const copy = await openCopy(dir, 'key', DOMAINS_CODEC);
       opened.push({ close: copy.close });
       dayReader = copy.reader;
+      // Every key of the pack's facts.json is a key of its records
+      // (docs/format.md section 19), seen as the check reads the pack.
+      const walk = dayFacts.size === 0 ? null : factKeysWalk([...dayFacts.keys()].map((key) => ({ key })));
+      async function* seen(scan) {
+        for await (const r of scan) {
+          walk.see(r.key);
+          yield r;
+        }
+      }
       const check = await checkMerged(
         inputs.map((r) => r.scan()),
-        dayReader.scan(),
+        walk === null ? dayReader.scan() : seen(dayReader.scan()),
         DOMAINS_CODEC,
       );
       out(`check domains: ${check.records} records, the inputs' ${check.distinct} distinct keys of ${check.inputRecords} records`);
+      const unheld = walk?.problem() ?? null;
+      if (unheld !== null) throw new Fault(`the facts of the day's segments name a key the domains day pack does not hold: ${unheld}`);
       const join0 = joinInputs(dPlan.inputs, inputs);
       // The sources the join read: a quarantined input gives the feed no row (absolute 11).
       daySources = join0.sources;
@@ -355,7 +478,11 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
         out(`present names:${decision.tag} (${decision.builds.join(', ')}): ${held}the root does not name it yet; its records are merged again for the join, and nothing of it is written`);
         report.domains = { action: 'present', tag: decision.tag, manifest: null, replaces: dPlan.replaces };
       } else {
-        const blobs = await blobsOf(dir, sink.files, merged.idx, null);
+        // The merge of the segments' facts, the pack's own layer facts.json
+        // (docs/format.md section 19): a pack of no fact carries none.
+        const factsLayer = dayFactsLayer(dayFacts, decision.tag);
+        if (factsLayer !== null) writeOut(join(dir, FACTS_TITLE), factsLayer, 'day');
+        const blobs = await blobsOf(dir, sink.files, merged.idx, null, factsLayer === null ? [] : [{ title: FACTS_TITLE, bytes: factsLayer }]);
         const manifest = packManifest({
           dataset: 'domains',
           tier: 'd',
@@ -367,8 +494,9 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
           run: args.run,
           summary: merged,
           writer: writerId(),
-          parts: blobs.slice(1, -1).map((b) => ({ digest: b.digest, size: b.size })),
+          parts: blobs.slice(1, 1 + sink.files.length).map((b) => ({ digest: b.digest, size: b.size })),
           idx: { digest: sha(merged.idx), size: merged.idx.length },
+          ...(factsLayer === null ? {} : { extra: [{ title: FACTS_TITLE, mediaType: FACTS_MEDIA_TYPE, bytes: factsLayer }] }),
         });
         writeOut(join(dir, 'manifest.json'), manifest.text, 'day');
         writeOut(join(dir, 'blobs.json'), `${JSON.stringify(blobs)}\n`, 'day');
@@ -394,6 +522,7 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
         out(`present feed:${first.tag} (${first.builds.join(', ')}): nothing is written`);
         report.feed = { action: 'present', tag: first.tag, manifest: null, replaces: fPlan.replaces };
       } else {
+        const factsTable = feedFacts ?? (await loadFacts());
         const hours = await open(fPlan.inputs, FEED_CODEC);
         const dir = subDir(join(args.out, 'feed'));
         const sink = new DirPartsSink(dir, 'key');
@@ -405,6 +534,7 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
             records,
             base,
             carry: mergePacks(hours, FEED_CODEC),
+            ...(factsTable.size === 0 ? {} : { facts: eventFactsOf([factsTable]) }),
             registry,
             compress: nodeCompress,
             sink,
@@ -493,7 +623,7 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
       err(`day: FAIL ${e.code} ${e.message}`);
       return e.code === 'usage' ? EXIT.usage : EXIT.fault;
     }
-    if (e instanceof LedgerError || e instanceof FeedError || e instanceof PackError || e instanceof Fault) {
+    if (e instanceof LedgerError || e instanceof FeedError || e instanceof PackError || e instanceof FactsError || e instanceof Fault) {
       err(`day: FAIL ${e.code ?? 'fault'} ${e.message}`);
       return EXIT.fault;
     }

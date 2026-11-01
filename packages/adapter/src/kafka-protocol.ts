@@ -1,13 +1,16 @@
-// probes/worker/src/kafka-protocol.ts — the bytes of the three Kafka requests the
-// probe's /kafka route sends, the parse of their responses, and the decode of a
-// record batch (magic 2). Pure: no socket, no clock. src/kafka.ts carries the IO.
+// packages/adapter/src/kafka-protocol.ts — the bytes of the four Kafka requests
+// an adapter sends, the parse of their responses, and the decode of a record
+// batch (magic 2). Pure: no socket, no clock. src/kafka.ts carries the IO for
+// the adapters (KafkaConnection), and probes/worker/src/kafka.ts for the probe's
+// /kafka route (DOM-005), which imports this module as
+// @domains/adapter/kafka-protocol. It lived in probes/worker/src/ until DOM-026
+// moved it here: one copy of the decoder for both.
 //
-// A TypeScript port of the part of scripts/measure/kafka-protocol.mjs that the
-// route needs (DOM-005), over Uint8Array and DataView instead of Node's Buffer,
-// so it runs in workerd without nodejs_compat. The versions are the ones DOM-004
-// ran against the Zonestream broker: ApiVersions v0, ListOffsets v1 and Fetch v4.
-// Fetch v4 returns the record batches as the broker stores them. Metadata is not
-// ported: the route reads one partition that the caller names.
+// A TypeScript port of scripts/measure/kafka-protocol.mjs, over Uint8Array and
+// DataView instead of Node's Buffer, so it runs in workerd without
+// nodejs_compat. The versions are the ones DOM-004 ran against the Zonestream
+// broker: ApiVersions v0, Metadata v0, ListOffsets v1 and Fetch v4. Fetch v4
+// returns the record batches as the broker stores them.
 //
 // Codecs: none and snappy decode. DOM-004 found certstream_domains snappy in the
 // xerial framing and the three NRD topics uncompressed, one record a batch
@@ -19,15 +22,16 @@
 // short or long response is a ProtocolError, never a guess. A batch whose CRC-32C,
 // compression or record count does not check is a KafkaDecodeError with a kind,
 // so a caller counts it as a decode failure instead of losing it.
-// src/kafka-protocol.test.ts holds the parse and the decode equal to the .mjs.
+// test/kafka-protocol.test.ts holds the encoding, the parse and the decode equal
+// to the .mjs.
 //
-// Usage: import { ... } from "./kafka-protocol.ts"
+// Usage: import { ... } from "./kafka-protocol.ts"   (or "@domains/adapter/kafka-protocol")
 // It is a module; it has no command line and no exit code.
 import { SnappyError, snappyKafka } from "./snappy.ts";
 
-export const API = Object.freeze({ FETCH: 1, LIST_OFFSETS: 2, API_VERSIONS: 18 });
+export const API = Object.freeze({ FETCH: 1, LIST_OFFSETS: 2, METADATA: 3, API_VERSIONS: 18 });
 // The version this module speaks for each API.
-export const VERSION: Readonly<Record<number, number>> = Object.freeze({ [API.FETCH]: 4, [API.LIST_OFFSETS]: 1, [API.API_VERSIONS]: 0 });
+export const VERSION: Readonly<Record<number, number>> = Object.freeze({ [API.FETCH]: 4, [API.LIST_OFFSETS]: 1, [API.METADATA]: 0, [API.API_VERSIONS]: 0 });
 // ListOffsets sentinels: the earliest retained offset and the next offset to be written.
 export const EARLIEST = -2;
 export const LATEST = -1;
@@ -130,6 +134,9 @@ export function encodeRequest({ apiKey, apiVersion, correlationId, clientId, bod
 }
 
 export const apiVersionsBody = (): Uint8Array => new Uint8Array(0);
+
+// Metadata v0: an empty topic list asks for every topic.
+export const metadataBody = (topics: readonly string[] = []): Uint8Array => array(topics, string);
 
 export interface OffsetQuery {
   topic: string;
@@ -280,6 +287,31 @@ export function parseApiVersions(r: Reader): { errorCode: number; apis: Map<numb
   for (const a of r.array((x) => ({ key: x.int16(), min: x.int16(), max: x.int16() })) ?? []) apis.set(a.key, { min: a.min, max: a.max });
   r.end();
   return { errorCode, apis };
+}
+
+export interface MetadataAnswer {
+  brokers: { id: number; host: string | null; port: number }[];
+  topics: { name: string | null; errorCode: number; partitions: { errorCode: number; partition: number; leader: number }[] }[];
+}
+
+// Metadata v0. Each partition's replica and in-sync lists are read past and not kept.
+export function parseMetadata(r: Reader): MetadataAnswer {
+  const brokers = r.array((x) => ({ id: x.int32(), host: x.string(), port: x.int32() })) ?? [];
+  const topics =
+    r.array((x) => {
+      const errorCode = x.int16();
+      const name = x.string();
+      const partitions =
+        x.array((y) => {
+          const p = { errorCode: y.int16(), partition: y.int32(), leader: y.int32() };
+          y.array((z) => z.int32());
+          y.array((z) => z.int32());
+          return p;
+        }) ?? [];
+      return { name, errorCode, partitions };
+    }) ?? [];
+  r.end();
+  return { brokers, topics };
 }
 
 export interface OffsetAnswer {

@@ -1,0 +1,13 @@
+{
+ "topic": "confirmed_newly_registered_domain",
+ "first": 79233962,
+ "last": 81131704,
+ "got": 1897742,
+ "recordTsStepBacks": 0,
+ "recordMaxStepBackMs": 0,
+ "firstExample": null,
+ "jsonStepBacks": 831422,
+ "jsonMaxStepBackS": 25556,
+ "secs": 435.105,
+ "at": "2026-10-31T15:40:48.255Z"
+}

@@ -1,0 +1,76 @@
+cursor oi-nrd none (.tmp/dom026/build/dry/state-empty.json)
+psl 1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9 (root:latest sha256:bd69a39c1810eaa1c3b21dfa9de4c097a806a2372cb21ad648e9ef34a80eaeac)
+segment obs:oi-nrd.20261022t130050z.20261022t140000z-d oi-nrd domains 2026-10-22T13:00:50Z 2026-10-22T14:00:00Z records 14915 verdict ok
+segment obs:oi-nrd-fqdn.20261022t130054z.20261022t140000z oi-nrd-fqdn names 2026-10-22T13:00:54Z 2026-10-22T14:00:00Z records 16757 verdict ok
+segment obs:oi-nrd-confirmed.20261022t130200z.20261022t140000z-d oi-nrd-confirmed domains 2026-10-22T13:02:00Z 2026-10-22T14:00:00Z records 9411 verdict ok
+segment obs:oi-nrd-confirmed.20261022t140000z.20261022t150000z-d oi-nrd-confirmed domains 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z records 9401 verdict ok
+segment obs:oi-nrd.20261022t140000z.20261022t150000z-d oi-nrd domains 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z records 15042 verdict ok
+segment obs:oi-nrd-fqdn.20261022t140000z.20261022t150000z oi-nrd-fqdn names 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z records 17066 verdict ok
+segment obs:oi-nrd-confirmed.20261022t150000z.20261022t160000z-d oi-nrd-confirmed domains 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z records 8947 verdict ok
+segment obs:oi-nrd-confirmed.20261022t160000z.20261022t170000z-d oi-nrd-confirmed domains 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z records 8531 verdict ok
+segment obs:oi-nrd.20261022t150000z.20261022t160000z-d oi-nrd domains 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z records 14380 verdict ok
+segment obs:oi-nrd-fqdn.20261022t150000z.20261022t160000z oi-nrd-fqdn names 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z records 16331 verdict ok
+segment obs:oi-nrd-confirmed.20261022t170000z.20261022t180000z-d oi-nrd-confirmed domains 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z records 8317 verdict ok
+segment obs:oi-nrd-confirmed.20261022t180000z.20261022t190000z-d oi-nrd-confirmed domains 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z records 7976 verdict ok
+segment obs:oi-nrd-confirmed.20261022t190000z.20261022t200000z-d oi-nrd-confirmed domains 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z records 8371 verdict ok
+segment obs:oi-nrd.20261022t160000z.20261022t170000z-d oi-nrd domains 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z records 14786 verdict ok
+segment obs:oi-nrd.20261022t170000z.20261022t180000z-d oi-nrd domains 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z records 13345 verdict ok
+segment obs:oi-nrd-fqdn.20261022t160000z.20261022t170000z oi-nrd-fqdn names 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z records 16757 verdict ok
+segment obs:oi-nrd-confirmed.20261022t200000z.20261022t210000z-d oi-nrd-confirmed domains 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z records 7503 verdict ok
+segment obs:oi-nrd-confirmed.20261022t210000z.20261022t220000z-d oi-nrd-confirmed domains 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z records 7092 verdict ok
+segment obs:oi-nrd-confirmed.20261022t220000z.20261022t230000z-d oi-nrd-confirmed domains 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z records 6920 verdict ok
+segment obs:oi-nrd.20261022t180000z.20261022t190000z-d oi-nrd domains 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z records 12471 verdict ok
+segment obs:oi-nrd-fqdn.20261022t170000z.20261022t180000z oi-nrd-fqdn names 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z records 15255 verdict ok
+segment obs:oi-nrd-fqdn.20261022t180000z.20261022t190000z oi-nrd-fqdn names 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z records 14343 verdict ok
+segment obs:oi-nrd-confirmed.20261022t230000z.20261023t000000z-d oi-nrd-confirmed domains 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z records 5658 verdict ok
+segment obs:oi-nrd-confirmed.20261023t000000z.20261023t010000z-d oi-nrd-confirmed domains 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z records 8481 verdict ok
+segment obs:oi-nrd.20261022t190000z.20261022t200000z-d oi-nrd domains 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z records 13241 verdict ok
+segment obs:oi-nrd.20261022t200000z.20261022t210000z-d oi-nrd domains 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z records 12573 verdict ok
+segment obs:oi-nrd-fqdn.20261022t190000z.20261022t200000z oi-nrd-fqdn names 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z records 14938 verdict ok
+segment obs:oi-nrd.20261022t210000z.20261022t220000z-d oi-nrd domains 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z records 11880 verdict ok
+segment obs:oi-nrd.20261022t220000z.20261022t230000z-d oi-nrd domains 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z records 11010 verdict ok
+segment obs:oi-nrd-fqdn.20261022t200000z.20261022t210000z oi-nrd-fqdn names 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z records 14104 verdict ok
+segment obs:oi-nrd.20261022t230000z.20261023t000000z-d oi-nrd domains 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z records 10737 verdict ok
+segment obs:oi-nrd-fqdn.20261022t210000z.20261022t220000z oi-nrd-fqdn names 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z records 13343 verdict ok
+segment obs:oi-nrd-fqdn.20261022t220000z.20261022t230000z oi-nrd-fqdn names 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z records 12301 verdict ok
+segment obs:oi-nrd.20261023t000000z.20261023t010000z-d oi-nrd domains 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z records 25121 verdict ok
+segment obs:oi-nrd-fqdn.20261022t230000z.20261023t000000z oi-nrd-fqdn names 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z records 11998 verdict ok
+segment obs:oi-nrd-fqdn.20261023t000000z.20261023t010000z oi-nrd-fqdn names 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z records 12362 verdict ok
+raw obs:raw-oi-nrd.20261022t130050z.20261022t140000z oi-nrd 2026-10-22T13:00:50Z 2026-10-22T14:00:00Z bytes 3258775 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t130054z.20261022t140000z oi-nrd-fqdn 2026-10-22T13:00:54Z 2026-10-22T14:00:00Z bytes 3616277 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t130200z.20261022t140000z oi-nrd-confirmed 2026-10-22T13:02:00Z 2026-10-22T14:00:00Z bytes 1829933 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t140000z.20261022t150000z oi-nrd-confirmed 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z bytes 1829991 members 1
+raw obs:raw-oi-nrd.20261022t140000z.20261022t150000z oi-nrd 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z bytes 3292256 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t140000z.20261022t150000z oi-nrd-fqdn 2026-10-22T14:00:00Z 2026-10-22T15:00:00Z bytes 3683523 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t150000z.20261022t160000z oi-nrd-confirmed 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z bytes 1742892 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t160000z.20261022t170000z oi-nrd-confirmed 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z bytes 1665402 members 1
+raw obs:raw-oi-nrd.20261022t150000z.20261022t160000z oi-nrd 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z bytes 3148989 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t150000z.20261022t160000z oi-nrd-fqdn 2026-10-22T15:00:00Z 2026-10-22T16:00:00Z bytes 3530227 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t170000z.20261022t180000z oi-nrd-confirmed 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z bytes 1623336 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t180000z.20261022t190000z oi-nrd-confirmed 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z bytes 1558597 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t190000z.20261022t200000z oi-nrd-confirmed 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z bytes 1631285 members 1
+raw obs:raw-oi-nrd.20261022t160000z.20261022t170000z oi-nrd 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z bytes 3229272 members 1
+raw obs:raw-oi-nrd.20261022t170000z.20261022t180000z oi-nrd 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z bytes 2916586 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t160000z.20261022t170000z oi-nrd-fqdn 2026-10-22T16:00:00Z 2026-10-22T17:00:00Z bytes 3623908 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t200000z.20261022t210000z oi-nrd-confirmed 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z bytes 1468603 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t210000z.20261022t220000z oi-nrd-confirmed 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z bytes 1386413 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t220000z.20261022t230000z oi-nrd-confirmed 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z bytes 1350914 members 1
+raw obs:raw-oi-nrd.20261022t180000z.20261022t190000z oi-nrd 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z bytes 2726155 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t170000z.20261022t180000z oi-nrd-fqdn 2026-10-22T17:00:00Z 2026-10-22T18:00:00Z bytes 3302842 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t180000z.20261022t190000z oi-nrd-fqdn 2026-10-22T18:00:00Z 2026-10-22T19:00:00Z bytes 3106750 members 1
+raw obs:raw-oi-nrd-confirmed.20261022t230000z.20261023t000000z oi-nrd-confirmed 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z bytes 1104001 members 1
+raw obs:raw-oi-nrd-confirmed.20261023t000000z.20261023t010000z oi-nrd-confirmed 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z bytes 1603275 members 1
+raw obs:raw-oi-nrd.20261022t190000z.20261022t200000z oi-nrd 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z bytes 2890885 members 1
+raw obs:raw-oi-nrd.20261022t200000z.20261022t210000z oi-nrd 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z bytes 2756832 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t190000z.20261022t200000z oi-nrd-fqdn 2026-10-22T19:00:00Z 2026-10-22T20:00:00Z bytes 3235901 members 1
+raw obs:raw-oi-nrd.20261022t210000z.20261022t220000z oi-nrd 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z bytes 2598349 members 1
+raw obs:raw-oi-nrd.20261022t220000z.20261022t230000z oi-nrd 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z bytes 2401084 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t200000z.20261022t210000z oi-nrd-fqdn 2026-10-22T20:00:00Z 2026-10-22T21:00:00Z bytes 3055039 members 1
+raw obs:raw-oi-nrd.20261022t230000z.20261023t000000z oi-nrd 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z bytes 2340655 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t210000z.20261022t220000z oi-nrd-fqdn 2026-10-22T21:00:00Z 2026-10-22T22:00:00Z bytes 2888869 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t220000z.20261022t230000z oi-nrd-fqdn 2026-10-22T22:00:00Z 2026-10-22T23:00:00Z bytes 2659922 members 1
+raw obs:raw-oi-nrd.20261023t000000z.20261023t010000z oi-nrd 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z bytes 4662675 members 1
+raw obs:raw-oi-nrd-fqdn.20261022t230000z.20261023t000000z oi-nrd-fqdn 2026-10-22T23:00:00Z 2026-10-23T00:00:00Z bytes 2592373 members 1
+raw obs:raw-oi-nrd-fqdn.20261023t000000z.20261023t010000z oi-nrd-fqdn 2026-10-23T00:00:00Z 2026-10-23T01:00:00Z bytes 2670512 members 1
+stats oi-nrd {"fetches":10,"frame_bytes":100664902,"oi-nrd-confirmed.behind_s":725034,"oi-nrd-confirmed.cert_age_known":0,"oi-nrd-confirmed.cert_age_over_7d":0,"oi-nrd-confirmed.empty_windows":0,"oi-nrd-confirmed.lag":1767319,"oi-nrd-confirmed.late":0,"oi-nrd-confirmed.malformed":0,"oi-nrd-confirmed.messages":96612,"oi-nrd-confirmed.refused":0,"oi-nrd-confirmed.reg_differs":0,"oi-nrd-confirmed.retained":1863931,"oi-nrd-confirmed.windows":12,"oi-nrd-confirmed.wire_bytes":18794820,"oi-nrd-confirmed.zone_rows":2807,"oi-nrd-fqdn.behind_s":725034,"oi-nrd-fqdn.cert_age_known":175555,"oi-nrd-fqdn.cert_age_over_7d":61304,"oi-nrd-fqdn.empty_windows":0,"oi-nrd-fqdn.lag":2685526,"oi-nrd-fqdn.late":0,"oi-nrd-fqdn.malformed":0,"oi-nrd-fqdn.messages":175555,"oi-nrd-fqdn.refused":0,"oi-nrd-fqdn.reg_differs":0,"oi-nrd-fqdn.retained":2861081,"oi-nrd-fqdn.windows":12,"oi-nrd-fqdn.wire_bytes":37966363,"oi-nrd-fqdn.zone_rows":0,"oi-nrd.behind_s":725034,"oi-nrd.cert_age_known":154624,"oi-nrd.cert_age_over_7d":58640,"oi-nrd.empty_windows":0,"oi-nrd.lag":3639900,"oi-nrd.late":0,"oi-nrd.malformed":0,"oi-nrd.messages":170699,"oi-nrd.refused":0,"oi-nrd.reg_differs":0,"oi-nrd.retained":3810599,"oi-nrd.windows":12,"oi-nrd.wire_bytes":36222736,"oi-nrd.zone_rows":16075}
+no push: --no-push; 36 segment(s) and 36 raw object(s) verified

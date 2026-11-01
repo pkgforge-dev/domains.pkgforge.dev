@@ -4,9 +4,11 @@
   "private": true,
   "license": "0BSD",
   "type": "module",
-  "description": "The source registry and the adapter contract: the source.json shape and its validator, the append-only bit map, the segment and cursor types, the volume band check, and the harness that runs an adapter against recorded answers. src/ runs in Node and in workerd; node/ holds the Node-only file readers.",
+  "description": "The source registry and the adapter contract: the source.json shape and its validator, the append-only bit map, the segment and cursor types, the volume band check, the TCP recording and its replay as ctx.connect, and the harness that runs an adapter against recorded answers. ./kafka is the adapters' one Kafka client (KafkaConnection over ctx.connect), and ./kafka-protocol its request bytes, parses and batch decode, which the probe's /kafka route reads too. src/ runs in Node and in workerd, and imports one type of @domains/names (the loaded list, ctx.psl); node/ holds the Node-only file readers, liveConnect and runSandboxed.",
   "exports": {
     ".": "./src/index.ts",
+    "./kafka": "./src/kafka.ts",
+    "./kafka-protocol": "./src/kafka-protocol.ts",
     "./node": "./node/index.ts"
   }
 }

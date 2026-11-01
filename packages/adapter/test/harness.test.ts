@@ -12,6 +12,7 @@ import { readRecordings } from "../node/files.ts";
 import { HARNESS_USER_AGENT, parseRecording, RECORDING_FORMAT, type Recording, replayFetch, runAdapter } from "../src/harness.ts";
 import type { Source } from "../src/types.ts";
 import { ContractError } from "../src/validate.ts";
+import { PSL } from "./fixture-psl.ts";
 import { BASE, DAY_SOURCE, type DayPlant, dayAdapter, FILE_SOURCE, fileAdapter, NETWORK_OPENS } from "./synthetic.ts";
 
 const HTTP = join(import.meta.dirname, "fixtures", "http");
@@ -19,7 +20,7 @@ const RECORDINGS = readRecordings(HTTP);
 const NOW = "2026-10-29T06:00:00Z";
 const START = { last_day: "2026-10-25" };
 
-const run = (plant: DayPlant, extra: { sources?: readonly Source[] } = {}) => runAdapter(dayAdapter(plant), { recordings: RECORDINGS, cursor: START, now: NOW, ...extra });
+const run = (plant: DayPlant, extra: { sources?: readonly Source[] } = {}) => runAdapter(dayAdapter(plant), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW, ...extra });
 
 // Rejects with a ContractError of exactly this check.
 async function refuses(p: Promise<unknown>, check: string): Promise<ContractError> {
@@ -178,7 +179,7 @@ test("adapter harness: stats that are not numbers, or an error that is not { sou
 
 test("adapter harness: each run gets its own copy of the cursor, so an adapter that moves its argument changes neither run 2 nor the caller's cursor", async () => {
   const cursor = { last_day: "2026-10-25" };
-  const { first, again } = await runAdapter(dayAdapter("mutate-cursor"), { recordings: RECORDINGS, cursor, now: NOW });
+  const { first, again } = await runAdapter(dayAdapter("mutate-cursor"), { recordings: RECORDINGS, psl: PSL, cursor, now: NOW });
   assert.equal(first.result.segments.length, 2);
   assert.deepEqual(again.result.segments, first.result.segments);
   assert.deepEqual(cursor, { last_day: "2026-10-25" });
@@ -191,8 +192,8 @@ test("adapter harness: ctx is frozen, so an adapter that replaces ctx.fetch thro
 
 test("adapter harness: a second runAdapter while one runs is refused, and the first still passes", async () => {
   const before = globalThis.fetch;
-  const one = runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: START, now: NOW });
-  const two = runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: START, now: NOW });
+  const one = runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW });
+  const two = runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW });
   const [a, b] = await Promise.allSettled([one, two]);
   assert.equal(a.status, "fulfilled");
   assert.equal(b.status, "rejected");
@@ -201,7 +202,7 @@ test("adapter harness: a second runAdapter while one runs is refused, and the fi
 });
 
 test("adapter harness: a conditional GET finds its 304 by header, and a redirect is followed hop by hop", async () => {
-  const { first, next } = await runAdapter(fileAdapter(), { recordings: RECORDINGS, cursor: { etag: null }, now: NOW });
+  const { first, next } = await runAdapter(fileAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: { etag: null }, now: NOW });
   assert.deepEqual(
     first.requests.map((r) => r.recording),
     ["file-latest.http.json", "file-2026-10-28.http.json"],
@@ -219,12 +220,12 @@ test("adapter harness: a conditional GET finds its 304 by header, and a redirect
 
 test("adapter harness: without the 304 recording the conditional GET reads the file again, which fails continuation", async () => {
   const recordings = RECORDINGS.filter((r) => r.name !== "file-latest-unchanged.http.json");
-  await refuses(runAdapter(fileAdapter(), { recordings, cursor: { etag: null }, now: NOW }), "continuation");
+  await refuses(runAdapter(fileAdapter(), { recordings, psl: PSL, cursor: { etag: null }, now: NOW }), "continuation");
 });
 
 test("adapter harness: options are checked before any run, an empty userAgent among them", async () => {
-  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: START, now: NOW, userAgent: "" }), "options");
-  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: START, now: NOW, userAgent: 1 as unknown as string }), "options");
+  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW, userAgent: "" }), "options");
+  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW, userAgent: 1 as unknown as string }), "options");
 });
 
 test("adapter harness: redirect manual answers the 3xx itself, and redirect error rejects", async () => {
@@ -314,7 +315,28 @@ test("adapter harness: readRecordings reads only *.http.json files and refuses o
 });
 
 test("adapter harness: options are checked before any run", async () => {
-  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: START, now: "2026-10-29 06:00" }), "options");
-  await refuses(runAdapter({} as never, { recordings: RECORDINGS, cursor: START, now: NOW }), "options");
-  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, cursor: { pad: "x".repeat(4096) }, now: NOW }), "cursor");
+  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: START, now: "2026-10-29 06:00" }), "options");
+  await refuses(runAdapter({} as never, { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW }), "options");
+  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: PSL, cursor: { pad: "x".repeat(4096) }, now: NOW }), "cursor");
+  // ctx.psl is the list loaded by @domains/names: none, or its text, is refused before any run.
+  for (const psl of [undefined, "a list", { sha256: PSL.sha256 }]) {
+    const err = await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, psl: psl as never, cursor: START, now: NOW }), "options");
+    assert.match(err.message, /psl is not a list loaded by loadPsl/);
+  }
+  await refuses(runAdapter(dayAdapter(), { recordings: RECORDINGS, tcp: "none" as never, psl: PSL, cursor: START, now: NOW }), "options");
+});
+
+test("adapter harness: ctx holds the list given as ctx.psl, and a connect that names no recording, as ctx.connect", async () => {
+  const seen: unknown[] = [];
+  const probe = {
+    async run(cursor: unknown, ctx: { psl: unknown; connect: (a: { hostname: string; port: number }) => { opened: Promise<unknown> } }) {
+      seen.push(ctx.psl);
+      // No TCP recording is given, so the connection is a miss the adapter catches.
+      await ctx.connect({ hostname: "tcp.example.test", port: 7000 }).opened.catch(() => undefined);
+      return { segments: [], cursor, stats: {}, errors: [] };
+    },
+  };
+  const err = await refuses(runAdapter(probe as never, { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW }), "unrecorded");
+  assert.match(err.message, /^unrecorded: run 1: no recording for connect tcp\.example\.test:7000: no recording$/);
+  assert.deepEqual(seen, [PSL]);
 });

@@ -1,0 +1,4 @@
+# node docs/research/measure/DOM-026/15-confirmed-subset.mjs, 2026-10-31T16:01:40Z to 16:02:14Z, exit 0, read-only against kafka.zonestream.openintel.nl:9092
+hour 2026-10-22T14:00Z: oi-nrd keys 15042 confirmed keys 9401 confirmed also in oi-nrd 9401 (100.0%)
+confirmed evidence entries: nrd-ct+rdap 9401 nrd-list(zone rows) 0
+confirmed keys: registered-confirmed (level 1-5) 7389 | level 6-10 or zone-only and ALSO in oi-nrd (would be "corroborated" by families ct vs registry+ct) 2012 | not in oi-nrd 0

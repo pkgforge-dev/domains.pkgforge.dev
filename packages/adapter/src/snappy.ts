@@ -1,12 +1,14 @@
-// probes/worker/src/snappy.ts — decode a snappy block, and Kafka's framing of
+// packages/adapter/src/snappy.ts — decode a snappy block, and Kafka's framing of
 // snappy (the xerial stream the Java producer writes), with every length checked.
-// The decoder of the probe's /kafka route (DOM-005).
+// The decoder of src/kafka-protocol.ts, for the adapters' Kafka client
+// (src/kafka.ts) and the probe's /kafka route (DOM-005). It lived in
+// probes/worker/src/ until DOM-026 moved it here: one copy for both.
 //
 // A TypeScript port of scripts/measure/snappy.mjs, which DOM-004 ran on a GitHub
 // runner over 8,715 snappy batches with no failure. Same algorithm, same checks,
 // same messages; it uses no Node API, so it runs in workerd without
-// nodejs_compat. src/kafka-protocol.test.ts decodes the same inputs with both and
-// holds their outputs and their refusals equal.
+// nodejs_compat. test/kafka-protocol.test.ts decodes the same inputs with both
+// and holds their outputs and their refusals equal.
 //
 // The format (https://github.com/google/snappy/blob/main/format_description.txt):
 // a varint of the uncompressed length, then elements. A tag's low two bits name

@@ -16,7 +16,10 @@
 //      control character), else WriteFault `cursor`: it is the segment's
 //      annotation cursor.before or cursor.after. checkCursor allows 4 KiB, the
 //      limit of a cursor in state.json, so a stream adapter keeps its cursor
-//      within 1024;
+//      within 1024. Its rawMember is held to checkRawMember of
+//      @domains/adapter (ContractError), and its facts to factsProblem, to a
+//      source with a bit, and to FACTS_MAX_BYTES as the layer, else WriteFault
+//      `facts`;
 //   2. its dataset is names or domains, else WriteFault `tag`; a second-precision
 //      window crosses no hour edge, else `straddle` (D19 of DOM-024: planHour
 //      refuses such a segment in every hour pack);
@@ -24,9 +27,12 @@
 //      memory: a `day` source's file into the segment's own layer `raw`, at most
 //      RAW_PART_BYTES (else `raw-size`); any other source's into the raw lane
 //      object raw-<source>.<start>.<end> (D10 of DOM-024), raw.000 and up of at
-//      most RAW_PART_BYTES each and members.json, once per source and window (a
-//      second raw input of one window must be the same bytes, else `raw`). A
-//      raw input of no byte writes no layer and no object;
+//      most RAW_PART_BYTES each and members.json, once per source and window.
+//      Its one member is { offset: 0, length, sha256 } and the draft's
+//      rawMember fields (a Kafka topic, partition and offsets; DOM-026). A
+//      second raw input of one window must be the same bytes with the same
+//      rawMember, else `raw`. A raw input of no byte writes no layer and no
+//      object, so a rawMember on it is refused (checkRawMemberBytes);
 //   4. the tag (D11 of DOM-024): fileTag for a `day` segment with raw bytes,
 //      segTag for any other, with the variant `d` for domains and none for
 //      names. A second segment of one source, one window and one dataset in
@@ -37,16 +43,40 @@
 //      windows that start on one day and hold the same bytes take one file tag;
 //   5. the records, through writePackFiles of @domains/pack/node with the
 //      dataset's codec (codecOf of @domains/compact): strictly increasing keys,
-//      one record a key, or PackError;
-//   6. the manifest (packManifest, tier seg, D12 of DOM-024), manifest.json and
-//      blobs.json beside the files, as scripts/compact/hour.mjs writes them.
+//      one record a key, or PackError. Each fact's key must be a key of the
+//      records, seen as they stream (factKeysWalk), else `facts`;
+//   6. the facts, when the draft gave at least one: facts.json
+//      (encodeFacts of @domains/adapter, docs/format.md section 19), keyed by
+//      the source's bit, an extra layer of the manifest after any `raw`, and
+//      Segment.facts (factsRef: the rows', as the memory writer computes it,
+//      settled S2 of DOM-026);
+//   7. the manifest (packManifest, tier seg, D12 of DOM-024), manifest.json and
+//      blobs.json beside the files, as scripts/compact/hour.mjs writes them:
+//      blobs.json names every layer, facts.json among them, so pushPlanOf of
+//      scripts/ingest/pack.mjs pushes it.
 // The directory is DIR/<tag>/ for a segment and DIR/<raw tag>/ for a raw lane
 // object; DIR must hold none of them (a file is written once, flag wx).
 import { createHash } from 'node:crypto';
 import { mkdirSync, renameSync, rmSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import { canonicalJson, ContractError, checkCursor, checkWindow, validateSegment } from '@domains/adapter';
+import {
+  canonicalJson,
+  ContractError,
+  checkCursor,
+  checkRawMember,
+  checkRawMemberBytes,
+  checkWindow,
+  encodeFacts,
+  FACTS_MEDIA_TYPE,
+  FACTS_TITLE,
+  FactsError,
+  factKeysWalk,
+  factsOfRows,
+  factsProblem,
+  factsRef,
+  validateSegment,
+} from '@domains/adapter';
 import { CompactError, codecOf, EMPTY_CONFIG, packManifest } from '@domains/compact';
 import { fileDigest } from '@domains/compact/node';
 import { annotationProblem, artifactType, fileTag, LayoutError, rawTag, segTag } from '@domains/ghcr';
@@ -70,7 +100,7 @@ const HOUR_MS = 3_600_000;
 const P = 'dev.pkgforge.domains.';
 
 // A refusal of the writer that no ContractError check names: `cursor`,
-// `tag`, `straddle`, `raw`, `raw-size`, `manifest`. run.mjs prints it as the adapter
+// `tag`, `straddle`, `raw`, `raw-size`, `facts`, `manifest`. run.mjs prints it as the adapter
 // run's fault and pushes nothing (exit 1).
 export class WriteFault extends Error {
   constructor(code, message) {
@@ -82,6 +112,16 @@ export class WriteFault extends Error {
 
 const sha = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 const partName = (n) => `raw.${String(n).padStart(3, '0')}`;
+
+// The records as they stream to the pack writer, each key shown to the facts'
+// walk. The walk's answer is read once writePackFiles has held the keys to
+// strictly increasing order.
+async function* seeing(records, walk) {
+  for await (const r of records) {
+    if (r !== null && typeof r === 'object' && typeof r.key === 'string') walk.see(r.key);
+    yield r;
+  }
+}
 
 // The raw input as chunks: one Uint8Array, or an async iterable of them.
 async function* chunksOf(raw) {
@@ -173,6 +213,22 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         );
       }
     }
+    checkRawMember(draft.rawMember, draft.precision, what);
+    const factsFault = factsProblem(draft.facts);
+    if (factsFault !== null) throw new WriteFault('facts', `${what}: ${factsFault}`);
+    // Copied once checked, before the first await: what is written is what was checked.
+    const rawMember = draft.rawMember === undefined ? undefined : JSON.parse(canonicalJson(draft.rawMember));
+    const facts = draft.facts === undefined || draft.facts.length === 0 ? null : JSON.parse(canonicalJson(draft.facts));
+    let factsBytes = null;
+    if (facts !== null) {
+      if (typeof row.bit !== 'number') throw new WriteFault('facts', `${what}: ${row.id} has no bit, and facts.json is keyed by source bit`);
+      try {
+        factsBytes = encodeFacts(factsOfRows(facts, row.bit));
+      } catch (err) {
+        if (err instanceof FactsError) throw new WriteFault('facts', `${what}: ${err.message}`);
+        throw err;
+      }
+    }
     if (!Object.hasOwn(VARIANTS, draft.dataset)) throw new WriteFault('tag', `${what}: a segment of obs holds names or domains, not ${draft.dataset} (D11 of DOM-024)`);
     const { start, end } = draft.window;
     if (!isSecond(start) || !isSecond(end)) throw new WriteFault('tag', `${what}: the window ${start} to ${end} is not YYYY-MM-DDTHH:MM:SSZ to the second, as a tag names it`);
@@ -197,6 +253,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
     const temp = join(dir, `.raw-${++temps}`);
     try {
       if (raw !== undefined) got = await writeRaw(raw, temp, { maxParts: fileSource ? 1 : Number.MAX_SAFE_INTEGER, what: label, partBytes });
+      checkRawMemberBytes(rawMember, got === null ? null : got.bytes, label);
       let tag;
       try {
         tag = fileSource ? fileTag(draft.source, start, got.sha256, variant) : segTag(draft.source, start, end, variant);
@@ -219,18 +276,29 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         if (fileSource) {
           renameSync(got.files[0], join(at, RAW_TITLE));
           rawLayer = { path: join(at, RAW_TITLE), digest: `sha256:${got.sha256}`, size: got.bytes };
-        } else rawObject = keepRaw(draft, row, got, temp, label);
+        } else rawObject = keepRaw(draft, row, got, temp, label, rawMember);
       }
 
       // 5. The records.
-      const pack = await writePackFiles(records, at, { codec: codecOf(draft.dataset) });
+      const walk = facts === null ? null : factKeysWalk(facts);
+      const pack = await writePackFiles(walk === null ? records : seeing(records, walk), at, { codec: codecOf(draft.dataset) });
+      const unwritten = walk?.problem() ?? null;
+      if (unwritten !== null) throw new WriteFault('facts', `${label}: ${unwritten}`);
       const summary = pack.summary;
       const partFiles = pack.files.slice(0, -1);
       const parts = [];
       for (const f of partFiles) parts.push(await fileDigest(f));
       const idx = { digest: sha(summary.idx), size: summary.idx.length };
 
-      // 6. The manifest.
+      // 6. The facts.
+      let factsLayer = null;
+      if (factsBytes !== null) {
+        const path = join(at, FACTS_TITLE);
+        writeOut(path, factsBytes, 'run');
+        factsLayer = { path, digest: sha(factsBytes), size: factsBytes.length };
+      }
+
+      // 7. The manifest.
       const annotations = {
         [`${P}adapter`]: adapter,
         [`${P}parser`]: row.parser,
@@ -255,7 +323,10 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
           writer: writerId(),
           parts,
           idx,
-          extra: rawLayer === null ? [] : [{ title: RAW_TITLE, mediaType: RAW_MEDIA_TYPE, blob: { digest: rawLayer.digest, size: rawLayer.size } }],
+          extra: [
+            ...(rawLayer === null ? [] : [{ title: RAW_TITLE, mediaType: RAW_MEDIA_TYPE, blob: { digest: rawLayer.digest, size: rawLayer.size } }]),
+            ...(factsLayer === null ? [] : [{ title: FACTS_TITLE, mediaType: FACTS_MEDIA_TYPE, blob: { digest: factsLayer.digest, size: factsLayer.size } }]),
+          ],
           annotations,
         });
       } catch (err) {
@@ -268,6 +339,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         ...parts.map((b, i) => ({ title: `part.${String(i).padStart(3, '0')}`, file: partFiles[i], ...b })),
         { title: IDX_TITLE, file: join(at, IDX_TITLE), ...idx },
         ...(rawLayer === null ? [] : [{ title: RAW_TITLE, file: rawLayer.path, digest: rawLayer.digest, size: rawLayer.size }]),
+        ...(factsLayer === null ? [] : [{ title: FACTS_TITLE, file: factsLayer.path, digest: factsLayer.digest, size: factsLayer.size }]),
       ];
       writeOut(join(at, 'blobs.json'), `${JSON.stringify(blobs)}\n`, 'run');
 
@@ -282,9 +354,10 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         bytes: summary.bytes,
         sha256: summary.sha256,
         ...(got === null ? {} : { raw: { bytes: got.bytes, sha256: got.sha256 } }),
+        ...(facts === null ? {} : { facts: await factsRef(facts) }),
       };
       const segment = validateSegment(json, label);
-      segments.push({ segment, tag, dir: at, manifest, blobs, raw: rawObject?.tag ?? null, rawLayer });
+      segments.push({ segment, tag, dir: at, manifest, blobs, raw: rawObject?.tag ?? null, rawLayer, factsLayer });
       return segment;
     } catch (err) {
       if (!taken) kinds.delete(kind);
@@ -295,19 +368,25 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
   }
 
   // The raw lane object of the draft's source and window: kept from the temp
-  // directory the first time, held to the same bytes after.
-  function keepRaw(draft, row, got, temp, label) {
+  // directory the first time, held to the same bytes and the same member
+  // fields after.
+  function keepRaw(draft, row, got, temp, label, rawMember) {
     const key = `${draft.source} ${draft.window.start} ${draft.window.end}`;
-    const kept = rawByWindow.get(key);
-    if (kept !== undefined) {
+    const fields = canonicalJson(rawMember ?? {});
+    const was = rawByWindow.get(key);
+    if (was !== undefined) {
+      const kept = was.object;
       if (kept.sha256 !== got.sha256 || kept.bytes !== got.bytes)
         throw new WriteFault('raw', `${label}: a second raw input of the window, ${got.bytes} B hashing to ${got.sha256}; the first was ${kept.bytes} B hashing to ${kept.sha256}`);
+      if (was.fields !== fields) throw new WriteFault('raw', `${label}: a second raw input of the window with the member fields ${fields}; the first gave ${was.fields}`);
       return kept;
     }
     const tag = rawTag(draft.source, draft.window.start, draft.window.end);
     const at = join(dir, tag);
     renameSync(temp, at);
-    const members = { format: MEMBERS_FORMAT, source: draft.source, start: draft.window.start, end: draft.window.end, members: [{ offset: 0, length: got.bytes, sha256: got.sha256 }] };
+    // The writer's own fields last: checkRawMember refuses a rawMember that names one.
+    const member = { ...rawMember, offset: 0, length: got.bytes, sha256: got.sha256 };
+    const members = { format: MEMBERS_FORMAT, source: draft.source, start: draft.window.start, end: draft.window.end, members: [member] };
     writeOut(join(at, MEMBERS_TITLE), `${canonicalJson(members)}\n`, 'run');
     const files = [...got.files.map((_, i) => ({ path: join(at, partName(i)), mediaType: RAW_MEDIA_TYPE })), { path: join(at, MEMBERS_TITLE), mediaType: 'application/json' }];
     const object = {
@@ -334,7 +413,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         [`${P}run`]: run,
       },
     };
-    rawByWindow.set(key, object);
+    rawByWindow.set(key, { object, fields });
     raws.push(object);
     return object;
   }

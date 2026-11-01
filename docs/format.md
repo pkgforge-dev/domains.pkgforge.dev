@@ -42,7 +42,7 @@ section 4.2). Its layers by title:
 | `part.000`, `part.001`, and up | The parts: a 16-byte header, then compressed blocks back to back. A title has at least three digits. |
 | `idx` | The index: a head and a second level. |
 | `time.idx`, `time.part.000` and up | Optional, on a pack of `feed` or `new-name`: its time copy, the same rows in `(first_seen, key)` order as a DPK1 pack of its own, with the index `time.idx` and the parts `time.part.NNN` (section 14). |
-| other titles | Optional layers (`txt.gz`, `summary.json`). A reader that does not know a layer ignores it. |
+| other titles | Optional layers: `txt.gz`, `summary.json` (section 16), and `facts.json` on a segment, or on a day pack of `domains` (section 19). A reader that does not know a layer ignores it. |
 
 A pack holds its records in ascending key order, with no key twice. The records
 fill blocks in order. Every block holds `records a block` records, except the
@@ -1264,12 +1264,112 @@ synthetic values:
 | --- | --- |
 | `format` | `domains.raw-members.v1`. A reader refuses another format. |
 | `source`, `start`, `end` | The source and the window, as the annotations name them. |
-| `members` | One item for each member, in offset order: `offset` into the concatenation of `raw.000` and up, `length`, and `sha256`, the hex SHA-256 of the member's bytes. The members are contiguous and cover every byte. |
+| `members` | One item for each member, in offset order: `offset` into the concatenation of `raw.000` and up, `length`, and `sha256`, the hex SHA-256 of the member's bytes, and the fields of the source that the draft gave as `rawMember`. The members are contiguous and cover every byte. |
 
-A reader ignores a field of a member that it does not know. The stream
-adapters add the fields of their source: a Kafka topic, partition and
-offsets, or a tile's log and number. The writer contract of
-`packages/adapter` carries no such field yet, so `members.json` holds one
-member for each source and window: the window's bytes as the adapter gave
-them. A second raw input of the window must be the same bytes, and adds no
-member.
+`members.json` holds one member for each source and window: the window's
+bytes as the adapter gave them. The adapter names the fields of its source
+in the draft's `rawMember` (`SegmentDraft` of `packages/adapter`), and the
+writer writes the member as those fields, then `offset`, `length` and
+`sha256`. `checkRawMember` of `packages/adapter/src/validate.ts` holds the
+rules, and a writer refuses a break of them as `ContractError` `draft`:
+
+- a plain object whose keys match `[a-z][a-z0-9_]*` and are never `offset`,
+  `length` or `sha256`, each value a string or a safe whole number at or
+  above 0;
+- at most 1,024 bytes as canonical JSON (`MAX_RAW_MEMBER_BYTES`);
+- only on a write of `second` precision that carries at least one raw byte,
+  because a write with no raw byte makes no raw lane object.
+
+A Kafka member of `adapters/oi-nrd` names `topic`, `partition`,
+`base_offset`, `last_offset` and `batches`: the whole record batches that
+hold the window's records, in offset order, as the broker returned them. A
+window with no message has no raw object. The member of the recorded
+`oi-nrd` window of `adapters/oi-nrd/fixtures/`, with its digest left out:
+
+```json
+{"base_offset":173936937,"batches":25,"last_offset":173936961,"length":5418,"offset":0,"partition":0,"sha256":"<64 hex>","topic":"newly_registered_domain"}
+```
+
+A second raw input of the window must be the same bytes with the same
+fields, and adds no member: no `rawMember` and `{}` count as the same
+fields, and any other difference is `WriteFault` `raw` of the disk writer
+of `scripts/ingest/writer.mjs`. A reader ignores a field of a member that
+it does not know. A names-tile member of DOM-037 adds a tile's log and
+number the same way.
+
+## 19. The certificate facts, `facts.json`
+
+A segment, and a day pack of `domains`, may carry one more layer,
+`facts.json`, of media type `application/json`: the facts of its keys that
+a record does not hold. It holds the certificate age
+of each `oi-nrd` event, which the feed's confidence reads
+(`EventFacts.certAges` of `packages/feed`) to set `suspect`. The reference
+code is `packages/adapter/src/facts.ts` (`encodeFacts`, `parseFacts`,
+`mergeFacts`, `factsOfRows` and `factsRef` of `@domains/adapter`).
+
+```json
+{"facts":[["com.example",{"1":{"cert_age":3456789}}],["net.example",{"1":{"cert_age":4}}]],"format":"domains.facts.v1"}
+```
+
+The layer is canonical JSON with its keys sorted as in section 17, and one
+final newline.
+
+| Field | Value |
+| --- | --- |
+| `format` | `domains.facts.v1`. A reader refuses another format, and a top-level field beside `facts` and `format`. |
+| `facts` | One item a key, `[key, bits]`, the keys strictly ascending in code-unit order (byte order for a pack key), each a key of the pack's records. `bits` is an object keyed by source bit in decimal with no leading zero, 0 to 63, and names at least one bit. Each value holds the facts of that source's events for the key. |
+| `cert_age` | The minimum certificate age over the source's events for the key, in whole seconds: a safe whole number at or above 0. |
+
+A reader refuses keys out of order or repeated, a key with no bit, a bit
+outside 0 to 63 or written in another form, and a `cert_age` that is not a
+safe whole number at or above 0. It ignores a fact field that it does not
+know and drops it, so a merge and a new encode keep only the fields it
+knows. `encodeFacts` writes `cert_age` alone. A layer is at most 64 MiB
+(`FACTS_MAX_BYTES`), for a segment and a day pack alike, and a reader
+refuses a larger one (`FactsError` `size`).
+
+**Who writes it.** An adapter passes facts in the draft's `facts`: one row
+`{ key, cert_age }` a key, strictly ascending, each key one of the records
+it writes. An empty list is no facts: no layer is written. The disk writer
+of `scripts/ingest/writer.mjs` refuses a break of the rules as
+`WriteFault` `facts`, and the memory writer as `ContractError` `draft`. The
+disk writer keys the rows by the source's bit and adds the layer after any
+raw layer, as an extra layer of `packManifest`, with its digest and size in
+`blobs.json`. `adapters/oi-nrd` alone passes facts, for its `oi-nrd`
+segments: one row a key whose events had a known certificate age.
+
+**`Segment.facts`.** The segment the writer answers names
+`{ bytes, sha256 }` of the canonical JSON of the rows,
+`[[key, cert_age], ...]`, with no final newline (`factsRef`). It names the
+rows and not the layer, because the rows carry no source bit: the memory
+writer, which knows no bit, and the disk writer compute it alike, and the
+harness's equality of two runs covers the facts.
+
+**Who reads it.** No pack reader and no Worker reads the layer. The hour
+build (`scripts/compact/hour.mjs`) reads the layer of each segment it
+merges, and the day build (`scripts/compact/day.mjs`) the layer of each
+segment input of the `domains` day. Each holds a table's bits to the bits of
+its pack's sources. The day build writes the merge of its segment inputs'
+layers, quarantined inputs included as their records are, onto the
+`domains` day pack, and holds every key of it to the pack's records; the
+feed gets that merge less the quarantined inputs. A feed built from a
+`domains` day pack that is already live reads that pack's own layer. An
+hour pack of `feed` carries none.
+
+**A day's `suspect` depends on its hours.** A day row takes the minimum
+age over the day, so a fresh certificate later in the day clears an old
+one. It also keeps the suspect bits of the day's hour rows
+(`CARRIED_FLAGS` of `packages/feed`, the conservative reading of
+`packages/compact/src/daily.ts`). So a domain with an old certificate in
+its first hour and a fresh one later is suspect in a day built with its
+hour packs, and not suspect in a day built from segments alone: a backlog
+day, a rebuild under `-rN`, or a day whose hours were not built.
+
+**Size.** 400,000 keys of 21 characters make a layer of 20,053,375 B, 50.1 B
+a key (MEASURED 2026-10-31T16:05:12Z,
+`docs/research/measure/DOM-026/16-facts-size.mjs`, a table of the shape the
+S1 test of `scripts/compact/day.test.mjs` builds; the test holds the cap,
+not the size). A day of `oi-nrd` is about 14.2 MB [E] at
+35.4 B a message, merged by day (MEASURED 2026-10-31 over 37,863 messages,
+DOM-026). Those messages held 22% zone rows, which carry no fact; over the
+retained span zone rows are 33.5% of the topic, so the estimate is high.

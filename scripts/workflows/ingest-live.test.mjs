@@ -577,6 +577,39 @@ test("ingest-live: 'Move state:latest' refuses missing or foreign files and an o
   assert.equal(noList.output.add, undefined);
 });
 
+// Settled S9 of DOM-026: add reaches root-promote.yml as one environment
+// string, which Linux refuses over 128 KiB (E2BIG). The refs here are listed
+// newest first, so the state's order is not the sorted one.
+const MOVE_MAX = 500;
+const owedRefs = (n, tag = (i) => `oi-nrd.w${String(i).padStart(4, '0')}-d`) => Array.from({ length: n }, (_, i) => `obs:${tag(n - 1 - i)}`);
+
+test("ingest-live: 'Move state:latest' writes add from the first 500 owed refs in the state's order, says how many stay owed, and checks each ref past 500 too", { skip: SKIP }, (t) => {
+  const refs = owedRefs(MOVE_MAX + 3);
+  const r = move(t, { refs });
+  assert.equal(r.status, 0, r.text);
+  assert.equal(r.output.add, refs.slice(0, MOVE_MAX).join(' '));
+  assert.match(r.text, /^state owes 503 pack\(s\) to the root; add holds the first 500 in the state's order, and 3 stay owed for a later run: obs:oi-nrd\.w0502-d /m);
+  assert.match(r.text, /^::warning::state owes 503 packs, past the 500 one promotion takes: 3 stay owed, and the root falls behind its segments until the promotions catch up$/m);
+  assert.doesNotMatch(r.output.add, /obs:oi-nrd\.w000[012]-d/, 'the three oldest stay owed');
+  // Exactly 500: every ref in add, none stays, and no warning.
+  const full = move(t, { refs: owedRefs(MOVE_MAX) });
+  assert.equal(full.status, 0, full.text);
+  assert.equal(full.output.add.split(' ').length, MOVE_MAX);
+  assert.match(full.text, /add holds the first 500 in the state's order, and 0 stay owed/);
+  assert.doesNotMatch(full.text, /::warning::/);
+  // A ref off its grammar past the first 500 still fails the step, and add is not written.
+  const bad = move(t, { refs: [...owedRefs(MOVE_MAX + 1), 'obs:Upper'] });
+  assert.equal(bad.status, 1, bad.text);
+  assert.match(bad.text, /next\.json owes obs:Upper, which is not obs:TAG or feed:TAG/);
+  assert.equal(bad.output.add, undefined);
+  // 500 refs of tags of 128 characters, the longest an OCI tag takes, fit in
+  // one environment string with room to spare.
+  const long = move(t, { refs: owedRefs(MOVE_MAX + 1, (i) => `t${String(i).padStart(4, '0')}`.padEnd(128, 'x')) });
+  assert.equal(long.status, 0, long.text);
+  assert.equal(long.output.add.split(' ').length, MOVE_MAX);
+  assert.ok(Buffer.byteLength(long.output.add) < 128 * 1024, `${Buffer.byteLength(long.output.add)} B`);
+});
+
 // ---- the chain -------------------------------------------------------------
 
 const START_MUST = /node scripts\/ingest\/chain\.mjs start \|\| rc=\$\?/;

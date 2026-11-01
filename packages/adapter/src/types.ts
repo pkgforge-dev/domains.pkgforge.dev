@@ -10,6 +10,10 @@
 // `source.json`: `through` is written by the promotion job, `status` is derived
 // by the Worker at read time, and `fetched` is the time of one fetch. A file
 // that carries one is refused (RUNTIME_FIELDS).
+//
+// The one import of another package is the type of the loaded list, which
+// @domains/names builds; it is erased at run time.
+import type { Psl } from "@domains/names";
 
 // The persisted formats, each named in its own `format` field.
 export const SOURCE_FORMAT = "domains.source.v1";
@@ -122,10 +126,28 @@ export interface RawRef {
   readonly sha256: string;
 }
 
+// The facts of one key of a segment, as a draft gives them: `cert_age`, the
+// minimum certificate age in whole seconds over the key's events in the window
+// (docs/format.md section 19).
+export interface FactRow {
+  readonly key: string;
+  readonly cert_age: number;
+}
+
+// The facts a segment was written with: the UTF-8 size and the SHA-256 of the
+// canonical JSON of the draft's facts as rows [[key, cert_age], ...] (factsRef
+// of facts.ts). It names no source bit, so every writer computes it alike
+// (settled S2 of DOM-026).
+export interface FactsRef {
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
 // One segment: what an adapter wrote for one source, one dataset and one window.
 // Its identity is (source, window, cursorBefore, cursorAfter) (docs/architecture.md
 // section 5.4). `bytes` and `sha256` are the writer's: the stored size, and the
-// SHA-256 of the decoded record stream.
+// SHA-256 of the decoded record stream. `facts` is there when the draft gave
+// at least one fact.
 export interface Segment {
   readonly source: string;
   readonly dataset: Dataset;
@@ -137,10 +159,11 @@ export interface Segment {
   readonly bytes: number;
   readonly sha256: string;
   readonly raw?: RawRef;
+  readonly facts?: FactsRef;
 }
 
 // What an adapter hands its writer for one segment; the writer adds count,
-// bytes, sha256 and raw.
+// bytes, sha256, raw and facts.
 export interface SegmentDraft {
   readonly source: string;
   readonly dataset: Dataset;
@@ -148,6 +171,18 @@ export interface SegmentDraft {
   readonly cursorBefore: Cursor;
   readonly cursorAfter: Cursor;
   readonly precision: Precision;
+  // The fields of the raw lane member that this write's raw bytes make
+  // (members.json, docs/format.md section 18): for Kafka, topic, partition,
+  // base_offset, last_offset and batches. Keys of [a-z][a-z0-9_]*, values
+  // strings or safe whole numbers of at least 0; never offset, length or
+  // sha256, which the writer writes. Only on a second-precision write with raw
+  // bytes (checkRawMember of validate.ts): a day source's file is its
+  // segment's own layer, which no members.json names.
+  readonly rawMember?: Readonly<Record<string, string | number>>;
+  // The certificate facts of the records' keys, ascending by key, each key one
+  // of the records written (factsProblem and factKeysWalk of validate.ts). An
+  // empty list is no facts: no layer, and no Segment.facts.
+  readonly facts?: readonly FactRow[];
 }
 
 // One record of a segment. Every dataset sorts by `key` (docs/architecture.md
@@ -170,8 +205,41 @@ export interface SegmentWriter {
 // harness passes a replay of recorded answers.
 export type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+// The address and options of a TCP connection: the shape of connect() of
+// cloudflare:sockets, so the same adapter code runs in workerd later.
+export interface SocketAddress {
+  readonly hostname: string;
+  readonly port: number;
+}
+
+export interface SocketOptions {
+  // Plain TCP only: no TLS is recorded or built, and both doors refuse any
+  // other value (the replay as a miss, liveConnect with SocketError).
+  readonly secureTransport?: "off";
+  readonly allowHalfOpen?: boolean;
+}
+
+// The members of a cloudflare:sockets Socket an adapter uses.
+export interface AdapterSocket {
+  readonly readable: ReadableStream<Uint8Array>;
+  readonly writable: WritableStream<Uint8Array>;
+  // Resolves when the connection is open; rejects when it does not open.
+  readonly opened: Promise<unknown>;
+  close(): Promise<void>;
+}
+
+// The connect an adapter is given. Production passes liveConnect() of
+// @domains/adapter/node; the harness passes a replay of recorded exchanges
+// (replayConnect of connect.ts), which refuses every other connection.
+export type Connect = (address: SocketAddress, options?: SocketOptions) => AdapterSocket;
+
 export interface AdapterContext {
   readonly fetch: Fetch;
+  readonly connect: Connect;
+  // The pinned Public Suffix List the run's segments are written under (D23 of
+  // DOM-024): every adapter normalises its names with it (docs/architecture.md
+  // section 3.1), never with a list of its own.
+  readonly psl: Psl;
   // The time of the run, ISO 8601 UTC. An adapter reads no clock of its own, so
   // two runs with the same inputs write the same segments.
   readonly now: string;

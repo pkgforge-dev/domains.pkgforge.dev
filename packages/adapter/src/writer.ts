@@ -4,7 +4,7 @@
 //
 //   const w = memoryWriter();
 //   const seg = await w.write(draft, records, raw);   // a Segment
-//   w.written;                                        // [{ segment, records, raw }]
+//   w.written;                                        // [{ segment, records, raw, rawMember, facts }]
 //
 // It holds the writer contract a real writer holds: the draft is a valid
 // segment identity, records arrive in strictly increasing key order with one
@@ -12,14 +12,27 @@
 // the decoded record stream, here each record's canonical JSON and a newline;
 // `bytes` is the length of that stream. The same records give the same digest
 // whatever order a record's fields were built in.
+//
+// The draft's raw lane member fields and facts are held to the rules the disk
+// writer of scripts/ingest holds them to (checkRawMember, checkRawMemberBytes,
+// factsProblem, factKeysWalk of validate.ts), each refusal ContractError
+// `draft`, and recorded as given. Segment.facts is factsRef of facts.ts, as the
+// disk writer computes it. The layer facts.json is keyed by a source bit, which
+// this writer does not know: it holds the facts to FACTS_MAX_BYTES as the layer
+// of the widest bit (MAX_BIT, two digits) would be, so a draft it takes is a
+// draft the disk writer takes.
+import { encodeFacts, FactsError, factsOfRows, factsRef } from "./facts.ts";
 import { canonicalJson, JsonError, sha256Hex, utf8 } from "./json.ts";
-import { DATASETS, PRECISIONS, type RawInput, type Segment, type SegmentDraft, type SegmentRecord, type SegmentWriter } from "./types.ts";
-import { ContractError, checkCursor, checkWindow, ID_GRAMMAR, validateSegment } from "./validate.ts";
+import { DATASETS, type FactRow, PRECISIONS, type RawInput, type Segment, type SegmentDraft, type SegmentRecord, type SegmentWriter } from "./types.ts";
+import { ContractError, checkCursor, checkRawMember, checkRawMemberBytes, checkWindow, factKeysWalk, factsProblem, ID_GRAMMAR, MAX_BIT, validateSegment } from "./validate.ts";
 
 export interface Written {
   readonly segment: Segment;
   readonly records: readonly SegmentRecord[];
   readonly raw: Uint8Array | null;
+  // The draft's rawMember and facts as JSON copies, or null when it gave none.
+  readonly rawMember: Readonly<Record<string, string | number>> | null;
+  readonly facts: readonly FactRow[] | null;
 }
 
 export interface MemoryWriter extends SegmentWriter {
@@ -53,6 +66,17 @@ function checkDraft(draft: SegmentDraft): void {
   checkWindow(draft.window, draft.precision, what);
   checkCursor(draft.cursorBefore, `${what}: cursorBefore`);
   checkCursor(draft.cursorAfter, `${what}: cursorAfter`);
+  checkRawMember(draft.rawMember, draft.precision, what);
+  const problem = factsProblem(draft.facts);
+  if (problem !== null) throw new ContractError("draft", `${what}: ${problem}`);
+  if (draft.facts !== undefined && draft.facts.length > 0) {
+    try {
+      encodeFacts(factsOfRows(draft.facts, MAX_BIT));
+    } catch (err) {
+      if (!(err instanceof FactsError)) throw err;
+      throw new ContractError("draft", `${what}: facts: ${err.message}`);
+    }
+  }
 }
 
 export function memoryWriter(): MemoryWriter {
@@ -61,6 +85,11 @@ export function memoryWriter(): MemoryWriter {
     written,
     async write(draft, records, raw) {
       checkDraft(draft);
+      const what = `segment ${JSON.stringify(draft.source)}`;
+      // Copied once the draft is checked, before the first await: what is recorded is what was checked.
+      const facts = draft.facts === undefined ? null : (JSON.parse(canonicalJson(draft.facts)) as FactRow[]);
+      const rawMember = draft.rawMember === undefined ? null : (JSON.parse(canonicalJson(draft.rawMember)) as Record<string, string | number>);
+      const walk = factKeysWalk(facts ?? []);
       const kept: SegmentRecord[] = [];
       const lines: string[] = [];
       let prev: string | null = null;
@@ -77,10 +106,14 @@ export function memoryWriter(): MemoryWriter {
         }
         lines.push(line);
         kept.push(JSON.parse(line) as SegmentRecord);
+        walk.see(r.key);
         prev = r.key;
       }
+      const unwritten = walk.problem();
+      if (unwritten !== null) throw new ContractError("draft", `${what}: facts: ${unwritten}`);
       const stream = utf8(lines.map((l) => `${l}\n`).join(""));
       const rawBytes = raw === undefined ? null : await collect(raw);
+      checkRawMemberBytes(rawMember ?? undefined, rawBytes === null ? null : rawBytes.byteLength, what);
       const json: Record<string, unknown> = {
         source: draft.source,
         dataset: draft.dataset,
@@ -93,8 +126,9 @@ export function memoryWriter(): MemoryWriter {
         sha256: await sha256Hex(stream),
       };
       if (rawBytes !== null) json.raw = { bytes: rawBytes.byteLength, sha256: await sha256Hex(rawBytes) };
+      if (facts !== null && facts.length > 0) json.facts = await factsRef(facts);
       const segment = validateSegment(json, `segment of ${draft.source}`);
-      written.push({ segment, records: kept, raw: rawBytes });
+      written.push({ segment, records: kept, raw: rawBytes, rawMember, facts });
       return segment;
     },
   };

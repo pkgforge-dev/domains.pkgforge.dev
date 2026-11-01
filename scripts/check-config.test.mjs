@@ -53,7 +53,7 @@ test('config: the Worker program checks every Worker source against the runtime 
   const worker = tsconfig('tsconfig.worker.json');
   assert.equal(worker.extends, './tsconfig.base.json');
   assert.deepEqual(worker.compilerOptions.types, ['@cloudflare/workers-types']);
-  assert.deepEqual(worker.include, ['apps/*/src', 'probes/*/src', 'probes/*/test/*-entry.ts', 'packages/*/src', 'packages/*/test/*-worker.ts']);
+  assert.deepEqual(worker.include, ['apps/*/src', 'adapters/*/src', 'probes/*/src', 'probes/*/test/*-entry.ts', 'packages/*/src', 'packages/*/test/*-worker.ts']);
   assert.equal(worker.files, undefined, 'the test Worker entries are matched by the pattern, not listed');
   // The Worker entry each package's workerd test loads from its own directory
   // (`join(import.meta.dirname, "<entry>.ts")`) is a *-worker.ts the pattern

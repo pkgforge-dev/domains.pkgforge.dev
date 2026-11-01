@@ -3,17 +3,23 @@
 // root.json and the packs on disk or a GHCR double; the verifier passes both
 // packs; a re-run writes nothing, and so does a re-run of a rebuild whose
 // bytes a build holds (D3 of DOM-023); the output paths and each exit code;
-// each refusal is planted alone. Real packs of synthetic
+// each refusal is planted alone. The certificate facts (DOM-026): the
+// segments' facts.json make a feed row suspect and become the domains day
+// pack's own layer, which a later feed day reads, at the size of a day of
+// oi-nrd and more (settled S1). Real packs of synthetic
 // records (packages/compact/test/daily-helpers.ts), a root that buildRoot of
 // packages/root validates.
 //
 //   node scripts/test.mjs scripts/compact --name "day cli"
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { encodeFacts, FACTS_MAX_BYTES, parseFacts } from '@domains/adapter';
 import { buildDay, CompactError } from '@domains/compact';
 import { filesSource } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
@@ -21,11 +27,12 @@ import { GhcrError, LayoutError } from '@domains/ghcr';
 import { BloomFilter, HashDelta, hashKey, LedgerError } from '@domains/ledger';
 import { FEED_CODEC, FEED_PROVISIONAL, FEED_SUSPECT, FEED_SUSPECT_CERT, PackError, PackReader } from '@domains/pack';
 import { buildRoot } from '@domains/root';
-import { blobsOf, dayNo, domain, entryOf, PSL, REGISTRY, secs, segment, tierPack, writeDir } from '../../packages/compact/test/daily-helpers.ts';
+import { blobsOf, dayNo, domain, entryOf, factsExtra, PSL, REGISTRY, secs, segment, segmentFacts, tierPack, writeDir } from '../../packages/compact/test/daily-helpers.ts';
+import { ROOT } from '../files.mjs';
 import { RateLimitError } from '../ghcr/rate.mjs';
 import { Fault } from '../root/lib.mjs';
 import { main as verify } from '../verify-pack.mjs';
-import { DAY_FORMAT, EXIT, main } from './day.mjs';
+import { DAY_FORMAT, dayFactsLayer, EXIT, main } from './day.mjs';
 
 async function call(fn, argv, deps = {}) {
   const out = [];
@@ -66,8 +73,11 @@ function rootFiles(dir, packs, { gaps } = {}) {
 // 2026-10-27; oi-nrd windows over the rest of the day, the last of them empty,
 // and one after midnight; two hour packs of the feed. With `behind`, oi-nrd's
 // packs end at 07:00, and its lane is behind its clock. `oiPsl` is the PSL
-// hash the first oi-nrd window was built under.
-async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL } = {}) {
+// hash the first oi-nrd window was built under. `oiFacts` gives the facts of
+// the windows of 05:00 (a) and 06:00 (b), as the draft's rows or as the
+// layer's bytes (SegmentOptions.facts).
+async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL, oiFacts = {} } = {}) {
+  const facts = (k) => (oiFacts[k] === undefined ? {} : { facts: oiFacts[k] });
   const packs = [
     await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] }),
     await segment('thc-ct', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [
@@ -77,8 +87,9 @@ async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL } = 
     ]),
     await segment('oi-nrd', '2026-10-27T05:00:00Z', '2026-10-27T06:00:00Z', [domain('com.fresh-synthetic', 'oi-nrd', T('05:10:00')), domain('net.cert-synthetic', 'oi-nrd', T('05:20:00'))], {
       psl: oiPsl,
+      ...facts('a'),
     }),
-    await segment('oi-nrd', '2026-10-27T06:00:00Z', '2026-10-27T07:00:00Z', [domain('np.com.nepal-synthetic', 'oi-nrd', T('06:30:00'))]),
+    await segment('oi-nrd', '2026-10-27T06:00:00Z', '2026-10-27T07:00:00Z', [domain('np.com.nepal-synthetic', 'oi-nrd', T('06:30:00'))], facts('b')),
     ...(behind
       ? []
       : [
@@ -151,11 +162,22 @@ function buildsReader(builds) {
   };
 }
 
-// A GHCR double that holds every blob of `packs` by digest, less those `drop` names.
+// A GHCR double that holds every manifest of `packs` in its package by its
+// digest, and every blob by digest, less those `drop` names (a pack and its
+// manifest's digest, or a blob's).
 function packsReader(packs, drop = () => false) {
   const blobs = new Map();
-  for (const p of packs) for (const [digest, bytes] of blobsOf(p)) if (!drop(p, digest)) blobs.set(digest, bytes);
+  const manifests = new Map();
+  for (const p of packs) {
+    if (!drop(p, p.digest)) manifests.set(`${entryOf(p).pack.repo}@${p.digest}`, p);
+    for (const [digest, bytes] of blobsOf(p)) if (!drop(p, digest)) blobs.set(digest, bytes);
+  }
   return {
+    getManifest: async (repo, ref) => {
+      const p = manifests.get(`${repo}@${ref}`);
+      if (p === undefined) throw new GhcrError('missing', 'MANIFEST_UNKNOWN', 404);
+      return { repo, ref, digest: p.digest, bytes: new TextEncoder().encode(p.text), contentType: 'application/vnd.oci.image.manifest.v1+json', json: p.json, from: 'registry' };
+    },
     readRange: async (_repo, digest, start, end) => {
       const b = blobs.get(digest);
       if (b === undefined) throw new GhcrError('missing', `GHCR holds no blob ${digest.slice(0, 19)}`, 404);
@@ -165,13 +187,20 @@ function packsReader(packs, drop = () => false) {
 }
 
 async function rowsOf(dir) {
-  const src = filesSource([join(dir, 'part.000')]);
+  const src = filesSource(partFiles(dir));
   const reader = await PackReader.open(new Uint8Array(readFileSync(join(dir, 'idx'))), src.source, FEED_CODEC, { partSizes: src.sizes });
   const rows = [];
   for await (const row of reader.scan()) rows.push([row.key, row.firstSeen - T('00:00:00'), row.feedFlags]);
   await src.close();
   return rows;
 }
+
+// The key parts of the pack in `dir`, part.000 on, in order.
+const partFiles = (dir) =>
+  readdirSync(dir)
+    .filter((f) => /^part\.\d{3,}$/.test(f))
+    .sort()
+    .map((f) => join(dir, f));
 
 // verify-pack.mjs on the pack in `dir`, every check of `require` asked.
 async function verifyDir(dir, require) {
@@ -182,9 +211,31 @@ async function verifyDir(dir, require) {
   const annPath = `${dir}.annotations.json`;
   writeFileSync(annPath, JSON.stringify(ann));
   const blobs = JSON.parse(readFileSync(join(dir, 'blobs.json'), 'utf8'));
-  // summary.json is no layer the verifier reads.
-  const files = blobs.filter((b) => b.file !== null && b.title !== 'summary.json').map((b) => b.file);
+  // summary.json and facts.json are no layers the verifier reads, as the
+  // verify step of compact-daily.yml passes it the parts and indexes alone.
+  const files = blobs.filter((b) => b.file !== null && b.title !== 'summary.json' && b.title !== 'facts.json').map((b) => b.file);
   return call(verify, [...files, '--annotations', annPath, '--require', require]);
+}
+
+// The pack that day.mjs wrote to `dir` under `tag`, as a pack in memory
+// (daily-helpers.ts MemPack): its manifest, its layers, and its extra layers
+// but summary.json, so a root can name it and a GHCR double serve it.
+function writtenPack(dir, tag, dataset) {
+  const text = readFileSync(join(dir, 'manifest.json'), 'utf8');
+  const json = JSON.parse(text);
+  const titles = json.layers.map((l) => l.annotations['org.opencontainers.image.title']);
+  const bytes = (title) => new Uint8Array(readFileSync(join(dir, title)));
+  return {
+    tag,
+    digest: sha(text),
+    text,
+    json,
+    idx: bytes('idx'),
+    parts: partFiles(dir).map((f) => new Uint8Array(readFileSync(f))),
+    time: null,
+    extra: titles.filter((t) => t === 'facts.json').map((title) => ({ title, bytes: bytes(title) })),
+    dataset,
+  };
 }
 
 test('day cli: the domains day pack, the exact feed with its time copy and summary.json, and the first ledger; the verifier passes both packs', () =>
@@ -722,3 +773,303 @@ test('day cli: each error class has its exit code: a defect 70, the root not pub
       assert.match(x.text, line);
     }
   }));
+
+// ---- the certificate facts (DOM-026, docs/format.md section 19) -------------
+
+const TITLE = 'org.opencontainers.image.title';
+// The facts of oi-nrd's windows of 05:00 (a) and 06:00 (b): com.fresh-synthetic
+// under a certificate of 30 days, net.cert-synthetic under one of 50 s (its
+// hour row is suspect already), np.com.nepal-synthetic under one of 100 s.
+const OI_FACTS = {
+  a: [
+    { key: 'com.fresh-synthetic', cert_age: 2_592_000 },
+    { key: 'net.cert-synthetic', cert_age: 50 },
+  ],
+  b: [{ key: 'np.com.nepal-synthetic', cert_age: 100 }],
+};
+
+test("day cli: the segments' facts make a feed day row suspect with bit 4, and the domains day pack carries their merge as facts.json, a layer of its manifest and of blobs.json; GHCR gives the same files", () =>
+  inTmp(async (dir) => {
+    const r = await dayRoot(dir, { oiFacts: OI_FACTS });
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--first-ledger']));
+    assert.equal(x.code, EXIT.ok, x.text);
+    // Two of the five segment inputs carry facts.json, three keys in all.
+    assert.match(x.text, /^facts 2 3$/m);
+    assert.deepEqual(readdirSync(join(out, 'domains')).sort(), ['blobs.json', 'facts.json', 'idx', 'manifest.json', 'part.000']);
+    const facts = readFileSync(join(out, 'domains', 'facts.json'));
+    assert.equal(
+      facts.toString('utf8'),
+      '{"facts":[["com.fresh-synthetic",{"1":{"cert_age":2592000}}],["net.cert-synthetic",{"1":{"cert_age":50}}],["np.com.nepal-synthetic",{"1":{"cert_age":100}}]],"format":"domains.facts.v1"}\n',
+    );
+    const manifest = JSON.parse(readFileSync(join(out, 'domains', 'manifest.json'), 'utf8'));
+    const layer = manifest.layers.at(-1);
+    assert.deepEqual([layer.annotations[TITLE], layer.mediaType, layer.digest, layer.size], ['facts.json', 'application/json', sha(facts), facts.length]);
+    // blobs.json names every layer of the manifest, facts.json with its file, for the push.
+    const blobs = JSON.parse(readFileSync(join(out, 'domains', 'blobs.json'), 'utf8'));
+    assert.deepEqual(
+      blobs.slice(1).map((b) => [b.title, b.digest, b.size]),
+      manifest.layers.map((l) => [l.annotations[TITLE], l.digest, l.size]),
+    );
+    assert.equal(blobs.at(-1).file, join(out, 'domains', 'facts.json'));
+    // com.fresh-synthetic's only age is 30 days: suspect by its certificate,
+    // where the test above with no facts has it 0.
+    assert.deepEqual(await rowsOf(join(out, 'feed')), [
+      ['com.fresh-synthetic', 5 * 3600 + 600, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['com.isc-synthetic', 0, 0],
+      ['com.thc-synthetic', 0, 0],
+      ['net.cert-synthetic', 5 * 3600 + 1200, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['np.com.nepal-synthetic', 0, 0],
+    ]);
+    assert.deepEqual(JSON.parse(readFileSync(join(out, 'day.json'), 'utf8')).facts, { from: 'segments', layers: 2, keys: 3 });
+    const vd = await verifyDir(join(out, 'domains'), 'dataset,length,count,sha256');
+    assert.equal(vd.code, 0, vd.text);
+    // From GHCR: each segment's manifest by the digest the root names, then its facts.json.
+    const remote = await call(main, noInputs(args(r, join(dir, 'remote'), ['--first-ledger'])), { reader: packsReader(r.packs) });
+    assert.equal(remote.code, EXIT.ok, remote.text);
+    for (const f of ['domains/manifest.json', 'domains/facts.json', 'feed/manifest.json', 'feed/part.000', 'feed/summary.json', 'day.json']) {
+      assert.deepEqual(readFileSync(join(dir, 'remote', f)), readFileSync(join(out, f)), f);
+    }
+  }));
+
+test("day cli: a feed day built from a present domains day pack reads the pack's facts.json, from disk or from GHCR; a present pack with none gives no facts", () =>
+  inTmp(async (dir) => {
+    const records = [domain('com.fresh-synthetic', 'oi-nrd', T('05:10:00')), domain('com.thc-synthetic', 'thc-ct', 299), domain('net.cert-synthetic', 'oi-nrd', T('05:20:00'))];
+    const facts = segmentFacts('oi-nrd', [
+      { key: 'com.fresh-synthetic', cert_age: 2_592_000 },
+      { key: 'net.cert-synthetic', cert_age: 30 },
+    ]);
+    const base = await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] });
+    const live = await tierPack('domains', 'd', '2026-10-27T00:00:00Z', records, { sources: ['oi-nrd', 'thc-ct'], extra: [factsExtra(facts)] });
+    const r = rootFiles(dir, [base, live]);
+    writeFileSync(r.tags, JSON.stringify({ names: [], feed: [] }));
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--no-ledger']));
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^verdict domains present names:domains-d-20261027$/m);
+    assert.match(x.text, /^facts names:domains-d-20261027 2$/m);
+    const rows = [
+      ['com.fresh-synthetic', 5 * 3600 + 600, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['com.thc-synthetic', 0, 0],
+      ['net.cert-synthetic', 5 * 3600 + 1200, 0],
+    ];
+    assert.deepEqual(await rowsOf(join(out, 'feed')), rows);
+    assert.deepEqual(JSON.parse(readFileSync(join(out, 'day.json'), 'utf8')).facts, { from: 'names:domains-d-20261027', layers: 1, keys: 2 });
+    // From GHCR: the pack's manifest from names by the digest the root names, then the layer.
+    const remote = await call(main, noInputs(args(r, join(dir, 'remote'), ['--no-ledger'])), { reader: packsReader(r.packs) });
+    assert.equal(remote.code, EXIT.ok, remote.text);
+    for (const f of ['feed/manifest.json', 'feed/part.000', 'feed/time.idx', 'day.json']) assert.deepEqual(readFileSync(join(dir, 'remote', f)), readFileSync(join(out, f)), f);
+    // The same day pack with no facts.json: no facts, and no row suspect.
+    const bare = rootFiles(join(dir, 'bare'), [base, await tierPack('domains', 'd', '2026-10-27T00:00:00Z', records, { sources: ['oi-nrd', 'thc-ct'] })]);
+    writeFileSync(bare.tags, JSON.stringify({ names: [], feed: [] }));
+    const y = await call(main, args(bare, join(dir, 'bare-out'), ['--no-ledger']));
+    assert.equal(y.code, EXIT.ok, y.text);
+    assert.match(y.text, /^facts names:domains-d-20261027 0$/m);
+    assert.deepEqual(
+      await rowsOf(join(dir, 'bare-out', 'feed')),
+      rows.map(([k, t]) => [k, t, 0]),
+    );
+    // A feed day the root names live reads no facts.
+    const both = rootFiles(join(dir, 'both'), [base, live, await tierPack('feed', 'd', '2026-10-27T00:00:00Z', [feedRow('com.fresh-synthetic', '05:10:00', 0)], { sources: ['oi-nrd'] })]);
+    const z = await call(main, args(both, join(dir, 'both-out'), ['--no-ledger']));
+    assert.equal(z.code, EXIT.ok, z.text);
+    assert.doesNotMatch(z.text, /^facts /m);
+  }));
+
+test('day cli: a facts.json or a manifest that --inputs lacks is exit 2; a facts.json not its manifest names, one that does not read, one of another bit or one naming a key the day lacks is exit 1; a manifest or a facts blob GHCR does not give is exit 1, never PRIVATE PACKAGE', () =>
+  inTmp(async (dir) => {
+    const nothingWritten = (out, x) => {
+      for (const f of ['domains/manifest.json', 'domains/facts.json', 'feed', 'day.json']) assert.equal(existsSync(join(out, f)), false, `${f}\n${x.text}`);
+    };
+    const r = await dayRoot(join(dir, 'r'), { oiFacts: OI_FACTS });
+    const seg = r.packs[2];
+    const thc = r.packs[1];
+    assert.deepEqual([seg.tag.split('.')[0], thc.tag.split('.')[0], seg.extra.length], ['oi-nrd', 'thc-ct', 1]);
+    const at = (p, f) => join(r.inputs, p.tag, f);
+    const esc = (s) => s.replaceAll('.', '\\.');
+    // facts.json gone from --inputs, then another layer's bytes in its place.
+    unlinkSync(at(seg, 'facts.json'));
+    const gone = await call(main, args(r, join(dir, 'gone'), ['--no-ledger']));
+    assert.equal(gone.code, EXIT.usage, gone.text);
+    assert.match(gone.text, new RegExp(`^day: \\S+facts\\.json does not exist, and the manifest of ${esc(seg.tag)} names the layer facts\\.json$`, 'm'));
+    nothingWritten(join(dir, 'gone'), gone);
+    writeFileSync(at(seg, 'facts.json'), segmentFacts('oi-nrd', [{ key: 'com.fresh-synthetic', cert_age: 1 }]));
+    const other = await call(main, args(r, join(dir, 'other'), ['--no-ledger']));
+    assert.equal(other.code, EXIT.fault, other.text);
+    assert.match(
+      other.text,
+      new RegExp(
+        `^day: FAIL fault \\S+facts\\.json is \\d+ B hashing to sha256:[0-9a-f]{64}; the manifest of ${esc(seg.tag)} names its facts\\.json as \\d+ B, ${seg.json.layers.at(-1).digest}$`,
+        'm',
+      ),
+    );
+    nothingWritten(join(dir, 'other'), other);
+    // THC's segment carries no facts.json, and its manifest is still read: the layer is found through it.
+    writeFileSync(at(seg, 'facts.json'), seg.extra[0].bytes);
+    unlinkSync(at(thc, 'manifest.json'));
+    const noManifest = await call(main, args(r, join(dir, 'no-manifest'), ['--no-ledger']));
+    assert.equal(noManifest.code, EXIT.usage, noManifest.text);
+    assert.match(noManifest.text, new RegExp(`^day: --inputs: \\S+manifest\\.json does not exist: the facts\\.json of obs:${esc(thc.tag)} is found through its manifest$`, 'm'));
+    writeFileSync(at(thc, 'manifest.json'), `${thc.text} `);
+    const notNamed = await call(main, args(r, join(dir, 'not-named'), ['--no-ledger']));
+    assert.equal(notNamed.code, EXIT.fault, notNamed.text);
+    assert.match(notNamed.text, new RegExp(`^day: FAIL fault \\S+manifest\\.json hashes to sha256:[0-9a-f]{64}; the root names the manifest of obs:${esc(thc.tag)} as ${thc.digest}$`, 'm'));
+    // Each layer below is the one its manifest names, and is refused for what it says.
+    const planted = [
+      ['bit', segmentFacts('oi-nrd-confirmed', [{ key: 'com.fresh-synthetic', cert_age: 5 }]), /its facts\.json gives "com\.fresh-synthetic" the source bit 3; the pack is of the source bit\(s\) 1$/m],
+      ['format', new TextEncoder().encode('{"facts":[],"format":"domains.facts.v0"}\n'), /its facts\.json does not read: format: the format is "domains\.facts\.v0", not domains\.facts\.v1$/m],
+      [
+        'key',
+        segmentFacts('oi-nrd', [{ key: 'com.nowhere-synthetic', cert_age: 5 }]),
+        /^day: FAIL fault the facts of the day's segments name a key the domains day pack does not hold: the fact of "com\.nowhere-synthetic" /m,
+      ],
+    ];
+    for (const [name, bytes, why] of planted) {
+      const p = await dayRoot(join(dir, name), { oiFacts: { a: bytes } });
+      const x = await call(main, args(p, join(dir, `${name}-out`), ['--no-ledger']));
+      assert.equal(x.code, EXIT.fault, `${name}\n${x.text}`);
+      assert.match(x.text, why, name);
+      nothingWritten(join(dir, `${name}-out`), x);
+    }
+    // From GHCR: the facts blob, then the manifest, gone.
+    const fresh = await dayRoot(join(dir, 'fresh'), { oiFacts: OI_FACTS });
+    const s = fresh.packs[2];
+    const factsDigest = sha(s.extra[0].bytes);
+    for (const [name, digest, why] of [
+      [
+        'blob',
+        factsDigest,
+        `^day: FAIL fault the manifest of obs:${esc(s.tag)} names its facts\\.json as ${factsDigest} \\(\\d+ B\\), which GHCR does not give with no credential \\(GHCR holds no blob `,
+      ],
+      ['manifest', s.digest, `^day: FAIL fault the root names the manifest of obs:${esc(s.tag)} as ${s.digest}, which GHCR does not give with no credential \\(MANIFEST_UNKNOWN\\)`],
+    ]) {
+      const reader = packsReader(fresh.packs, (p, d) => p === s && d === digest);
+      const x = await call(main, noInputs(args(fresh, join(dir, `ghcr-${name}`), ['--no-ledger'])), { reader });
+      assert.equal(x.code, EXIT.fault, `${name}\n${x.text}`);
+      assert.ok(!x.out.includes('PRIVATE PACKAGE'), x.text);
+      assert.match(x.text, new RegExp(why, 'm'), name);
+      nothingWritten(join(dir, `ghcr-${name}`), x);
+    }
+    // A manifest answered under another digest than the one asked.
+    const lying = packsReader(fresh.packs);
+    const get = lying.getManifest;
+    lying.getManifest = async (repo, ref) => ({ ...(await get(repo, ref)), digest: `sha256:${'0'.repeat(64)}` });
+    const l = await call(main, noInputs(args(fresh, join(dir, 'ghcr-lying'), ['--no-ledger'])), { reader: lying });
+    assert.equal(l.code, EXIT.fault, l.text);
+    assert.match(l.text, /^day: FAIL fault GHCR answered the manifest sha256:[0-9a-f]{64} of obs:\S+ with the digest sha256:0{64}$/m);
+    nothingWritten(join(dir, 'ghcr-lying'), l);
+  }));
+
+// Ruling 23 with facts, through the root double of the quarantine test above:
+// a quarantined window's facts go into the domains day pack's layer, as its
+// records go into the pack, and never to the feed, whose join leaves its
+// records out. Given to the feed, the window's fact of bit 1 would name a bit
+// that np.com.nepal-synthetic's record, THC's alone, does not hold.
+test("day cli: a quarantined segment's facts go into the domains day pack's facts.json and not to the feed", () =>
+  inTmp(async (dir) => {
+    const r = await dayRoot(dir, { oiFacts: { a: OI_FACTS.a, b: [{ key: 'np.com.nepal-synthetic', cert_age: 2_592_000 }] } });
+    const windowB = r.root.datasets.domains.find((p) => p.tag === r.packs[3].tag);
+    assert.match(windowB.tag, /^oi-nrd\.20261027t060000z\./);
+    windowB.quarantine = 1;
+    const readRoot = async () => ({ root: r.root, ref: 'sha256:'.padEnd(71, '0') });
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--no-ledger']), { readRoot });
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^facts 2 3$/m);
+    assert.match(x.text, /^exact domains: 1 quarantined input\(s\) left out of the join \(ruling 23\): obs:oi-nrd\.20261027t060000z\./m);
+    assert.deepEqual([...parseFacts(new Uint8Array(readFileSync(join(out, 'domains', 'facts.json')))).keys()], ['com.fresh-synthetic', 'net.cert-synthetic', 'np.com.nepal-synthetic']);
+    assert.deepEqual(await rowsOf(join(out, 'feed')), [
+      ['com.fresh-synthetic', 5 * 3600 + 600, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['com.isc-synthetic', 0, 0],
+      ['com.thc-synthetic', 0, 0],
+      ['net.cert-synthetic', 5 * 3600 + 1200, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['np.com.nepal-synthetic', 0, 0],
+    ]);
+  }));
+
+// day.mjs in a child process, as compact-daily.yml runs it, its exit read from
+// that process. Inside test(), awaited code runs many times slower, and a
+// compaction awaits once a record or more. MEASURED 2026-10-31 on Node
+// 26.7.0: an async generator of 2,000,000 values took 8.9 s inside test()
+// against 0.43 s outside it (10:32Z), and the two runs of the test below
+// 120 s inside test() against 25 s under --test outside it (10:29Z, 10:27Z).
+const DAY_SCRIPT = fileURLToPath(new URL('./day.mjs', import.meta.url));
+function dayChild(argv) {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync(process.execPath, [DAY_SCRIPT, ...argv], { cwd: ROOT, encoding: 'utf8', env, maxBuffer: 16 << 20 });
+  if (r.error) throw r.error;
+  return { code: r.status, text: `${r.stdout}\n${r.stderr}` };
+}
+
+// Settled S1 of DOM-026: a day of oi-nrd is about 14.2 MB of facts [E], under
+// the 64 MiB cap. Two windows of 205,000 keys, 10,000 of them in both, give a
+// day of 400,000 keys. The first run writes the domains day pack, its layer
+// the merge of the two; the day's feed is present, so it builds none (MEASURED
+// 2026-10-31T10:18Z: a first run that built the feed of all 400,001 rows took
+// 35 s, 14 s of it the feed's). The second reads that pack, live, and its
+// layer back for the feed.
+test('day cli: 400,000 keys of facts (settled S1): their merge is the domains day pack facts.json under the cap, and a feed day built from that pack once live reads it back', () =>
+  inTmp(async (dir) => {
+    const key = (k) => `com.s${String(k).padStart(6, '0')}-synthetic`;
+    const range = (from, to) => Array.from({ length: to - from }, (_, i) => from + i);
+    // An age over 7 days in window a for the even keys, in window b for the
+    // multiples of 3: a key in both is suspect when it is a multiple of 6.
+    const ageA = (k) => (k % 2 === 0 ? 2_592_000 : 120);
+    const ageB = (k) => (k % 3 === 0 ? 864_000 : 60);
+    const windowOf = (keys, from, age) => ({
+      records: keys.map((k) => domain(key(k), 'oi-nrd', T(from) + (k % 3600))),
+      facts: keys.map((k) => ({ key: key(k), cert_age: age(k) })),
+    });
+    const wa = windowOf(range(0, 205_000), '05:00:00', ageA);
+    const wb = windowOf(range(195_000, 400_000), '06:00:00', ageB);
+    const base = await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] });
+    const r = rootFiles(dir, [
+      base,
+      await segment('thc-ct', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [domain('com.thc-synthetic', 'thc-ct', 299)]),
+      await segment('oi-nrd', '2026-10-27T05:00:00Z', '2026-10-27T06:00:00Z', wa.records, { facts: wa.facts, recordsPerBlock: 4096 }),
+      await segment('oi-nrd', '2026-10-27T06:00:00Z', '2026-10-27T07:00:00Z', wb.records, { facts: wb.facts, recordsPerBlock: 4096 }),
+      await segment('oi-nrd', '2026-10-27T07:00:00Z', '2026-10-28T00:00:00Z', []),
+      await segment('oi-nrd', '2026-10-28T00:00:00Z', '2026-10-28T00:10:00Z', [domain('org.after-midnight-synthetic', 'oi-nrd', secs('2026-10-28T00:05:00Z'))]),
+    ]);
+    writeFileSync(r.tags, JSON.stringify({ names: [], feed: ['feed-d-20261027'] }));
+    const expected = new Map(range(0, 400_000).map((k) => [key(k), new Map([[1, { cert_age: Math.min(...(k < 205_000 ? [ageA(k)] : []), ...(k >= 195_000 ? [ageB(k)] : [])) }]])]));
+    const first = join(dir, 'first');
+    const x = dayChild(args(r, first, ['--no-ledger']));
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^facts 2 400000$/m);
+    assert.match(x.text, /^present feed:feed-d-20261027 \(feed-d-20261027\): nothing is written$/m);
+    const layer = new Uint8Array(readFileSync(join(first, 'domains', 'facts.json')));
+    assert.equal(sha(layer), sha(encodeFacts(expected)), 'the layer is the minimum age per key over the two windows');
+    assert.equal(parseFacts(layer).size, 400_000);
+    // Past a day of oi-nrd as estimated, and under the cap.
+    assert.ok(layer.length > 14_200_000 && layer.length < FACTS_MAX_BYTES, `${layer.length} B`);
+    const suspect = [...expected.values()].filter((bits) => bits.get(1).cert_age > 7 * 86_400).length;
+    assert.equal(suspect, 97_500 + 65_000 + 1_667);
+    // The day pack promoted: the root names it live, in place of the segments.
+    const again = rootFiles(join(dir, 'again'), [base, writtenPack(join(first, 'domains'), 'domains-d-20261027', 'domains')]);
+    writeFileSync(again.tags, JSON.stringify({ names: ['domains-d-20261027'], feed: [] }));
+    const second = join(dir, 'second');
+    const y = dayChild(args(again, second, ['--no-ledger']));
+    assert.equal(y.code, EXIT.ok, y.text);
+    assert.match(y.text, /^verdict domains present names:domains-d-20261027$/m);
+    assert.match(y.text, /^facts names:domains-d-20261027 400000$/m);
+    // Every key is new and under com; a row is suspect by its certificate as the layer says.
+    const summary = JSON.parse(readFileSync(join(second, 'feed', 'summary.json'), 'utf8'));
+    assert.deepEqual(summary.suffixes.com, { new_registrable: 400_001, suspect, by_source: { 'oi-nrd': 400_000, 'thc-ct': 1 } });
+  }));
+
+// The review of DOM-026: the day's merge past the cap is a fault of the day,
+// exit 1, never a defect; reaching it through main needs about 1.34 million
+// keys (50.1 B a key), so the layer step is held alone.
+test('day cli: the domains day facts.json is null for no fact, the merge encoded otherwise, and a merge past FACTS_MAX_BYTES is a Fault', () => {
+  assert.equal(dayFactsLayer(new Map(), 'domains-d-20261027'), null);
+  const one = new Map([['com.a-synthetic', new Map([[1, { cert_age: 5 }]])]]);
+  assert.deepEqual(dayFactsLayer(one, 'domains-d-20261027'), encodeFacts(one));
+  // 1,030 keys of 65,535 bytes, the longest pack key: 67.5 MB of layer.
+  const big = new Map(Array.from({ length: 1030 }, (_, i) => [`${String(i).padStart(4, '0')}${'k'.repeat(65_531)}`, new Map([[1, { cert_age: i }]])]));
+  assert.throws(
+    () => dayFactsLayer(big, 'domains-d-20261027'),
+    (e) => e instanceof Fault && e.message.startsWith('the facts.json of names:domains-d-20261027: size: the layer is ') && e.message.endsWith(` bytes, over ${FACTS_MAX_BYTES}`),
+  );
+});

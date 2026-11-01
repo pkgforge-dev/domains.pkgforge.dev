@@ -13,6 +13,7 @@ import { withWorker } from "@domains/testkit";
 import { type BandDay, checkBand } from "../src/band.ts";
 import { runAdapter } from "../src/harness.ts";
 import { readRecordings } from "../node/files.ts";
+import { PSL, PSL_TEXT } from "./fixture-psl.ts";
 import { dayAdapter } from "./synthetic.ts";
 
 const WORKER = join(import.meta.dirname, "adapter-worker.ts");
@@ -22,11 +23,12 @@ const RECORDINGS = readdirSync(HTTP)
   .filter((n) => n.endsWith(".http.json"))
   .sort()
   .map((name) => ({ name, json: JSON.parse(readFileSync(join(HTTP, name), "utf8")) as unknown }));
-const INPUT = { recordings: RECORDINGS, cursor: { last_day: "2026-10-25" }, now: "2026-10-29T06:00:00Z" };
+// The list's text: the Worker loads it with loadPsl of @domains/names, in workerd.
+const INPUT = { recordings: RECORDINGS, psl: PSL_TEXT, cursor: { last_day: "2026-10-25" }, now: "2026-10-29T06:00:00Z" };
 const post = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 
 test("adapter workerd: the harness, its checks and the band verdicts answer in workerd what they answer in Node", async () => {
-  const node = await runAdapter(dayAdapter(), { recordings: readRecordings(HTTP), cursor: INPUT.cursor, now: INPUT.now });
+  const node = await runAdapter(dayAdapter(), { recordings: readRecordings(HTTP), psl: PSL, cursor: INPUT.cursor, now: INPUT.now });
   const days = (JSON.parse(readFileSync(join(ROOT, "docs", "research", "measure", "DOM-009", "result.json"), "utf8")) as { per_day: { day: string; gz_bytes: number }[] }).per_day.map((d) => ({
     day: d.day,
     count: d.gz_bytes,
@@ -40,8 +42,10 @@ test("adapter workerd: the harness, its checks and the band verdicts answer in w
   await withWorker({ scriptPath: WORKER }, async (w) => {
     const res = await w.fetch("/harness", post(INPUT));
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { ok: boolean; first: { segments: unknown[]; cursor: unknown; requests: unknown[] }; next: { segments: unknown[] } };
+    const body = (await res.json()) as { ok: boolean; psl: string; first: { segments: unknown[]; cursor: unknown; requests: unknown[] }; next: { segments: unknown[] } };
     assert.equal(body.ok, true, JSON.stringify(body));
+    // ctx.psl in workerd is the list Node loads from the same bytes.
+    assert.equal(body.psl, PSL.sha256);
     // The same segments, digests included: Web Crypto in workerd and in Node.
     assert.deepEqual(body.first.segments, node.first.result.segments);
     assert.deepEqual(body.first.cursor, node.first.result.cursor);

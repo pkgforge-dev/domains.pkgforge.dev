@@ -1,4 +1,4 @@
-// packages/adapter/src/json.ts — canonical JSON, and the SHA-256 of bytes.
+// packages/adapter/src/json.ts — canonical JSON, base64, and the SHA-256 of bytes.
 //
 //   canonicalJson({ b: 1, a: [true, null] })  →  '{"a":[true,null],"b":1}'
 //
@@ -61,6 +61,27 @@ const encoder = new TextEncoder();
 
 export function utf8(text: string): Uint8Array {
   return encoder.encode(text);
+}
+
+// Standard base64 with its padding (RFC 4648 section 4): the encoding of every
+// body a recording holds. atob and btoa, so it runs in workerd too.
+export const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+// The bytes of base64 text, or null when the text is not base64: atob alone
+// would pass whitespace and missing padding.
+export function bytesOfBase64(text: unknown): Uint8Array | null {
+  if (typeof text !== "string" || !BASE64.test(text)) return null;
+  const bin = atob(text);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+export function base64Of(bytes: Uint8Array): string {
+  let bin = "";
+  // In slices: String.fromCharCode takes its bytes as arguments.
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 // Lowercase hex of the SHA-256 of bytes. Web Crypto, so it runs in workerd too.

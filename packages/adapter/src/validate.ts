@@ -10,6 +10,10 @@
 //   validateRegistry(json, bits)           config/sources.json as a reader checks it
 //   checkCursor(value, what)               opaque JSON of at most 4 KiB
 //   validateSegment(json, what)            one segment an adapter returned
+//   checkRawMember(value, precision, what) a draft's raw lane member fields
+//   checkRawMemberBytes(value, bytes, what)  ... named only on a write with raw bytes
+//   factsProblem(facts)                    a draft's facts: a list of { key, cert_age }, ascending
+//   factKeysWalk(facts)                    ... each fact's key a key the writer wrote
 //
 // A registry fault throws SourceError, which lists every problem found, each
 // with a stable `code`. A fault of a cursor, a segment or a run throws
@@ -22,6 +26,7 @@ import {
   type Band,
   type Cursor,
   DATASETS,
+  type FactRow,
   FAMILIES,
   KINDS,
   MASKED_DATASETS,
@@ -578,8 +583,12 @@ export function checkCursor(value: unknown, what: string): Cursor {
   return value as Cursor;
 }
 
-const SEGMENT_FIELDS = Object.freeze(["source", "dataset", "window", "cursorBefore", "cursorAfter", "count", "precision", "bytes", "sha256", "raw"] as const);
+const SEGMENT_FIELDS = Object.freeze(["source", "dataset", "window", "cursorBefore", "cursorAfter", "count", "precision", "bytes", "sha256", "raw", "facts"] as const);
+// The fields a segment carries only when it has them.
+const OPTIONAL_SEGMENT_FIELDS: readonly string[] = Object.freeze(["raw", "facts"]);
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+// { bytes, sha256 }: a size of at least 0 and 64 lowercase hex digits.
+const isBytesRef = (v: unknown): boolean => isObject(v) && Object.keys(v).sort().join(",") === "bytes,sha256" && isCount(v.bytes) && typeof v.sha256 === "string" && SHA256.test(v.sha256);
 
 // Throws ContractError("segment") unless window is ISO 8601 UTC times, start
 // before end, both at 00:00:00Z for a `day` source.
@@ -597,7 +606,7 @@ export function checkWindow(window: unknown, precision: unknown, what: string): 
 export function validateSegment(json: unknown, what: string): Segment {
   if (!isObject(json)) throw new ContractError("segment", `${what}: not an object`);
   for (const k of Object.keys(json)) if (!(SEGMENT_FIELDS as readonly string[]).includes(k)) throw new ContractError("segment", `${what}: unknown field ${k}`);
-  for (const k of SEGMENT_FIELDS) if (k !== "raw" && !has(json, k)) throw new ContractError("segment", `${what}: missing ${k}`);
+  for (const k of SEGMENT_FIELDS) if (!OPTIONAL_SEGMENT_FIELDS.includes(k) && !has(json, k)) throw new ContractError("segment", `${what}: missing ${k}`);
   const s = json as Obj;
   if (typeof s.source !== "string" || !ID_GRAMMAR.test(s.source)) throw new ContractError("segment", `${what}: source ${JSON.stringify(s.source)} is not an id`);
   if (!(DATASETS as readonly unknown[]).includes(s.dataset)) throw new ContractError("segment", `${what}: dataset ${JSON.stringify(s.dataset)} is not one of ${DATASETS.join(", ")}`);
@@ -608,11 +617,89 @@ export function validateSegment(json: unknown, what: string): Segment {
   if (!isCount(s.count)) throw new ContractError("segment", `${what}: count ${JSON.stringify(s.count)} is not a whole number`);
   if (!isCount(s.bytes)) throw new ContractError("segment", `${what}: bytes ${JSON.stringify(s.bytes)} is not a whole number`);
   if (typeof s.sha256 !== "string" || !SHA256.test(s.sha256)) throw new ContractError("segment", `${what}: sha256 is not 64 lowercase hex digits`);
-  if (has(s, "raw")) {
-    const raw = s.raw;
-    if (!isObject(raw) || Object.keys(raw).sort().join(",") !== "bytes,sha256" || !isCount(raw.bytes) || typeof raw.sha256 !== "string" || !SHA256.test(raw.sha256)) {
-      throw new ContractError("segment", `${what}: raw is not { bytes, sha256 }`);
-    }
-  }
+  if (has(s, "raw") && !isBytesRef(s.raw)) throw new ContractError("segment", `${what}: raw is not { bytes, sha256 }`);
+  if (has(s, "facts") && !isBytesRef(s.facts)) throw new ContractError("segment", `${what}: facts is not { bytes, sha256 }`);
   return s as unknown as Segment;
+}
+
+// The most bytes of a raw lane member's own fields as canonical JSON. A Kafka
+// member's topic, partition, offsets and batch count are about 110; members.json
+// holds one member a window.
+export const MAX_RAW_MEMBER_BYTES = 1024;
+// The fields members.json writes for every member itself (docs/format.md section 18).
+export const RAW_MEMBER_OWN = Object.freeze(["offset", "length", "sha256"] as const);
+const MEMBER_FIELD = /^[a-z][a-z0-9_]*$/;
+
+// Throws ContractError("draft") unless rawMember is absent, or the fields of a
+// raw lane member of a second-precision write: a plain object of keys
+// [a-z][a-z0-9_]*, none of RAW_MEMBER_OWN, each value a string or a safe whole
+// number of at least 0, at most MAX_RAW_MEMBER_BYTES as canonical JSON. A day
+// source keeps its file in its segment's own layer `raw`, and no members.json
+// names it, so a day write carries none.
+export function checkRawMember(rawMember: unknown, precision: unknown, what: string): void {
+  if (rawMember === undefined) return;
+  const proto = isObject(rawMember) ? Object.getPrototypeOf(rawMember) : undefined;
+  if (proto !== Object.prototype && proto !== null) throw new ContractError("draft", `${what}: rawMember is not a plain object of fields`);
+  if (precision !== "second") throw new ContractError("draft", `${what}: rawMember names a member of the raw lane, and a ${String(precision)} source keeps its file in its segment's own layer raw`);
+  for (const [k, v] of Object.entries(rawMember as Obj)) {
+    if (!MEMBER_FIELD.test(k)) throw new ContractError("draft", `${what}: rawMember field ${JSON.stringify(k)} is not [a-z][a-z0-9_]*`);
+    if ((RAW_MEMBER_OWN as readonly string[]).includes(k)) throw new ContractError("draft", `${what}: rawMember field ${k} is one the writer writes`);
+    if (typeof v !== "string" && !isCount(v)) throw new ContractError("draft", `${what}: rawMember field ${k} is ${JSON.stringify(v)}, not a string or a safe whole number of at least 0`);
+  }
+  const n = utf8(canonicalJson(rawMember)).length;
+  if (n > MAX_RAW_MEMBER_BYTES) throw new ContractError("draft", `${what}: rawMember is ${n} bytes of JSON, over ${MAX_RAW_MEMBER_BYTES}`);
+}
+
+// Throws ContractError("draft") when rawMember is given and the write has no
+// raw byte (`rawBytes` null for no raw input): such a write makes no raw lane
+// object, so no member would carry the fields.
+export function checkRawMemberBytes(rawMember: unknown, rawBytes: number | null, what: string): void {
+  if (rawMember !== undefined && (rawBytes === null || rawBytes === 0))
+    throw new ContractError("draft", `${what}: rawMember names a member of the raw lane, and the write has no raw byte, so it makes no raw lane object`);
+}
+
+// The first problem of a draft's facts (SegmentDraft.facts), or null when they
+// are absent or hold: a list of { key, cert_age }, the keys strictly ascending
+// in code-unit order (the records' own order), each cert_age a safe whole
+// number of at least 0. That each key is a key written is factKeysWalk's. The
+// memory writer throws a problem as ContractError("draft"), the disk writer of
+// scripts/ingest as WriteFault("facts").
+export function factsProblem(facts: unknown): string | null {
+  if (facts === undefined) return null;
+  if (!Array.isArray(facts)) return "facts is not a list";
+  let prev: string | null = null;
+  for (const [i, f] of facts.entries()) {
+    if (!isObject(f) || Object.keys(f).sort().join(",") !== "cert_age,key") return `facts[${i}] is not { key, cert_age }`;
+    if (typeof f.key !== "string" || f.key === "") return `facts[${i}]: the key is not a non-empty string`;
+    if (prev !== null && f.key <= prev) return `facts[${i}]: the key ${JSON.stringify(f.key)} does not sort after ${JSON.stringify(prev)}`;
+    if (!isCount(f.cert_age)) return `facts[${i}]: the cert_age ${JSON.stringify(f.cert_age)} of ${JSON.stringify(f.key)} is not a safe whole number of at least 0`;
+    prev = f.key;
+  }
+  return null;
+}
+
+export interface FactKeysWalk {
+  // Each record key, in the order written.
+  see(key: string): void;
+  // The first fact whose key no record has, named, or null.
+  problem(): string | null;
+}
+
+// The facts held to the keys a writer wrote, in one walk, since both ascend:
+// no set of keys is kept. Its answer holds once the writer has found the
+// records in strictly ascending order, so a writer asks problem() only after
+// its own order check passed.
+export function factKeysWalk(facts: readonly FactRow[]): FactKeysWalk {
+  let i = 0;
+  let missing: string | null = null;
+  return {
+    see(key) {
+      for (; i < facts.length && facts[i]!.key < key; i++) missing ??= facts[i]!.key;
+      if (i < facts.length && facts[i]!.key === key) i++;
+    },
+    problem() {
+      const first = missing ?? (i < facts.length ? facts[i]!.key : null);
+      return first === null ? null : `the fact of ${JSON.stringify(first)} names a key no record of the segment has`;
+    },
+  };
 }

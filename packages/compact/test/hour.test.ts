@@ -6,14 +6,16 @@
 //   node scripts/test.mjs packages/compact --name "hour:"
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { parseFacts } from "@domains/adapter";
+import { FeedError } from "@domains/feed";
 import { artifactType, segTag } from "@domains/ghcr";
 import { BloomFilter, HashDelta, hashKey, LedgerError } from "@domains/ledger";
-import { FEED_CODEC, FEED_PROVISIONAL, MemorySink, PackReader, partsSource } from "@domains/pack";
+import { FEED_CODEC, FEED_PROVISIONAL, FEED_SUSPECT, FEED_SUSPECT_CERT, MemorySink, PackReader, partsSource } from "@domains/pack";
 import { nodeCompress } from "@domains/pack/node";
 import { TIER_ANNOTATION } from "@domains/root";
-import { CompactError } from "../src/index.ts";
+import { CompactError, eventFactsOf } from "../src/index.ts";
 import { buildHour, hourOf, membershipOf, planHour, type SegmentInput } from "../src/hour.ts";
-import { collect, domain, name, REGISTRY, secs, segment, tierPack } from "./daily-helpers.ts";
+import { collect, domain, name, REGISTRY, secs, segment, segmentFacts, tierPack } from "./daily-helpers.ts";
 
 const H = "2026-10-27T05";
 const at = (mmss: string): string => `${H}:${mmss}Z`;
@@ -200,5 +202,48 @@ test("hour: the pack holds the domains neither the filter nor the delta held, pr
   await assert.rejects(
     buildHour([s.names.reader], membership, { registry: REGISTRY, hour: h, compress: nodeCompress, sink: new MemorySink() }),
     (e: unknown) => e instanceof CompactError && e.code === "usage",
+  );
+});
+
+test("hour: with the segments' facts, an old certificate makes its row suspect with bit 4, and a fresh event of the domain in another segment of the hour clears it", async () => {
+  const s = await hourSegments();
+  const h = hourOf("2026102705");
+  const l = ledger(["com.alpha-synthetic"], secs("2026-10-27T00:00:00Z"));
+  // Window a saw com.beta-synthetic with a certificate of 30 days, window b
+  // with one of 2 minutes; window b saw net.gamma-synthetic with one of 10 days.
+  const a = parseFacts(segmentFacts("oi-nrd", [{ key: "com.beta-synthetic", cert_age: 2_592_000 }]));
+  const b = parseFacts(
+    segmentFacts("oi-nrd", [
+      { key: "com.beta-synthetic", cert_age: 120 },
+      { key: "net.gamma-synthetic", cert_age: 864_000 },
+    ]),
+  );
+  const rowsOf = async (facts: ReturnType<typeof eventFactsOf> | undefined) => {
+    const sink = new MemorySink();
+    const membership = membershipOf(l.filter, l.delta, h);
+    const built = await buildHour([s.a.reader, s.b.reader], membership, { registry: REGISTRY, hour: h, compress: nodeCompress, sink, ...(facts === undefined ? {} : { facts }) });
+    return (await collect((await PackReader.open(built.summary.idx, partsSource(sink.parts()), FEED_CODEC)).scan())).map((r) => [r.key, r.feedFlags]);
+  };
+  const SUSPECT = FEED_PROVISIONAL | FEED_SUSPECT | FEED_SUSPECT_CERT;
+  assert.deepEqual(await rowsOf(eventFactsOf([a, b])), [
+    ["com.beta-synthetic", FEED_PROVISIONAL],
+    ["net.gamma-synthetic", SUSPECT],
+  ]);
+  // Window a's facts alone: com.beta-synthetic's only age is 30 days.
+  assert.deepEqual(await rowsOf(eventFactsOf([a])), [
+    ["com.beta-synthetic", SUSPECT],
+    ["net.gamma-synthetic", FEED_PROVISIONAL],
+  ]);
+  // No facts: the rows of the test above.
+  assert.deepEqual(await rowsOf(undefined), [
+    ["com.beta-synthetic", FEED_PROVISIONAL],
+    ["net.gamma-synthetic", FEED_PROVISIONAL],
+  ]);
+  // A fact of a bit the record does not hold is refused by the feed's confidence.
+  const other = parseFacts(segmentFacts("oi-nrd-confirmed", [{ key: "net.gamma-synthetic", cert_age: 864_000 }]));
+  await assert.rejects(rowsOf(eventFactsOf([other])), (e: unknown) => e instanceof FeedError && e.code === "facts" && /names source bit 3, which the record does not hold/.test(e.message));
+  await assert.rejects(
+    buildHour([s.a.reader], membershipOf(l.filter, l.delta, h), { registry: REGISTRY, hour: h, compress: nodeCompress, sink: new MemorySink(), facts: "facts" as never }),
+    (e: unknown) => e instanceof CompactError && e.code === "usage" && /facts is not a function/.test(e.message),
   );
 });

@@ -1,0 +1,18 @@
+tcp connected kafka.zonestream.openintel.nl 9092
+ApiVersions error_code 0 apis 61
+brokers 1@kafka.zonestream.openintel.nl:9092
+topics newly_registered_domain(ec=0,parts=1) certstream_domains(ec=0,parts=1) confirmed_newly_registered_domain(ec=0,parts=1) newly_issued_certificates_measurements(ec=0,parts=1) newly_registered_fqdn_measurements(ec=0,parts=4) newly_registered_domains_measurements(ec=0,parts=4) certstream(ec=0,parts=1) newly_registered_fqdn(ec=0,parts=1)
+newly_registered_domain p0 earliest 170127254 latest 173878607 retained 3751353 | last 1h 9242 | last 24h 402114 | last 7d 2892814 | earliest message 2026-10-22T13:00:50.342Z
+certstream_domains p0 earliest 42856760462 latest 42942963471 retained 86203009 | last 1h 3141352 | last 24h 85826459 | last 7d 86203009 | earliest message 2026-10-30T04:58:37.016Z
+confirmed_newly_registered_domain p0 earliest 79233962 latest 81065543 retained 1831581 | last 1h 4541 | last 24h 215199 | last 7d 1475788 | earliest message 2026-10-22T13:02:00.625Z
+newly_issued_certificates_measurements p0 earliest 85459003560 latest 85665958468 retained 206954908 | last 1h 7689654 | last 24h 202160732 | last 7d 206954908 | earliest message 2026-10-30T04:37:19.231Z
+newly_registered_fqdn_measurements p0 earliest 86808073947 latest 86857980723 retained 49906776 | last 1h 1887608 | last 24h 47105943 | last 7d 49906776 | earliest message 2026-10-30T03:41:30.530Z
+newly_registered_fqdn_measurements p2 earliest 4204886368 latest 4254221991 retained 49335623 | last 1h 1902022 | last 24h 47068828 | last 7d 49335623 | earliest message 2026-10-30T03:57:50.069Z
+newly_registered_fqdn_measurements p3 earliest 4204744751 latest 4255063644 retained 50318893 | last 1h 1896445 | last 24h 46891813 | last 7d 50318893 | earliest message 2026-10-30T03:23:46.117Z
+newly_registered_fqdn_measurements p1 earliest 4204859654 latest 4253791386 retained 48931732 | last 1h 1913485 | last 24h 46998270 | last 7d 48931732 | earliest message 2026-10-30T04:07:05.197Z
+newly_registered_domains_measurements p0 earliest 110733339082 latest 110829080060 retained 95740978 | last 1h 3885036 | last 24h 95663413 | last 7d 95740978 | earliest message 2026-10-30T05:04:23.400Z
+newly_registered_domains_measurements p2 earliest 9261123088 latest 9357965616 retained 96842528 | last 1h 3902347 | last 24h 95596718 | last 7d 96842528 | earliest message 2026-10-30T04:45:53.545Z
+newly_registered_domains_measurements p3 earliest 9261044716 latest 9357378090 retained 96333374 | last 1h 3912591 | last 24h 95568329 | last 7d 96333374 | earliest message 2026-10-30T04:53:34.450Z
+newly_registered_domains_measurements p1 earliest 9261020108 latest 9356582763 retained 95562655 | last 1h 3883178 | last 24h 95476267 | last 7d 95562655 | earliest message 2026-10-30T05:04:15.530Z
+certstream p0 earliest 42934113130 latest 42936339158 retained 2226028 | last 1h 2226028 | last 24h 2226028 | last 7d 2226028 | earliest message 2026-10-31T04:26:36.723Z
+newly_registered_fqdn p0 earliest 179754818 latest 182549172 retained 2794354 | last 1h 10316 | last 24h 301013 | last 7d 2219863 | earliest message 2026-10-22T13:00:54.666Z

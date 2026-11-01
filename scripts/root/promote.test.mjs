@@ -15,10 +15,11 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { artifactType, refTag, repoOf, rootTag } from '@domains/ghcr';
-import { buildRoot, EMPTY_COVERAGE, layerBytes, RootError, SOURCES_LAYER_FORMAT } from '@domains/root';
+import { buildRoot, EMPTY_COVERAGE, layerBytes, RootError, SOURCES_LAYER_FORMAT, sourcesLayer } from '@domains/root';
 import { pack as entry } from '../../packages/root/test/helpers.ts';
 import { ROOT } from '../files.mjs';
 import { anonymousReader } from '../ghcr/check-public.mjs';
+import { DEFAULT_SOURCES, loadRegistry } from '../verify-pack.mjs';
 import { depsFor, PSL_LIVE, PSL_TAG, registry, runFixture, sha } from './fixture.mjs';
 import { Fault, guardLatest, readRoot } from './lib.mjs';
 import { EXIT, keepLiveSet, main, parsePromoteArgs } from './promote.mjs';
@@ -78,8 +79,9 @@ test('promote: the first promotion bootstraps root_seq 1 with no previous, no pa
     );
     assert.equal(latest.manifest.annotations['dev.pkgforge.domains.root_seq'], '1');
     assert.equal(latest.manifest.annotations['org.opencontainers.image.created'], '2026-10-29T09:00:00Z');
-    // config/sources.json holds no source yet, and no coverage table exists.
-    assert.deepEqual(latest.sources, { format: SOURCES_LAYER_FORMAT, sources: [] });
+    // The sources layer is the committed registry's (config/sources.json), and no coverage table exists.
+    assert.deepEqual(latest.sources, sourcesLayer({ registry: loadRegistry(DEFAULT_SOURCES), root: latest.root }));
+    assert.equal(latest.sources.format, SOURCES_LAYER_FORMAT);
     assert.deepEqual(latest.coverage, EMPTY_COVERAGE);
     // latest moves last: after the copy of the dated root, and after three
     // reads of latest with the token (the absent root of the first promotion,
@@ -638,7 +640,7 @@ test('promote: a writer refuses a live root that holds a field it does not know,
 test('promote: a promotion whose only change is the PSL pin, the coverage table, a fetched time or the registry writes a root; the same fetched time again is unchanged', () =>
   inRegistry(async (reg, tmp) => {
     reg.seedPsl();
-    // The first root under the default registry (config/sources.json, no source yet).
+    // The first root under the default registry, config/sources.json.
     assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
     const steps = [];
     const step = async (argv, now, what) => {

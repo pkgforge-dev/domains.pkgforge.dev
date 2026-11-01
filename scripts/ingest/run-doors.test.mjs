@@ -8,17 +8,21 @@
 //
 //   node scripts/test.mjs scripts/ingest --name run
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { FACTS_TITLE, factsOfRows, factsRef, memoryWriter, parseFacts } from '@domains/adapter';
 import { emptyState, parseProposal, proposalFile } from '@domains/state';
 import { GhcrError, artifactType } from '@domains/ghcr';
 import { main as advanceMain } from '../state/advance.mjs';
 import { ACTOR, sha, TOKEN } from '../root/fixture.mjs';
+import { Fault } from '../root/lib.mjs';
 import { main as verifyMain } from '../verify-pack.mjs';
 import { ADAPTERS, call, copied, inRegistry, inTmp, PSL_FILE, RECORDINGS, SOURCES, seedRoot, stateFile } from './fixture.mjs';
-import { EXIT, main, QUARANTINE, REQUIRE } from './run.mjs';
-import { diskWriter, WriteFault, writeRaw } from './writer.mjs';
+import { pushPlanOf } from './pack.mjs';
+import { EXIT, main, pslOf, QUARANTINE, REQUIRE } from './run.mjs';
+import { diskWriter, MEMBERS_TITLE, WriteFault, writeRaw } from './writer.mjs';
 
 const NOW = '2026-10-30T08:35:00Z';
 const RUN = '40000000001';
@@ -599,4 +603,268 @@ test('run: the writer holds a draft to its source, one segment a source, window 
       writeRaw(text(), join(tmp, 't'), { maxParts: 1, what: 'raw' }),
       (e) => e?.name === 'ContractError' && e.check === 'draft' && /a raw chunk is not a Uint8Array/.test(e.message),
     );
+  }));
+
+test('run: ctx carries the list as psl and a connect; a list read that is not the list named, or that does not load, is FAIL exit 1; a miss the module caught is FAIL unrecorded', () =>
+  inRegistry(async (reg, tmp) => {
+    const RUN_LINE = 'export async function run(cursor: Cursor, ctx: AdapterContext): Promise<RunResult> {';
+    const state = stateFile(tmp, emptyState(NOW));
+    const seeing = planted(tmp, 'fixture-stream', [[RUN_LINE, `${RUN_LINE}\n  (globalThis as Record<string, unknown>).__sawCtx = [ctx.psl.sha256, typeof ctx.connect];`]]);
+    try {
+      const a = await call(main, argsOf('fixture-stream', join(tmp, 'a'), ['--state', state, '--psl', PSL_FILE, '--no-push'], seeing), { reg, now: NOW });
+      assert.equal(a.code, EXIT.ok, a.text);
+      assert.deepEqual(globalThis.__sawCtx, [PSL, 'function']);
+    } finally {
+      delete globalThis.__sawCtx;
+    }
+    // The bytes loaded are read again from the list's path; other bytes there are not the list named.
+    const other = () => Buffer.concat([readFileSync(PSL_FILE), Buffer.from('\n// one line more\n')]);
+    await assert.rejects(
+      pslOf({ path: PSL_FILE, sha256: PSL, from: PSL_FILE }, other),
+      (e) => e instanceof Fault && /hashes to [0-9a-f]{64}, not 0232f4df.*: the list read is not the list named/.test(e.message),
+    );
+    assert.equal((await pslOf({ path: PSL_FILE, sha256: PSL, from: PSL_FILE })).sha256, PSL);
+    const notList = join(tmp, 'not-a-list.dat');
+    writeFileSync(notList, 'example.com\n');
+    const b = await call(main, argsOf('fixture-stream', join(tmp, 'b'), ['--state', state, '--psl', notList, '--no-push']), { reg, now: NOW });
+    assert.equal(b.code, EXIT.fault, b.text);
+    assert.match(b.text, /run: FAIL the list \S+not-a-list\.dat does not load: /);
+    // A request and a connection no recording answers, each caught by the module, still fail the run.
+    const catching = planted(tmp, 'fixture-stream', [
+      [
+        RUN_LINE,
+        `${RUN_LINE}\n  try { await ctx.fetch("https://stream.example.test/robots.txt", { headers: { "user-agent": ctx.userAgent } }); } catch {}\n  try { await ctx.connect({ hostname: "stream.example.test", port: 9092 }).opened; } catch {}`,
+      ],
+    ]);
+    const c = await call(main, argsOf('fixture-stream', join(tmp, 'c'), ['--state', state, '--psl', PSL_FILE, '--no-push'], catching), { reg, now: NOW });
+    assert.equal(c.code, EXIT.fault, c.text);
+    assert.match(
+      c.text,
+      /run: FAIL unrecorded: fixture-stream: no recording for GET https:\/\/stream\.example\.test\/robots\.txt, connect stream\.example\.test:9092: no recording; nothing of this adapter run is pushed/,
+    );
+    assert.equal(c.out.filter((l) => l.startsWith('segment ')).length, 0);
+  }));
+
+// A source of a second-precision stream and one of a day file, for the writer
+// cases of DOM-026 (rawMember and facts); oi-cs's and isc-new's ids and bits.
+const STREAM_ROW = { id: 'oi-cs', bit: 4, precision: 'second', datasets: ['names', 'domains'], parser: 'x/1', urls: ['https://stream.example.test/'] };
+const DAY_ROW = { id: 'isc-new', bit: 8, precision: 'day', datasets: ['domains'], parser: 'x/1', urls: ['https://files.example.test/'] };
+const STREAM_WINDOW = { start: '2026-10-30T08:00:00Z', end: '2026-10-30T08:10:00Z' };
+const STREAM_DRAFT = { source: 'oi-cs', dataset: 'names', window: STREAM_WINDOW, cursorBefore: { next: 0 }, cursorAfter: { next: 1 }, precision: 'second' };
+const MEMBER = { topic: 'newly_registered_domain', partition: 0, base_offset: 100, last_offset: 101, batches: 2 };
+const TITLE = 'org.opencontainers.image.title';
+const hex = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const writerIn = (tmp, name, sources = [STREAM_ROW, DAY_ROW]) => {
+  mkdirSync(join(tmp, name));
+  return diskWriter({ dir: join(tmp, name), adapter: 'fixture-stream', sources, psl: PSL, run: RUN, fetched: NOW });
+};
+
+test('run: the writer writes rawMember into members.json and refuses another rawMember for the window, one on a day write, and one on a write with no raw byte', () =>
+  inTmp(async (tmp) => {
+    const bytes = new TextEncoder().encode('two batches\n');
+    // The names and domains segments of one window give the same fields: one raw object, one member.
+    const w = writerIn(tmp, 'a');
+    await w.write({ ...STREAM_DRAFT, rawMember: MEMBER }, [], bytes);
+    await w.write({ ...STREAM_DRAFT, dataset: 'domains', rawMember: { ...MEMBER } }, [], bytes);
+    assert.equal(w.raws.length, 1);
+    assert.equal(
+      readFileSync(join(w.raws[0].dir, MEMBERS_TITLE), 'utf8'),
+      `{"end":"2026-10-30T08:10:00Z","format":"domains.raw-members.v1","members":[{"base_offset":100,"batches":2,"last_offset":101,"length":12,"offset":0,"partition":0,"sha256":"${hex(bytes)}","topic":"newly_registered_domain"}],"source":"oi-cs","start":"2026-10-30T08:00:00Z"}\n`,
+    );
+    // Another rawMember for the window is WriteFault raw.
+    const b = writerIn(tmp, 'b');
+    await b.write({ ...STREAM_DRAFT, rawMember: MEMBER }, [], bytes);
+    await assert.rejects(
+      b.write({ ...STREAM_DRAFT, dataset: 'domains', rawMember: { ...MEMBER, last_offset: 102 } }, [], bytes),
+      (e) => e instanceof WriteFault && e.code === 'raw' && /a second raw input of the window with the member fields \{.*"last_offset":102.*\}; the first gave \{.*"last_offset":101/.test(e.message),
+    );
+    // No rawMember and an empty one are the same fields, the writer's alone; fields and none differ.
+    const c = writerIn(tmp, 'c');
+    await c.write(STREAM_DRAFT, [], bytes);
+    await c.write({ ...STREAM_DRAFT, dataset: 'domains', rawMember: {} }, [], bytes);
+    assert.match(readFileSync(join(c.raws[0].dir, MEMBERS_TITLE), 'utf8'), /"members":\[\{"length":12,"offset":0,"sha256":"[0-9a-f]{64}"\}\]/);
+    const d = writerIn(tmp, 'd');
+    await d.write(STREAM_DRAFT, [], bytes);
+    await assert.rejects(d.write({ ...STREAM_DRAFT, dataset: 'domains', rawMember: MEMBER }, [], bytes), (e) => e instanceof WriteFault && e.code === 'raw');
+    // A day write, a write with no raw input and one of no byte take no rawMember; a refused draft writes nothing.
+    const e = writerIn(tmp, 'e');
+    const refused = (p, why) => assert.rejects(p, (x) => x?.name === 'ContractError' && x.check === 'draft' && why.test(x.message), String(why));
+    const day = { source: 'isc-new', dataset: 'domains', window: { start: '2026-10-28T00:00:00Z', end: '2026-10-29T00:00:00Z' }, cursorBefore: null, cursorAfter: { d: 1 }, precision: 'day' };
+    await refused(e.write({ ...day, rawMember: MEMBER }, [], bytes), /a day source keeps its file in its segment's own layer raw/);
+    await refused(e.write({ ...STREAM_DRAFT, rawMember: MEMBER }, [], undefined), /the write has no raw byte/);
+    await refused(e.write({ ...STREAM_DRAFT, rawMember: MEMBER }, [], new Uint8Array(0)), /the write has no raw byte/);
+    await refused(e.write({ ...STREAM_DRAFT, rawMember: { offset: 1 } }, [], bytes), /field offset is one the writer writes/);
+    assert.deepEqual(readdirSync(join(tmp, 'e')), []);
+    // Each refusal gave its source, window and dataset back: the window is written once its draft holds.
+    await e.write({ ...STREAM_DRAFT, rawMember: MEMBER }, [], bytes);
+    assert.equal(e.segments.length, 1);
+  }));
+
+test('run: the writer writes facts.json as a layer that blobs.json names and pushPlanOf pushes, with the Segment.facts the memory writer gives, and refuses facts out of order, of a key it did not write, with a bad age, or of a source with no bit', () =>
+  inTmp(async (tmp) => {
+    const draft = { ...STREAM_DRAFT, dataset: 'domains' };
+    const records = ['com.alpha-synthetic', 'com.beta-synthetic', 'org.gamma-synthetic'].map((key) => ({ key, flags: 0, sources: [{ bit: 4, first: 26_121_700, last: 26_121_700 }], evidence: [] }));
+    const facts = [
+      { key: 'com.alpha-synthetic', cert_age: 3_456_789 },
+      { key: 'org.gamma-synthetic', cert_age: 4 },
+    ];
+    const w = writerIn(tmp, 'a');
+    const seg = await w.write({ ...draft, facts }, records, undefined);
+    const at = w.segments[0];
+    const layer = readFileSync(join(at.dir, FACTS_TITLE));
+    // Keyed by the source's bit, 4 for oi-cs.
+    assert.equal(layer.toString('utf8'), '{"facts":[["com.alpha-synthetic",{"4":{"cert_age":3456789}}],["org.gamma-synthetic",{"4":{"cert_age":4}}]],"format":"domains.facts.v1"}\n');
+    assert.deepEqual(parseFacts(layer), factsOfRows(facts, 4));
+    // The manifest's last layer, with its media type; blobs.json names its file; the push plan carries it.
+    const last = at.manifest.json.layers.at(-1);
+    assert.deepEqual(last, { mediaType: 'application/json', digest: `sha256:${hex(layer)}`, size: layer.length, annotations: { [TITLE]: 'facts.json' } });
+    const blobs = JSON.parse(readFileSync(join(at.dir, 'blobs.json'), 'utf8'));
+    assert.deepEqual(blobs.at(-1), { title: 'facts.json', file: join(at.dir, 'facts.json'), digest: last.digest, size: layer.length });
+    const plan = pushPlanOf(JSON.parse(readFileSync(join(at.dir, 'manifest.json'), 'utf8')), blobs);
+    assert.deepEqual(plan.files.at(-1), { path: join(at.dir, 'facts.json'), mediaType: 'application/json' });
+    // Segment.facts is the rows' size and hash, the memory writer's own (settled S2 of DOM-026).
+    assert.deepEqual(seg.facts, await factsRef(facts));
+    assert.deepEqual((await memoryWriter().write({ ...draft, facts }, records)).facts, seg.facts);
+    // An empty list is no facts: no layer and no Segment.facts.
+    const none = writerIn(tmp, 'none');
+    const bare = await none.write({ ...draft, facts: [] }, records, undefined);
+    assert.equal(bare.facts, undefined);
+    assert.equal(existsSync(join(none.segments[0].dir, FACTS_TITLE)), false);
+    assert.ok(!none.segments[0].blobs.some((b) => b.title === FACTS_TITLE));
+    // Refused before anything is written: facts out of order, a bad age, facts that are not a list.
+    const r = writerIn(tmp, 'r');
+    const fault = (d, why) => assert.rejects(r.write(d, records, undefined), (e) => e instanceof WriteFault && e.code === 'facts' && why.test(e.message), String(why));
+    await fault({ ...draft, facts: [facts[1], facts[0]] }, /facts\[1\]: the key "com\.alpha-synthetic" does not sort after "org\.gamma-synthetic"/);
+    await fault({ ...draft, facts: [{ key: 'com.alpha-synthetic', cert_age: -1 }] }, /the cert_age -1/);
+    await fault({ ...draft, facts: [{ key: 'com.alpha-synthetic', cert_age: 1.5 }] }, /the cert_age 1\.5/);
+    await fault({ ...draft, facts: { 'com.alpha-synthetic': 1 } }, /facts is not a list/);
+    assert.deepEqual(readdirSync(join(tmp, 'r')), []);
+    // A key no record has is found as the records stream to the pack.
+    await fault({ ...draft, facts: [{ key: 'com.delta-synthetic', cert_age: 1 }] }, /the fact of "com\.delta-synthetic" names a key no record of the segment has/);
+    // Records out of order are the pack writer's PackError, never a facts fault read off keys that do not ascend.
+    await assert.rejects(writerIn(tmp, 'p').write({ ...draft, facts: [facts[0]] }, [records[2], records[0]], undefined), (e) => e?.name === 'PackError');
+    // A source with no bit has no key in facts.json.
+    const nobit = writerIn(tmp, 'nobit', [{ ...STREAM_ROW, bit: null }]);
+    await assert.rejects(
+      nobit.write({ ...draft, facts }, records, undefined),
+      (e) => e instanceof WriteFault && e.code === 'facts' && /oi-cs has no bit, and facts\.json is keyed by source bit/.test(e.message),
+    );
+  }));
+
+// The review of DOM-026: the disk writer's copies of a draft and its cap of a facts layer.
+test('run: the writer keeps its own copies of a draft rawMember and facts, which a change while it writes does not reach, and refuses a facts layer past FACTS_MAX_BYTES as WriteFault facts', () =>
+  inTmp(async (tmp) => {
+    const draft = { ...STREAM_DRAFT, dataset: 'domains' };
+    const records = [{ key: 'com.alpha-synthetic', flags: 0, sources: [{ bit: 4, first: 26_121_700, last: 26_121_700 }], evidence: [] }];
+    const member = { ...MEMBER };
+    const facts = [{ key: 'com.alpha-synthetic', cert_age: 3 }];
+    const factsRefBefore = await factsRef(facts);
+    // The raw bytes and the records reach the writer after it took its copies: each changes the draft as it is read.
+    async function* raw() {
+      member.partition = 9;
+      facts[0].cert_age = 9;
+      yield new TextEncoder().encode('one batch\n');
+    }
+    const w = writerIn(tmp, 'a');
+    const seg = await w.write({ ...draft, rawMember: member, facts }, records, raw());
+    assert.match(readFileSync(join(w.raws[0].dir, MEMBERS_TITLE), 'utf8'), /"partition":0/);
+    assert.deepEqual(seg.facts, factsRefBefore);
+    assert.match(readFileSync(join(w.segments[0].dir, FACTS_TITLE), 'utf8'), /"cert_age":3\}/);
+    // 1,030 keys of 65,535 bytes: 67.5 MB of layer, refused before a record is read.
+    const big = Array.from({ length: 1030 }, (_, i) => ({ key: `${String(i).padStart(4, '0')}${'k'.repeat(65_531)}`, cert_age: i }));
+    let read = false;
+    function* none() {
+      read = true;
+      yield* [];
+    }
+    await assert.rejects(
+      writerIn(tmp, 'big').write({ ...draft, facts: big }, none(), undefined),
+      (e) => e instanceof WriteFault && e.code === 'facts' && /size: the layer is \d+ bytes, over 67108864/.test(e.message),
+    );
+    assert.equal(read, false);
+  }));
+
+test('run: a module that throws because a recording missed fails the run as unrecorded, not as its throw', () =>
+  inRegistry(async (reg, tmp) => {
+    const RUN_LINE = 'export async function run(cursor: Cursor, ctx: AdapterContext): Promise<RunResult> {';
+    const state = stateFile(tmp, emptyState(NOW));
+    const throwing = planted(tmp, 'fixture-stream', [[RUN_LINE, `${RUN_LINE}\n  await ctx.connect({ hostname: "stream.example.test", port: 9092 }).opened;`]]);
+    const r = await call(main, argsOf('fixture-stream', join(tmp, 'a'), ['--state', state, '--psl', PSL_FILE, '--no-push'], throwing), { reg, now: NOW });
+    assert.equal(r.code, EXIT.fault, r.text);
+    assert.match(r.text, /run: FAIL unrecorded: fixture-stream: no recording for connect stream\.example\.test:9092: no recording; nothing of this adapter run is pushed/);
+  }));
+
+test('run: one stats line follows the faults, the adapter stats as canonical JSON on one line', () =>
+  inRegistry(async (reg, tmp) => {
+    const state = stateFile(tmp, emptyState(NOW));
+    const a = await call(main, argsOf('fixture-stream', join(tmp, 'a'), ['--state', state, '--psl', PSL_FILE, '--no-push']), { reg, now: NOW });
+    assert.equal(a.code, EXIT.ok, a.text);
+    assert.deepEqual(
+      a.out.filter((l) => l.startsWith('stats ')),
+      ['stats fixture-stream {"windows":2}'],
+    );
+    const at = a.out.indexOf('stats fixture-stream {"windows":2}');
+    assert.ok(at > a.out.findLastIndex((l) => l.startsWith('raw ') || l.startsWith('segment ')), a.text);
+    assert.ok(a.out[at + 1].startsWith('no push: '), a.text);
+    // A stats name with a line separator and a DEL stays on its line, after the run's fault.
+    const dir = planted(tmp, 'fixture-stream', [
+      [
+        'stats: { windows: segments.length / 2 }, errors: [] };\n}\n\nexport async function backfill',
+        'stats: { windows: segments.length / 2, "lag\\u2028x\\u007f": 3 }, errors: [{ source: SOURCE, code: "read", detail: "synthetic" }] };\n}\n\nexport async function backfill',
+      ],
+    ]);
+    const b = await call(main, argsOf('fixture-stream', join(tmp, 'b'), ['--state', state, '--psl', PSL_FILE, '--no-push'], dir), { reg, now: NOW });
+    assert.equal(b.code, EXIT.fault, b.text);
+    const fault = b.out.indexOf('fault oi-cs read synthetic');
+    assert.ok(fault >= 0, b.text);
+    assert.equal(b.out[fault + 1], 'stats fixture-stream {"lag\\u2028x\\u007f":3,"windows":2}');
+    assert.equal(b.out.filter((l) => l.startsWith('stats ')).length, 1);
+  }));
+
+test('run: an adapter that gives rawMember and facts verifies, pushes facts.json with each domains segment and its fields in members.json, and a re-run finds every tag present', () =>
+  inRegistry(async (reg, tmp) => {
+    seedRoot(reg);
+    const dir = planted(tmp, 'fixture-stream', [
+      [
+        'const draft = { source: SOURCE, window, cursorBefore: before, cursorAfter: after, precision: "second" as const };',
+        'const draft = { source: SOURCE, window, cursorBefore: before, cursorAfter: after, precision: "second" as const, rawMember: { window: n, lines: seen.length } };',
+      ],
+      [
+        'const domains = await ctx.writer.write({ ...draft, dataset: "domains" }, domainsOf(seen), bytes);',
+        'const domains = await ctx.writer.write({ ...draft, dataset: "domains", facts: domainsOf(seen).map((r, i) => ({ key: r.key, cert_age: 604_800 * i })) }, domainsOf(seen), bytes);',
+      ],
+    ]);
+    const state = stateFile(tmp, emptyState('2026-10-30T08:00:00Z'));
+    const r = await call(main, argsOf('fixture-stream', join(tmp, 'a'), ['--state', state, '--psl', PSL_FILE], dir), { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.equal(r.out.filter((l) => /^segment .* verdict ok$/.test(l)).length, 4, r.text);
+    const p = parseProposal(readFileSync(proposalAt(join(tmp, 'a'), 'fixture-stream')));
+    const layerOf = (ref, title) => JSON.parse(reg.w.manifests.get(ref)).layers.filter((l) => l.annotations[TITLE] === title);
+    for (const s of p.segments) {
+      const layers = layerOf(s.ref, FACTS_TITLE);
+      if (s.dataset === 'names') {
+        assert.deepEqual(layers, [], s.ref);
+        continue;
+      }
+      assert.equal(layers.length, 1, s.ref);
+      assert.equal(layers[0].mediaType, 'application/json');
+      const table = parseFacts(reg.bytes.get(layers[0].digest));
+      assert.ok(table.size > 0, s.ref);
+      assert.deepEqual(
+        [...table.values()].map((bits) => [...bits]),
+        [...table.keys()].map((_, i) => [[4, { cert_age: 604_800 * i }]]),
+      );
+    }
+    const windows = p.raw.map((x) => {
+      const [members] = layerOf(x.ref, MEMBERS_TITLE);
+      const file = JSON.parse(new TextDecoder().decode(reg.bytes.get(members.digest)));
+      assert.deepEqual(Object.keys(file.members[0]).sort(), ['length', 'lines', 'offset', 'sha256', 'window'], x.ref);
+      return file.members[0].window;
+    });
+    assert.deepEqual(windows.sort(), [0, 1]);
+    // Another run and time: facts.json and members.json are the same bytes, so every tag is present.
+    const later = '2026-10-30T08:50:00Z';
+    const again = await call(main, argsOf('fixture-stream', join(tmp, 'b'), ['--state', state, '--psl', PSL_FILE], dir, later, '40000000002'), { reg, now: later });
+    assert.equal(again.code, EXIT.ok, again.text);
+    assert.equal(again.out.filter((l) => l.startsWith('present ')).length, 6, again.text);
   }));

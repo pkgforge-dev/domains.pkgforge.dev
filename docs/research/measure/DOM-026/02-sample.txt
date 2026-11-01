@@ -1,0 +1,7 @@
+newly_registered_domain newest {"start":173858847,"n":20000,"ms":4898,"wire":4334127,"fetches":2,"failed":0}
+newly_registered_domain earliest {"start":170127254,"n":20000,"ms":4317,"wire":4319712,"fetches":2,"failed":0}
+newly_registered_fqdn newest {"start":182529461,"n":20000,"ms":4337,"wire":4310738,"fetches":2,"failed":0}
+newly_registered_fqdn earliest {"start":179754818,"n":20000,"ms":4598,"wire":4315125,"fetches":2,"failed":0}
+confirmed_newly_registered_domain newest {"start":81045677,"n":20000,"ms":3578,"wire":3741155,"fetches":2,"failed":0}
+confirmed_newly_registered_domain earliest {"start":79233962,"n":20000,"ms":3905,"wire":3891402,"fetches":2,"failed":0}
+wrote .tmp/dom026/sample.json

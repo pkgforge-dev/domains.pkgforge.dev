@@ -41,11 +41,15 @@
 // 2026-10-28T16:07Z: `wrangler deploy --dry-run` (4.150.0) of an entry that
 // imports this module exits 0 and keeps the import as written.
 //
+// The protocol (the request bytes, the parses, the batch decode and snappy) is
+// @domains/adapter/kafka-protocol, the one copy the adapters' Kafka client
+// reads too (DOM-026 moved it out of this directory). This file keeps its own
+// Connection, with the route's deadline, stages and statuses, until DOM-056
+// deletes the probe.
+//
 // Usage: import { kafkaRoute } from "./kafka.ts". src/index.ts routes to it no
 // more since DOM-005 closed; its tests call it directly.
 // It is a module; it has no command line and no exit code.
-import { ProbeError, WORKER } from "./gaps.ts";
-import type { Route } from "./index.ts";
 import {
   API,
   type ApiRange,
@@ -66,7 +70,9 @@ import {
   Reader,
   splitBatches,
   VERSION,
-} from "./kafka-protocol.ts";
+} from "@domains/adapter/kafka-protocol";
+import { ProbeError, WORKER } from "./gaps.ts";
+import type { Route } from "./index.ts";
 import type { Env } from "./types.ts";
 
 export const ENTRY = "DOM-005";
@@ -454,12 +460,17 @@ export function countBatches(records: Uint8Array, start: number, now: () => numb
   return { ...c, decode_ms: now() - t0 };
 }
 
+// The APIs the route sends. VERSION names Metadata as well, which the route
+// never sends, so a broker is held to these three only.
+const SENT: readonly number[] = Object.freeze([API.FETCH, API.LIST_OFFSETS, API.API_VERSIONS]);
+
 async function apiVersions(conn: Connection, limits: KafkaLimits): Promise<ApiRange> {
   const { reader } = await conn.request(API.API_VERSIONS, apiVersionsBody(), "ApiVersions v0", limits.small_frame);
   const { errorCode, apis } = parseApiVersions(reader);
   if (errorCode !== 0) throw new KafkaError(errorCode, "ApiVersions v0");
-  for (const [key, version] of Object.entries(VERSION)) {
-    const range = apis.get(Number(key));
+  for (const key of SENT) {
+    const version = VERSION[key]!;
+    const range = apis.get(key);
     if (range === undefined || version < range.min || version > range.max) {
       throw new ProtocolError(`the broker serves API ${key} at ${range === undefined ? "no version" : `${range.min}..${range.max}`}; this route sends v${version}`);
     }

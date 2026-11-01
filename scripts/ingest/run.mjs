@@ -16,12 +16,17 @@
 //      the job's token telling an absent state (the first, cursor none) from a
 //      private one (exit 4) (D21 of DOM-024);
 //   3. the list the segments are written under: --psl FILE, or `root`, the
-//      list root:latest pins (D23 of DOM-024), read with no credential;
+//      list root:latest pins (D23 of DOM-024), read with no credential, and
+//      loaded (loadPsl of @domains/names) as ctx.psl: a list whose loaded
+//      sha256 is not the one named, or that does not load, is a Fault;
 //   4. the module adapters/<ID>/src/index.ts (D22 of DOM-024): `run`, or
 //      `backfill` for a window (D17 of DOM-024);
-//   5. ctx: the recordings of --recordings DIR replayed, or the global fetch
-//      (liveFetch); --now or the clock to the second; the contact User-Agent;
-//      the disk writer under --out/work/<ID>/;
+//   5. ctx: with --recordings DIR, its *.http.json replayed as ctx.fetch and
+//      its *.tcp.json as ctx.connect, a request or a connection none answers
+//      failing the run as `unrecorded` even when the adapter caught it; else
+//      the global fetch (liveFetch) and liveConnect() of @domains/adapter/node;
+//      the list; --now or the clock to the second; the contact User-Agent; the
+//      disk writer under --out/work/<ID>/;
 //   6. run(cursor, ctx), or backfill({ start, end }, ctx): the result held to
 //      checkResult and checkSources of @domains/adapter and to the segments
 //      the writer wrote; a live run that wrote segments and returned the
@@ -42,7 +47,9 @@
 //      @domains/state) when a segment was written or the cursor moved; a
 //      backfill's before and after are both the live cursor (D17 of DOM-024);
 //  10. the adapter's own faults (result.errors), printed, make the exit 1
-//      after the proposal: the progress the run returned is real.
+//      after the proposal: the progress the run returned is real. The
+//      result's stats are printed after the faults, one line (D18 of
+//      DOM-026), so the job log holds each source's lag and age.
 // A contract fault of the module or the writer (ContractError, WriteFault,
 // PackError) pushes nothing and writes no proposal: exit 1. The run is
 // --run, else GITHUB_RUN_ID: a workflow run id, as each manifest names it.
@@ -67,6 +74,7 @@
 //   raw obs:TAG SOURCE START END bytes N members N
 //   push.mjs's own line for each push: pushed REF DIGEST, present REF DIGEST (WHY), replaced ..., PRIVATE PACKAGE
 //   fault SOURCE CODE DETAIL           (one line: a control character is written as an escape)
+//   stats ID <canonical stats JSON>    (one line, as a fault's; once a run whose result held)
 //   proposal FILE segments N raw N history N cursor moved|kept
 //   no proposal: no segment was written and the cursor did not move
 //   no push: --no-push; N segment(s) and N raw object(s) verified
@@ -93,14 +101,16 @@ import {
   jsonEqual,
   liveFetch,
   MAX_ID,
+  replayConnect,
   replayFetch,
   SourceError,
   validateBits,
   validateSourceFile,
 } from '@domains/adapter';
-import { readRecordings } from '@domains/adapter/node';
+import { liveConnect, readRecordings, readTcpRecordings } from '@domains/adapter/node';
 import { CompactError, WORKFLOW_RUN_ID } from '@domains/compact';
 import { annotationProblem, GhcrError, LayoutError } from '@domains/ghcr';
+import { loadPsl, PslError } from '@domains/names';
 import { PackError } from '@domains/pack';
 import { cursorOf, encodeProposal, historyOf, LANES, parseState, propose, proposalFile, StateError } from '@domains/state';
 import { checkOutDir, freshDir, writeOut } from '../compact/plan.mjs';
@@ -216,6 +226,30 @@ async function listOf(args, reader, work, d) {
     throw new UsageError(`--psl ${args.psl} does not read: ${e.message}`);
   }
   return { path: args.psl, sha256: sha256Of(bytes), from: args.psl };
+}
+
+// The list of step 3, loaded as ctx.psl. The bytes are read again from the
+// list's path, so the hash the loader takes of them is held to the one the
+// segments name: a list read that is not the list named is a Fault.
+export async function pslOf(list, read = readFileSync) {
+  let psl;
+  try {
+    psl = await loadPsl(read(list.path));
+  } catch (e) {
+    if (e instanceof PslError) throw new Fault(`the list ${list.from} does not load: ${e.message}`);
+    throw e;
+  }
+  if (psl.sha256 !== list.sha256) throw new Fault(`the list read hashes to ${psl.sha256}, not ${list.sha256}: the list read is not the list named (${list.from})`);
+  return psl;
+}
+
+// The doors of step 5: { fetch, connect, misses }, misses() naming each
+// request and connection a replay did not answer.
+function doorsOf(args) {
+  if (args.recordings === undefined) return { fetch: liveFetch, connect: liveConnect(), misses: () => [] };
+  const http = replayFetch(readRecordings(args.recordings));
+  const tcp = replayConnect(readTcpRecordings(args.recordings));
+  return { fetch: http.fetch, connect: tcp.connect, misses: () => [...http.misses.map((m) => `${m.method} ${m.url}`), ...tcp.misses.map((m) => m.detail)] };
 }
 
 // The module of step 4.
@@ -427,19 +461,42 @@ async function runJob(argv, deps) {
     // 3. The list.
     const list = await listOf(args, d.reader, work, d);
     d.out(`psl ${list.sha256} (${list.from})`);
+    const psl = await pslOf(list);
 
     // 4 to 6. The module, run once.
     const mod = await moduleOf(args);
     const writer = diskWriter({ dir: work, adapter: args.adapter, sources: rows, psl: list.sha256, run: args.run, fetched: args.now });
-    const fetch = args.recordings !== undefined ? replayFetch(readRecordings(args.recordings)).fetch : liveFetch;
-    const ctx = Object.freeze({ fetch, now: args.now, userAgent: USER_AGENT, writer: Object.freeze({ write: (draft, records, raw) => writer.write(draft, records, raw) }) });
-    const result = await runModule(args, mod, cursor, ctx, rows, writer);
+    const doors = doorsOf(args);
+    const ctx = Object.freeze({
+      fetch: doors.fetch,
+      connect: doors.connect,
+      psl,
+      now: args.now,
+      userAgent: USER_AGENT,
+      writer: Object.freeze({ write: (draft, records, raw) => writer.write(draft, records, raw) }),
+    });
+    // A replay's miss is named before the fault it may have caused, as runAdapter names it.
+    const unrecorded = (cause) => {
+      const missed = doors.misses();
+      if (missed.length > 0) throw new ContractError('unrecorded', `${args.adapter}: no recording for ${missed.join(', ')}`, cause === undefined ? undefined : { cause });
+    };
+    let result;
+    try {
+      result = await runModule(args, mod, cursor, ctx, rows, writer);
+    } catch (e) {
+      unrecorded(e);
+      throw e;
+    }
+    unrecorded();
 
     // 7. Every segment verified before any push.
     const verified = await verifyAll(args, writer, rows, state, list, work, d);
     for (const r of writer.raws) d.out(`raw obs:${r.tag} ${r.source} ${r.start} ${r.end} bytes ${r.bytes} members ${r.members}`);
     // An adapter's fault quotes remote text: one line each, whatever it holds.
     for (const f of result.errors) d.out(oneLine(`fault ${f.source} ${f.code} ${f.detail}`));
+    // The stats' names are the adapter's text: canonical JSON keeps DEL and the
+    // two line separators, which oneLine escapes.
+    d.out(oneLine(`stats ${args.adapter} ${canonicalJson(result.stats)}`));
     const stopped = verified.filter((v) => !PUSHED_VERDICTS.has(v.verdict));
     if (stopped.length > 0) {
       d.err(`run: ${stopped.map((v) => `obs:${v.w.tag} ${v.verdict}`).join(', ')}: nothing of this adapter run is pushed, and no proposal is written (D18 of DOM-024)`);

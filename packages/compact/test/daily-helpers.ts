@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { encodeFacts, FACTS_MEDIA_TYPE, FACTS_TITLE, type FactRow, factsOfRows } from "@domains/adapter";
 import { type SourceRowLike, writeFeedPack } from "@domains/feed";
 import { artifactType, repoOf, SOURCE_URL, segTag, type TierDataset, tierTag } from "@domains/ghcr";
 import {
@@ -79,11 +80,13 @@ export interface MemPack<R> extends MemManifest {
   readonly idx: Uint8Array;
   readonly parts: Uint8Array[];
   readonly time: { readonly idx: Uint8Array; readonly parts: Uint8Array[] } | null;
+  // The layers after the pack's own, given by their bytes (facts.json, summary.json).
+  readonly extra: readonly { readonly title: string; readonly bytes: Uint8Array }[];
   readonly reader: PackReader<R>;
   readonly dataset: TierDataset;
 }
 
-const layer = (bytes: Uint8Array, title: string) => ({ mediaType: LAYER_MEDIA_TYPE, digest: sha(bytes), size: bytes.length, annotations: { [TITLE]: title } });
+const layer = (bytes: Uint8Array, title: string, mediaType = LAYER_MEDIA_TYPE) => ({ mediaType, digest: sha(bytes), size: bytes.length, annotations: { [TITLE]: title } });
 
 export interface SegmentOptions {
   readonly dataset?: "domains" | "names";
@@ -92,7 +95,15 @@ export interface SegmentOptions {
   // The precision the manifest states; the registry's by default.
   readonly precision?: string;
   readonly recordsPerBlock?: number;
+  // The draft's facts: the layer facts.json keyed by the source's bit, after
+  // the idx, as the writer of scripts/ingest writes it; or its bytes as given.
+  readonly facts?: readonly FactRow[] | Uint8Array;
 }
+
+// The facts.json of a segment of `source` whose draft gave `rows`.
+export const segmentFacts = (source: string, rows: readonly FactRow[]): Uint8Array => encodeFacts(factsOfRows(rows, BIT[source]));
+// The extra layer facts.json of `bytes`, for packManifest.
+export const factsExtra = (bytes: Uint8Array): ExtraLayer => ({ title: FACTS_TITLE, mediaType: FACTS_MEDIA_TYPE, bytes });
 
 // A segment of `source` over [start, end): its records written with the
 // production writer, its manifest as an adapter's would be (docs/architecture.md
@@ -121,17 +132,19 @@ export async function segment(source: string, start: string, end: string, record
     [SOURCE_ANNOTATION]: SOURCE_URL,
     ...(o.quarantine === true ? { [QUARANTINE_ANNOTATION]: "1" } : {}),
   };
+  const facts = o.facts === undefined ? null : o.facts instanceof Uint8Array ? o.facts : segmentFacts(source, o.facts);
   const json = {
     schemaVersion: 2,
     mediaType: MANIFEST_MEDIA_TYPE,
     artifactType: artifactType("segment"),
     config: { ...EMPTY_CONFIG },
-    layers: [...parts.map((p, i) => layer(p, partTitle(i))), layer(summary.idx, IDX_TITLE)],
+    layers: [...parts.map((p, i) => layer(p, partTitle(i))), layer(summary.idx, IDX_TITLE), ...(facts === null ? [] : [layer(facts, FACTS_TITLE, FACTS_MEDIA_TYPE)])],
     annotations,
   };
   const text = JSON.stringify(json);
   const reader = (await PackReader.open(summary.idx, partsSource(parts), codec, { partSizes: parts.map((p) => p.length) })) as PackReader<DomainRecord>;
-  return { tag: segTag(source, start, end), digest: sha(text), text, json, summary, idx: summary.idx, parts, time: null, reader, dataset };
+  const extra = facts === null ? [] : [{ title: FACTS_TITLE, bytes: facts }];
+  return { tag: segTag(source, start, end), digest: sha(text), text, json, summary, idx: summary.idx, parts, time: null, extra, reader, dataset };
 }
 
 export interface TierOptions {
@@ -194,7 +207,8 @@ export async function tierPack(
     ...(o.extra === undefined ? {} : { extra: o.extra }),
   });
   const reader = await PackReader.open(summary.idx, partsSource(parts), codec, { partSizes: parts.map((p) => p.length) });
-  return { tag, digest: built.digest, text: built.text, json: built.json as MemManifest["json"], summary, idx: summary.idx, parts, time, reader, dataset };
+  const extra = (o.extra ?? []).flatMap((x) => (x.bytes === undefined ? [] : [{ title: x.title, bytes: x.bytes }]));
+  return { tag, digest: built.digest, text: built.text, json: built.json as MemManifest["json"], summary, idx: summary.idx, parts, time, extra, reader, dataset };
 }
 
 const headFacts = (bytes: Uint8Array) => {
@@ -220,13 +234,14 @@ export function writeDir(dir: string, p: MemPack<unknown>): string {
     writeFileSync(join(at, TIME_IDX_TITLE), p.time.idx);
     for (const [i, part] of p.time.parts.entries()) writeFileSync(join(at, timePartTitle(i)), part);
   }
+  for (const x of p.extra) writeFileSync(join(at, x.title), x.bytes);
   return at;
 }
 
 // Every blob of a pack by digest, for a GHCR double.
 export function blobsOf(p: MemPack<unknown>): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
-  for (const b of [p.idx, ...p.parts, ...(p.time === null ? [] : [p.time.idx, ...p.time.parts])]) out.set(sha(b), b);
+  for (const b of [p.idx, ...p.parts, ...(p.time === null ? [] : [p.time.idx, ...p.time.parts]), ...p.extra.map((x) => x.bytes)]) out.set(sha(b), b);
   return out;
 }
 

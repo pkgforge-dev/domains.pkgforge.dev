@@ -1,0 +1,886 @@
+{
+ "at": "2026-10-31T05:07:04.658Z",
+ "n": 20000,
+ "topics": {
+  "newly_registered_domain": {
+   "earliest": {
+    "start": 170127254,
+    "stop": 170147254,
+    "read_ms": 4317,
+    "wire_bytes": 4319712,
+    "frame_bytes": 4568980,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,ct_name,domain,submission_timestamp,timestamp": 19576,
+     "cert_index,ct_name,domain,timestamp": 424
+    },
+    "trailing_dot": 20000,
+    "upper_case": 0,
+    "distinct_names": 19750,
+    "zone_rows": 424,
+    "cert_index_minus_one": 424,
+    "zone_samples": [
+     {
+      "off": 170129192,
+      "v": {
+       "domain": "numerical-engineering.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129193,
+      "v": {
+       "domain": "eclosiondessouveraines.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129194,
+      "v": {
+       "domain": "kanjitutor.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129195,
+      "v": {
+       "domain": "vytalwell.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129196,
+      "v": {
+       "domain": "bentea.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129197,
+      "v": {
+       "domain": "xn--heizungs-auftrge-8nb.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129198,
+      "v": {
+       "domain": "wonderarts.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 170129199,
+      "v": {
+       "domain": "deborahbertinotti.ch.",
+       "timestamp": 1792674595,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     }
+    ],
+    "confidence": {},
+    "ct_names_top": [
+     [
+      "DigiCert Sphinx2027h1",
+      3205
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      2837
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      2733
+     ],
+     [
+      "DigiCert Wyvern2027h1",
+      2653
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      1779
+     ],
+     [
+      "DigiCert Sphinx2026h2",
+      1467
+     ],
+     [
+      "Google Argon2027h1",
+      1265
+     ],
+     [
+      "DigiCert Wyvern2026h2",
+      1097
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-22T13:00:50.000Z",
+    "timestamp_max": "2026-10-22T14:19:44.000Z",
+    "timestamp_not_monotone": 179,
+    "timestamp_max_step_back_s": 1,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.003999948501586914,
+     "p50": 0.5759999752044678,
+     "p99": 1.7639999389648438,
+     "p100": 2.130000114440918
+    },
+    "cert_age_s": {
+     "n": 19576,
+     "p10": 3.615999937057495,
+     "p50": 128.9760000705719,
+     "p62": 3042.2160000801086,
+     "p90": 12018618.881000042,
+     "max": 12813146.525000095,
+     "over_6h": 6364,
+     "over_7d": 6364,
+     "over_30d": 6273,
+     "negative": 0
+    },
+    "per_10min_window": {
+     "windows": 8,
+     "min": 1876,
+     "max": 3509,
+     "median": 2484
+    },
+    "samples": [
+     {
+      "off": 170127254,
+      "rec_ts": 1792674050342,
+      "v": "{\"domain\":\"transponteiousa.online.\",\"cert_index\":257027316,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1792674050,\"submission_timestamp\":1792674046.402}"
+     },
+     {
+      "off": 170127255,
+      "rec_ts": 1792674050402,
+      "v": "{\"domain\":\"comunevittorioveneto.info.\",\"cert_index\":292715162,\"ct_name\":\"DigiCert Wyvern2027h1\",\"timestamp\":1792674050,\"submission_timestamp\":1792674046.577}"
+     },
+     {
+      "off": 170127256,
+      "rec_ts": 1792674054656,
+      "v": "{\"domain\":\"rikfiddicke.com.\",\"cert_index\":1894506906,\"ct_name\":\"TrustAsia log2026a\",\"timestamp\":1792674054,\"submission_timestamp\":1780971704.996}"
+     }
+    ]
+   },
+   "latest": 173878847,
+   "newest": {
+    "start": 173858847,
+    "stop": 173878847,
+    "read_ms": 4898,
+    "wire_bytes": 4334127,
+    "frame_bytes": 4334651,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,ct_name,domain,submission_timestamp,timestamp": 19951,
+     "cert_index,ct_name,domain,timestamp": 49
+    },
+    "trailing_dot": 20000,
+    "upper_case": 0,
+    "distinct_names": 19968,
+    "zone_rows": 49,
+    "cert_index_minus_one": 49,
+    "zone_samples": [
+     {
+      "off": 173860320,
+      "v": {
+       "domain": "diegomueggler.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860321,
+      "v": {
+       "domain": "kicki.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860322,
+      "v": {
+       "domain": "sozialarbeit-careers.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860323,
+      "v": {
+       "domain": "sozialarbeit-careers.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860324,
+      "v": {
+       "domain": "sozialarbeit-careers.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860325,
+      "v": {
+       "domain": "diegomueggler.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860326,
+      "v": {
+       "domain": "kicki.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     },
+     {
+      "off": 173860327,
+      "v": {
+       "domain": "kicki.ch.",
+       "timestamp": 1793416204,
+       "ct_name": "zone_data",
+       "cert_index": -1
+      }
+     }
+    ],
+    "confidence": {},
+    "ct_names_top": [
+     [
+      "DigiCert Sphinx2027h1",
+      3993
+     ],
+     [
+      "DigiCert Sphinx2026h2",
+      2541
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      2341
+     ],
+     [
+      "Google Argon2027h1",
+      1876
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      1715
+     ],
+     [
+      "Google Argon2026h2",
+      1613
+     ],
+     [
+      "DigiCert Wyvern2026h2",
+      1419
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      1074
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-31T03:00:26.000Z",
+    "timestamp_max": "2026-10-31T05:07:04.000Z",
+    "timestamp_not_monotone": 31,
+    "timestamp_max_step_back_s": 1,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.005000114440917969,
+     "p50": 0.5429999828338623,
+     "p99": 1.0469999313354492,
+     "p100": 2.619999885559082
+    },
+    "cert_age_s": {
+     "n": 19951,
+     "p10": 3.7219998836517334,
+     "p50": 2790767.6840000153,
+     "p62": 2798811.7090001106,
+     "p90": 12783986.973999977,
+     "max": 13502919.721999884,
+     "over_6h": 10822,
+     "over_7d": 10186,
+     "over_30d": 10117,
+     "negative": 0
+    },
+    "per_10min_window": {
+     "windows": 13,
+     "min": 1020,
+     "max": 2047,
+     "median": 1477
+    },
+    "samples": [
+     {
+      "off": 173858847,
+      "rec_ts": 1793415626809,
+      "v": "{\"domain\":\"maftranslator.com.\",\"cert_index\":1912217190,\"ct_name\":\"TrustAsia log2026a\",\"timestamp\":1793415626,\"submission_timestamp\":1781107566.456}"
+     },
+     {
+      "off": 173858848,
+      "rec_ts": 1793415627220,
+      "v": "{\"domain\":\"thekannonco.com.\",\"cert_index\":320377024,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793415627,\"submission_timestamp\":1793415623.389}"
+     },
+     {
+      "off": 173858849,
+      "rec_ts": 1793415627731,
+      "v": "{\"domain\":\"namesakes.fun.\",\"cert_index\":659869678,\"ct_name\":\"Sectigo Tiger2027h1\",\"timestamp\":1793415627,\"submission_timestamp\":1793415564.743}"
+     }
+    ]
+   }
+  },
+  "newly_registered_fqdn": {
+   "earliest": {
+    "start": 179754818,
+    "stop": 179774818,
+    "read_ms": 4598,
+    "wire_bytes": 4315125,
+    "frame_bytes": 4542234,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,ct_name,fqdn,submission_timestamp,timestamp": 20000
+    },
+    "trailing_dot": 0,
+    "upper_case": 0,
+    "distinct_names": 20000,
+    "zone_rows": 0,
+    "cert_index_minus_one": 0,
+    "zone_samples": [],
+    "confidence": {},
+    "ct_names_top": [
+     [
+      "DigiCert Sphinx2027h1",
+      3417
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      3023
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      2879
+     ],
+     [
+      "DigiCert Wyvern2027h1",
+      2854
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      1732
+     ],
+     [
+      "DigiCert Sphinx2026h2",
+      1394
+     ],
+     [
+      "Google Argon2027h1",
+      1152
+     ],
+     [
+      "DigiCert Wyvern2026h2",
+      1054
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-22T13:00:54.000Z",
+    "timestamp_max": "2026-10-22T14:12:15.000Z",
+    "timestamp_not_monotone": 0,
+    "timestamp_max_step_back_s": 0,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.002000093460083008,
+     "p50": 0.565000057220459,
+     "p99": 1.1589999198913574,
+     "p100": 2.11299991607666
+    },
+    "cert_age_s": {
+     "n": 20000,
+     "p10": 3.5859999656677246,
+     "p50": 123.08999991416931,
+     "p62": 2033.3110001087189,
+     "p90": 11705541.865999937,
+     "max": 12812707.319000006,
+     "over_6h": 6086,
+     "over_7d": 6086,
+     "over_30d": 5995,
+     "negative": 0
+    },
+    "per_10min_window": {
+     "windows": 8,
+     "min": 659,
+     "max": 4063,
+     "median": 2584
+    },
+    "samples": [
+     {
+      "off": 179754818,
+      "rec_ts": 1792674054666,
+      "v": "{\"fqdn\":\"autodiscover.rikfiddicke.com\",\"cert_index\":1894506906,\"ct_name\":\"TrustAsia log2026a\",\"timestamp\":1792674054,\"submission_timestamp\":1780971704.996}"
+     },
+     {
+      "off": 179754819,
+      "rec_ts": 1792674055166,
+      "v": "{\"fqdn\":\"betandplayde.com\",\"cert_index\":292715287,\"ct_name\":\"DigiCert Wyvern2027h1\",\"timestamp\":1792674055,\"submission_timestamp\":1792674048.164}"
+     },
+     {
+      "off": 179754820,
+      "rec_ts": 1792674055830,
+      "v": "{\"fqdn\":\"signandtrack.com\",\"cert_index\":1128357189,\"ct_name\":\"Google Xenon2026h2\",\"timestamp\":1792674055,\"submission_timestamp\":1780570796.569}"
+     }
+    ]
+   },
+   "latest": 182549461,
+   "newest": {
+    "start": 182529461,
+    "stop": 182549461,
+    "read_ms": 4337,
+    "wire_bytes": 4310738,
+    "frame_bytes": 4311685,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,ct_name,fqdn,submission_timestamp,timestamp": 20000
+    },
+    "trailing_dot": 0,
+    "upper_case": 0,
+    "distinct_names": 20000,
+    "zone_rows": 0,
+    "cert_index_minus_one": 0,
+    "zone_samples": [],
+    "confidence": {},
+    "ct_names_top": [
+     [
+      "DigiCert Sphinx2027h1",
+      3902
+     ],
+     [
+      "DigiCert Sphinx2026h2",
+      2478
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      2410
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      1846
+     ],
+     [
+      "Google Argon2027h1",
+      1718
+     ],
+     [
+      "Google Argon2026h2",
+      1572
+     ],
+     [
+      "DigiCert Wyvern2026h2",
+      1443
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      1350
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-31T03:14:39.000Z",
+    "timestamp_max": "2026-10-31T05:07:15.000Z",
+    "timestamp_not_monotone": 0,
+    "timestamp_max_step_back_s": 0,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.005000114440917969,
+     "p50": 0.5460000038146973,
+     "p99": 1.0420000553131104,
+     "p100": 2.1649999618530273
+    },
+    "cert_age_s": {
+     "n": 20000,
+     "p10": 3.7360000610351562,
+     "p50": 60296.704999923706,
+     "p62": 2796254.9030001163,
+     "p90": 12783846.176000118,
+     "max": 13502928.076999903,
+     "over_6h": 10487,
+     "over_7d": 9710,
+     "over_30d": 9645,
+     "negative": 0
+    },
+    "per_10min_window": {
+     "windows": 12,
+     "min": 882,
+     "max": 2274,
+     "median": 1726
+    },
+    "samples": [
+     {
+      "off": 182529461,
+      "rec_ts": 1793416479207,
+      "v": "{\"fqdn\":\"gszb-china.com\",\"cert_index\":320424303,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793416479,\"submission_timestamp\":1793416474.875}"
+     },
+     {
+      "off": 182529462,
+      "rec_ts": 1793416479255,
+      "v": "{\"fqdn\":\"jtyjzj.com\",\"cert_index\":320424328,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793416479,\"submission_timestamp\":1793416475.362}"
+     },
+     {
+      "off": 182529463,
+      "rec_ts": 1793416479646,
+      "v": "{\"fqdn\":\"gnclgrs3.vip\",\"cert_index\":1912237027,\"ct_name\":\"TrustAsia log2026a\",\"timestamp\":1793416479,\"submission_timestamp\":1781107700.859}"
+     }
+    ]
+   }
+  },
+  "confirmed_newly_registered_domain": {
+   "earliest": {
+    "start": 79233962,
+    "stop": 79253962,
+    "read_ms": 3905,
+    "wire_bytes": 3891402,
+    "frame_bytes": 4092779,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,confidence,ct_name,domain,timestamp": 20000
+    },
+    "trailing_dot": 20000,
+    "upper_case": 0,
+    "distinct_names": 20000,
+    "zone_rows": 0,
+    "cert_index_minus_one": 0,
+    "zone_samples": [],
+    "confidence": {
+     "1": 3922,
+     "2": 3986,
+     "3": 2193,
+     "4": 3498,
+     "5": 2443,
+     "6": 1291,
+     "7": 1660,
+     "8": 423,
+     "9": 345,
+     "10": 239
+    },
+    "ct_names_top": [
+     [
+      "DigiCert Sphinx2027h1",
+      4870
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      4290
+     ],
+     [
+      "DigiCert Wyvern2027h1",
+      4108
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      3892
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      2828
+     ],
+     [
+      "Sectigo Elephant2026h2",
+      6
+     ],
+     [
+      "Google Argon2027h1",
+      3
+     ],
+     [
+      "Cloudflare Nimbus2026",
+      2
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-22T13:02:00.000Z",
+    "timestamp_max": "2026-10-22T15:09:31.000Z",
+    "timestamp_not_monotone": 3777,
+    "timestamp_max_step_back_s": 66,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.04200005531311035,
+     "p50": 1.0169999599456787,
+     "p99": 12.460999965667725,
+     "p100": 67.55399990081787
+    },
+    "cert_age_s": null,
+    "per_10min_window": {
+     "windows": 13,
+     "min": 1064,
+     "max": 2584,
+     "median": 1440
+    },
+    "samples": [
+     {
+      "off": 79233962,
+      "rec_ts": 1792674120625,
+      "v": "{\"domain\":\"little-rome.info.\",\"cert_index\":517683133,\"ct_name\":\"Sectigo Elephant2027h1\",\"timestamp\":1792674120,\"confidence\":6}"
+     },
+     {
+      "off": 79233963,
+      "rec_ts": 1792674122264,
+      "v": "{\"domain\":\"testdup-1792673521289.live.\",\"cert_index\":292720657,\"ct_name\":\"DigiCert Wyvern2027h1\",\"timestamp\":1792674121,\"confidence\":2}"
+     },
+     {
+      "off": 79233964,
+      "rec_ts": 1792674122398,
+      "v": "{\"domain\":\"mau-chibi.com.\",\"cert_index\":517684060,\"ct_name\":\"Sectigo Elephant2027h1\",\"timestamp\":1792674122,\"confidence\":1}"
+     }
+    ]
+   },
+   "latest": 81065677,
+   "newest": {
+    "start": 81045677,
+    "stop": 81065677,
+    "read_ms": 3578,
+    "wire_bytes": 3741155,
+    "frame_bytes": 3741542,
+    "fetches": 2,
+    "batches": 20000,
+    "codecs": {
+     "none": 20000
+    },
+    "failed_batches": 0,
+    "messages": 20000,
+    "json_errors": 0,
+    "keyed": 0,
+    "field_sets": {
+     "cert_index,confidence,ct_name,domain,timestamp": 20000
+    },
+    "trailing_dot": 20000,
+    "upper_case": 0,
+    "distinct_names": 20000,
+    "zone_rows": 6644,
+    "cert_index_minus_one": 6644,
+    "zone_samples": [
+     {
+      "off": 81045678,
+      "v": {
+       "domain": "3110casino.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 10
+      }
+     },
+     {
+      "off": 81045680,
+      "v": {
+       "domain": "1xbet-mw8.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 9
+      }
+     },
+     {
+      "off": 81045681,
+      "v": {
+       "domain": "stakezazino66.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 9
+      }
+     },
+     {
+      "off": 81045682,
+      "v": {
+       "domain": "p64914915.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 10
+      }
+     },
+     {
+      "off": 81045684,
+      "v": {
+       "domain": "hzbm1j65.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 8
+      }
+     },
+     {
+      "off": 81045687,
+      "v": {
+       "domain": "x2jvw3m4.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 10
+      }
+     },
+     {
+      "off": 81045688,
+      "v": {
+       "domain": "i4wwyey6.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 8
+      }
+     },
+     {
+      "off": 81045698,
+      "v": {
+       "domain": "dq79stc5.top.",
+       "cert_index": -1,
+       "ct_name": "zone_data",
+       "timestamp": 1793410912,
+       "confidence": 10
+      }
+     }
+    ],
+    "confidence": {
+     "1": 2622,
+     "2": 2233,
+     "3": 1145,
+     "4": 1447,
+     "5": 1312,
+     "6": 634,
+     "7": 614,
+     "8": 1358,
+     "9": 6352,
+     "10": 2283
+    },
+    "ct_names_top": [
+     [
+      "zone_data",
+      6644
+     ],
+     [
+      "DigiCert Sphinx2027h1",
+      5534
+     ],
+     [
+      "Sectigo Elephant2027h1",
+      3163
+     ],
+     [
+      "Sectigo Tiger2027h1",
+      2329
+     ],
+     [
+      "Cloudflare Nimbus2027",
+      1415
+     ],
+     [
+      "DigiCert Wyvern2027h1",
+      895
+     ],
+     [
+      "Cloudflare Nimbus2026",
+      9
+     ],
+     [
+      "Google Xenon2026h2",
+      3
+     ]
+    ],
+    "timestamp_fractional": 0,
+    "timestamp_min": "2026-10-31T01:41:52.000Z",
+    "timestamp_max": "2026-10-31T05:07:23.000Z",
+    "timestamp_not_monotone": 8973,
+    "timestamp_max_step_back_s": 8389,
+    "record_ts_not_monotone": 0,
+    "record_ts_minus_json_ts_s": {
+     "p0": 0.05200004577636719,
+     "p50": 1.6510000228881836,
+     "p99": 7389.069000005722,
+     "p100": 8398.09500002861
+    },
+    "cert_age_s": null,
+    "per_10min_window": {
+     "windows": 20,
+     "min": 280,
+     "max": 5473,
+     "median": 733
+    },
+    "samples": [
+     {
+      "off": 81045677,
+      "rec_ts": 1793412361754,
+      "v": "{\"domain\":\"decklightdecor.com.\",\"cert_index\":320205522,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793412356,\"confidence\":2}"
+     },
+     {
+      "off": 81045678,
+      "rec_ts": 1793412362437,
+      "v": "{\"domain\":\"3110casino.top.\",\"cert_index\":-1,\"ct_name\":\"zone_data\",\"timestamp\":1793410912,\"confidence\":10}"
+     },
+     {
+      "off": 81045679,
+      "rec_ts": 1793412363050,
+      "v": "{\"domain\":\"qpayapp.xyz.\",\"cert_index\":320205773,\"ct_name\":\"DigiCert Sphinx2027h1\",\"timestamp\":1793412362,\"confidence\":3}"
+     }
+    ]
+   }
+  }
+ }
+}
