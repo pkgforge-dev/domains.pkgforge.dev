@@ -1,0 +1,6 @@
+state:latest sha256:9ce0d69c9db4d423acb0dc85cf94c6bdd2a6c08cf6a360463b9c0cc8003018d3 from registry mediaType application/vnd.oci.image.manifest.v1+json artifactType application/vnd.pkgforge.domains.state.v1
+  layer state.json 6556
+  annotation dev.pkgforge.domains.run=41285031490
+  annotation dev.pkgforge.domains.sha256=d2cf966071381e636800bd4681e66c29b67d60ff2d49d109a42b6c599ae72cc4
+  annotation org.opencontainers.image.created=2026-11-01T07:41:01Z
+  annotation org.opencontainers.image.source=https://github.com/pkgforge-dev/domains.pkgforge.dev

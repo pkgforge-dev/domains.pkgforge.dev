@@ -1,0 +1,11 @@
+names:domains-d-20261028 sha256:8cc6a834cd7cd343fe517fa33a298560f8e3e8cf60e7a0e4ecf459577f7483dc layers:
+  part.000 application/octet-stream 5853460 sha256:18e76057e06b
+  idx application/octet-stream 4106 sha256:774450e5af64
+  facts.json application/json 13429868 sha256:a87e85907776
+facts.json keys 291571
+feed rows 382662
+old (min cert_age > 7 d): 113603, suspect with suspect-cert 113603, no feed row 0
+young (min cert_age <= 7 d): 177968, with suspect-cert 0
+  sample academy.137 cert_age 7401126 s (85.7 d) feed_flags 18
+  sample academy.aipilot cert_age 7397795 s (85.6 d) feed_flags 18
+  sample academy.aischolar cert_age 3699549 s (42.8 d) feed_flags 18

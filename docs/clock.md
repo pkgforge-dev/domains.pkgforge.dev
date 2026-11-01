@@ -88,9 +88,10 @@ rule is judged again by the one in force.
   section 5.1). Over its 48 hours the measured chain used 171,180 s, about
   47.6 hours, of runner time (`chain.json`, `cost`). Runner time is free for a
   public repository.
-- **Before the first adapter.** Every lane of `config/lanes.json` is empty
-  until DOM-026, so each run of the chain plans no leg, pushes nothing and
-  sleeps.
+- **The legs.** The lane `kafka` of `config/lanes.json` holds `oi-nrd`
+  (DOM-026), and the lanes `tiles` and `feeds` are empty. So each run of the
+  chain plans one leg, pushes the segments of `oi-nrd`, moves `state` and
+  promotes, then sleeps.
 - **Stopping it.** `gh workflow disable ingest-live.yml`, the undo of the row
   of `ingest-live.yml` in `docs/resources.md`, stops the chain and the cron
   backstop. That a disabled workflow starts no dispatched run is assumed, not

@@ -22,8 +22,9 @@
 //      before an open entry it depends on.
 //  13. A `- **Waiting:**` line reads `until <YYYY-MM-DDTHH:MM:SSZ>; <then>`, on
 //      a partial entry, so scripts/todo/next.mjs can tell when it is due.
-//  14. A done entry carries a `- **Closed …:**` line, the record of its Prove
-//      passing.
+//  14. A done entry carries a `- **Closed <UTC instant> (proven):**` line, the
+//      record of its Prove passing: an instant to the minute or the second, and
+//      a note in brackets.
 //  15. No Closed, Measured, Read, Found, Built, Done or Correction label is
 //      stamped later than the guard runs, so none is later than its commit.
 //  16. The rulings of TODO/RULES.md section 5 are numbered from 1, in order,
@@ -320,8 +321,11 @@ function run() {
       if (!at || Number.isNaN(Date.parse(at[1]))) fail(`${r.id}: its Waiting line is not \`until <YYYY-MM-DDTHH:MM:SSZ>; <then>\`, so scripts/todo/next.mjs cannot tell when it is due`);
       else if (r.status !== 'partial') fail(`${r.id}: a Waiting line on a ${r.status} entry (only a partial entry waits)`);
     }
-    // 14
+    // 14: the label carries its instant and a note in brackets, as
+    // docs/methodology/work-todo.md writes it: `- **Closed <UTC instant> (proven):**`.
     if (r.status === 'done' && !/^\s*- \*\*Closed\b/m.test(section)) fail(`${r.id}: done, but no \`- **Closed …:**\` line records its Prove passing`);
+    else if (r.status === 'done' && !/^\s*- \*\*Closed \d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z \([^)\n]+\):\*\*/m.test(section))
+      fail(`${r.id}: its Closed line is not \`- **Closed <UTC instant> (proven):**\``);
     // 15
     // The labels in any case: the record writes MEASURED and READ in capitals.
     for (const [, label, stamp] of section.matchAll(/^\s*- \*\*(Closed|Measured|Read|Found|Built|Done|Correction)\b[^*\n]*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?Z)[^*\n]*\*\*/gim)) {

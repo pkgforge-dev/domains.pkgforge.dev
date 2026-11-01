@@ -274,6 +274,20 @@ test('check 14: a done entry with no Closed line fails', () => {
   assert.match(prose.guard().stderr, /DOM-001: done, but no/);
 });
 
+test('check 14: a Closed line with no instant or no note in brackets fails', () => {
+  for (const label of ['Closed (proven)', 'Closed 2026-01-02T03:04:05Z', 'Closed 2026-01-02 (proven)']) {
+    const r = makeRecord();
+    r.edit('TODO/foundation.md', (t) => t.replace(/^(\s*)- \*\*Closed [^*]*\*\*/gm, `$1- **${label}:**`));
+    const g = r.guard();
+    assert.equal(g.status, 1, label);
+    assert.match(g.stderr, /DOM-001: its Closed line is not/, label);
+  }
+  const minutes = makeRecord();
+  minutes.edit('TODO/foundation.md', (t) => t.replace(/^(\s*)- \*\*Closed [^*]*\*\*/gm, '$1- **Closed 2026-01-02T03:04Z (proven, on a ruling):**'));
+  const ok = minutes.guard();
+  assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+});
+
 test('check 15: a record line stamped later than now fails, whatever its label and its case', () => {
   const later = `${new Date(Date.now() + 3 * 3600_000).toISOString().slice(0, 16)}Z`;
   for (const label of ['Closed', 'Measured', 'MEASURED', 'Read', 'READ', 'Found', 'Built', 'Done', 'Correction']) {
