@@ -5,5 +5,5 @@
   "p90_gap_min": 5.02,
   "max_gap_min": 5.9,
   "rule": { "p90_max_min": 15, "max_max_min": 60 },
-  "interval_min": 10
+  "interval_min": 30
 }

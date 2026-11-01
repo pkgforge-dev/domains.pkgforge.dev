@@ -8,8 +8,9 @@
 // no file, or a clock other than actions-chain, every verb prints `chain off`
 // and exits 0, and only the crons and workflow_dispatch start runs (D14 of
 // DOM-024). The interval is the optional whole number interval_min of the
-// file, 1 to 12, default 10 (the job's timeout of 17 minutes holds the start
-// and the due step, 2 minutes each at most, and a sleep of 12).
+// file, 1 to 30, default 30, the interval of ruling 27 (the job's timeout of
+// 36 minutes holds the start and the due step, 2 minutes each at most, a
+// sleep of 30, the checkout and the setup).
 //
 // start, in this order:
 //   1. the clock: absent or another clock is `chain off`;
@@ -26,7 +27,7 @@
 // due: the guards 1 to 3 of start, then for each row of DUE, a scheduled
 // workflow and its cron (DOM-023's Decision of 2026-11-01: GitHub started the
 // crons of compact-daily.yml and ref-refresh.yml hours late, and the chain
-// runs every 10 minutes):
+// runs once an interval):
 //   1. the row's last instant, the latest at or before now that its cron
 //      names (lastInstant). One before DUE_SINCE is never due: the chain owes
 //      no dispatch for it, so its first runs dispatch no workflow for an
@@ -38,8 +39,8 @@
 //      any status created at or after the instant meets the row, so a failed
 //      run, or a dispatch by hand of one day or span, is not dispatched again:
 //      the cron's late run and the next instant retry. A listing that fails or
-//      does not parse dispatches nothing: a listing that fails every 10
-//      minutes must not dispatch every 10 minutes;
+//      does not parse dispatches nothing: a listing that fails on every run
+//      of the chain must not dispatch on every run;
 //   4. else `gh workflow run FILE --ref main`, one try: the next run of the
 //      chain tries again. A dispatch and the cron's late run of the same
 //      instant write each pack and each tag once: a compaction plans its last
@@ -84,8 +85,13 @@ export const CLOCKS = Object.freeze(['actions-schedule', 'actions-chain', 'worke
 export const CHAIN_CLOCK = 'actions-chain';
 export const DEFAULT_CLOCK = join(ROOT, 'config', 'clock.json');
 export const DEFAULT_WORKFLOW = 'ingest-live.yml';
-export const DEFAULT_INTERVAL_MIN = 10;
-export const INTERVAL_MIN_RANGE = Object.freeze({ min: 1, max: 12 });
+// The interval of ruling 27, so a file with no interval_min runs the chain at
+// it. The test of scripts/measure/clock-verdict.mjs holds its INTERVAL_MIN
+// equal, since docs/clock.md calls the interval the default of this script.
+export const DEFAULT_INTERVAL_MIN = 30;
+// The top fits the chain job's timeout of 36 minutes in ingest-live.yml
+// (scripts/workflows/ingest-live.test.mjs holds the two together).
+export const INTERVAL_MIN_RANGE = Object.freeze({ min: 1, max: 30 });
 export const DISPATCH_TRIES = 3;
 export const DISPATCH_PAUSE_S = 15;
 // The runs of the workflow one listing reads: a queue longer than this holds

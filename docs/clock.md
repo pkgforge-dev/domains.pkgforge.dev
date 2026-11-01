@@ -54,11 +54,13 @@ rule is judged again by the one in force.
 
 ## The chain in force
 
-- **The interval.** `config/clock.json` sets `interval_min` to 10, the default
+- **The interval.** `config/clock.json` sets `interval_min` to 30, the default
   of `scripts/ingest/chain.mjs`, and `--check` holds it to `INTERVAL_MIN` of
-  `clock-verdict.mjs`. The job `chain` of a run dispatches the successor at
-  the start of the run, then sleeps to the next multiple of 10 minutes. The
-  successor waits in the group `ingest-live` until the run ends.
+  `clock-verdict.mjs`. Ruling 27 sets the interval. The job `chain` of a run
+  dispatches the successor at the start of the run, then sleeps to the next
+  multiple of 30 minutes. The successor waits in the group `ingest-live`
+  until the run ends. The cron backstop of `ingest-live.yml` has one slot an
+  interval (`docs/architecture.md` section 5.3).
 - **The scheduled workflows.** After the start, the job `chain` runs
   `scripts/ingest/chain.mjs due`. It dispatches each workflow of the table
   `DUE`, the compactions and `ref-refresh.yml`, when its cron's last instant
@@ -71,10 +73,13 @@ rule is judged again by the one in force.
   section 5.2 gives the rule.
 - **The lateness of the chain itself.** B's row is the chain at its own
   interval. `p90_gap_min` and `max_gap_min` of `config/clock.json` are B's
-  gaps at that interval, not at `interval_min`. At an interval of 10 minutes
-  the p90 gap is expected to be about 10 minutes [E]. A run of
-  `scripts/measure/clock-gaps.mjs` over 48 hours of the runs of
-  `ingest-live.yml` would replace the estimate, and DOM-034 runs it. A
+  gaps at that interval, not at `interval_min`. At an interval of 30 minutes
+  the p90 gap is expected to be about 30 minutes [E]. So the rule's p90 of
+  15 minutes judges the three clocks above and does not bound the chain. The
+  largest gap of 60 minutes stays the bound it is held to (ruling 27). A run
+  of `scripts/measure/clock-gaps.mjs` over 48 hours of the runs of
+  `ingest-live.yml`, its schedule and dispatched runs together, would replace
+  the estimate and show whether the bound holds, and DOM-034 runs it. A
   run that outlasts the interval ends its gap when the run ends, because the
   successor starts then. The next gap is shorter, because the successor sleeps
   to the boundary after its own start.
@@ -92,22 +97,24 @@ rule is judged again by the one in force.
   measured.
 - **Restarts.** A run of the cron backstop of `ingest-live.yml`
   (`docs/architecture.md` section 5.3) dispatches a successor when none
-  waits, so the next backstop run restarts a broken chain. A's gaps in the
-  table are hours long. If the backstop is as late as A, that restart takes
-  hours [E]; the schedule runs of `ingest-live.yml` would measure it. The
-  watchdog of DOM-034 adds `dispatch-overdue`, itself on a schedule, and how
-  soon it restarts the chain is not measured.
+  waits, so the next backstop run restarts a broken chain. GitHub started the
+  backstop's schedule runs hours apart, as late as A's (DOM-024's Correction
+  on the backstop's runs), so that restart takes hours. The watchdog of
+  DOM-034 adds `dispatch-overdue`, itself on a schedule, and how soon it
+  restarts the chain is not measured.
 - **No Worker dispatches a workflow.** That would need a GitHub token in
   Cloudflare, and no credential crosses between GitHub and Cloudflare
   (ruling 6).
 
 A cron Worker would carry the freshness through a hot tier in R2 (DOM-025).
-The verdict is an Actions clock, so DOM-025 is closed on ruling 8 with no
-code, and the Kafka lane runs on Actions with the other lanes.
+The verdict is an Actions clock at the interval B was measured at, so DOM-025
+is closed on ruling 8 with no code, and the Kafka lane runs on Actions with
+the other lanes. A live tier on Cloudflare from the operator (ruling 27)
+takes DOM-025 up again (its Found on ruling 27).
 
 ## What the verdict does not show
 
-- The chain at 10 minutes is not measured (the lateness of the chain, above).
+- The chain at 30 minutes is not measured (the lateness of the chain, above).
 - Each clock was measured once, over one window of 48 hours. GitHub's
   queueing on another day, or with more of the organisation's jobs running,
   is not measured.

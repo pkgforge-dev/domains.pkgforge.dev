@@ -56,12 +56,27 @@
 #             dispatches nothing and does not sleep: only the crons and the
 #             dispatches start runs.
 #
+# The cron, at 7 and 37 minutes past each hour, is the backstop of the chain:
+# it has one slot an interval of config/clock.json (ruling 27), and GitHub
+# started its schedule runs hours apart on this repository (DOM-024), so a
+# broken chain waits hours for it. A run the cron starts ingests too, and
+# under actions-chain it sleeps to the next boundary as every run does. The
+# run ahead of it holds its dispatch, so the cron run takes the successor's
+# place. So a cron more often than the interval would queue runs faster than
+# the group runs them, and the queue would grow for as long as GitHub fired it
+# on time. A run that outlasts the interval leaves one more run waiting, until
+# GitHub drops a slot.
+#
 # Every run waits in the group ingest-live (queue: max, no cancel), so one run
 # at a time reads and moves the cursors. A dispatch with sources reads the
 # adapters that hold those sources alone. A dispatch with from and to is a
 # backfill of that window: run.mjs calls the adapter's backfill export instead
 # of run, and the proposal keeps the live cursor, so its segments are owed and
 # promoted and no cursor moves. The inputs reach a step through env alone.
+# Under actions-chain a dispatched run waits behind the run in progress and
+# the waiting successor, takes the next successor's place, and sleeps to the
+# boundary as every run does: it starts one to two intervals after its
+# dispatch, and K dispatches hold the group for about K intervals.
 #
 #   gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev
 #   gh workflow run ingest-live.yml --repo pkgforge-dev/domains.pkgforge.dev -f sources=oi-cs -f from=2026-10-30T00:00:00Z -f to=2026-10-30T01:00:00Z
@@ -72,7 +87,7 @@ name: Ingest live
 
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       sources:
@@ -483,8 +498,8 @@ jobs:
     runs-on: ubuntu-24.04
     # The start and the due step take 2 minutes each at most (their
     # timeouts), and the sleep at most interval_min minutes of
-    # config/clock.json, 12 at most: 16 minutes and the checkout.
-    timeout-minutes: 17
+    # config/clock.json, 30 at most: 34 minutes, the checkout and the setup.
+    timeout-minutes: 36
     permissions:
       actions: write
       contents: read
@@ -547,13 +562,14 @@ jobs:
           exit "$rc"
 
       # Sleeps to the next boundary of the interval of the clock, which keeps
-      # the chain on the grid. It runs after a failed due step too, never after
-      # a failed start: with no successor dispatched, the sleep holds no grid,
-      # and it would hold back the cron's run that restarts the chain.
+      # the chain on the grid: at most interval_min minutes, 30 at most. It
+      # runs after a failed due step too, never after a failed start: with no
+      # successor dispatched, the sleep holds no grid, and it would hold back
+      # the cron's run that restarts the chain.
       - name: Sleep to the next boundary
         id: sleep
         if: ${{ !cancelled() && steps.start.outcome == 'success' }}
-        timeout-minutes: 13
+        timeout-minutes: 31
         run: |
           set -uo pipefail
           rc=0

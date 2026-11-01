@@ -18,7 +18,23 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { ROOT } from '../files.mjs';
-import { DISPATCH_PAUSE_S, DUE, DUE_GRACE_S, DUE_LIST_LIMIT, DUE_SINCE, EXIT, GH_TIMEOUT_MS, ghRunner, lastInstant, main, nextBoundary, readClock } from './chain.mjs';
+import {
+  DEFAULT_CLOCK,
+  DEFAULT_INTERVAL_MIN,
+  DISPATCH_PAUSE_S,
+  DUE,
+  DUE_GRACE_S,
+  DUE_LIST_LIMIT,
+  DUE_SINCE,
+  EXIT,
+  GH_TIMEOUT_MS,
+  ghRunner,
+  INTERVAL_MIN_RANGE,
+  lastInstant,
+  main,
+  nextBoundary,
+  readClock,
+} from './chain.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./chain.mjs', import.meta.url));
 const ENV = { GITHUB_REF: 'refs/heads/main', GITHUB_RUN_ID: '400', GITHUB_RUN_ATTEMPT: '1', GITHUB_REPOSITORY: 'pkgforge-dev/domains.pkgforge.dev', GH_TOKEN: 'synthetic' };
@@ -149,19 +165,41 @@ test('chain: sleep waits to the first multiple of interval_min since the epoch s
   const seven = nextBoundary(Date.parse('2026-10-30T08:23:17Z'), 7);
   assert.equal(seven % 420_000, 0);
   assert.ok(seven > Date.parse('2026-10-30T08:23:17Z') && seven - Date.parse('2026-10-30T08:23:17Z') <= 420_000);
-  const r = await chain(['sleep']);
+  // 30 minutes, ruling 27's interval: the boundaries are the hour and the half hour.
+  assert.equal(nextBoundary(Date.parse('2026-10-30T08:23:17Z'), 30), Date.parse('2026-10-30T08:30:00Z'));
+  assert.equal(nextBoundary(Date.parse('2026-10-30T08:30:00Z'), 30), Date.parse('2026-10-30T09:00:00Z'));
+  assert.equal(nextBoundary(Date.parse('2026-10-30T23:59:59.500Z'), 30), Date.parse('2026-10-31T00:00:00Z'));
+  // With no interval_min the sleep takes the default, 30.
+  const r = await chain(['sleep'], { now: '2026-10-30T08:43:17Z' });
   assert.equal(r.code, EXIT.ok, r.text);
-  assert.deepEqual(r.out, ['sleep 403 s to 2026-10-30T08:30:00Z']);
-  assert.deepEqual(r.log, ['sleep 403000']);
+  assert.deepEqual(r.out, ['sleep 1003 s to 2026-10-30T09:00:00Z']);
+  assert.deepEqual(r.log, ['sleep 1003000']);
+  // A now on a boundary sleeps a whole interval, the longest sleep: 1,800 s at 30.
+  const top = await chain(['sleep', '--now', '2026-10-30T08:30:00Z'], { clock: { clock: 'actions-chain', interval_min: 30 } });
+  assert.deepEqual([top.out, top.log], [['sleep 1800 s to 2026-10-30T09:00:00Z'], ['sleep 1800000']]);
   const at = await chain(['sleep', '--now', '2026-10-30T08:30:00Z'], { clock: { clock: 'actions-chain', interval_min: 12 } });
   assert.deepEqual(at.out, ['sleep 360 s to 2026-10-30T08:36:00Z']);
+  const ten = await chain(['sleep'], { clock: { clock: 'actions-chain', interval_min: 10 } });
+  assert.deepEqual(ten.out, ['sleep 403 s to 2026-10-30T08:30:00Z']);
 });
 
-test('chain: an interval out of 1 to 12, a clock not of the four, a file not JSON and no repository are exit 2', async () => {
-  for (const interval_min of [0, 13, 2.5, '10', null]) {
+test("chain: the default interval is ruling 27's 30 minutes, config/clock.json sets it, and the range tops out at it", () => {
+  assert.equal(DEFAULT_INTERVAL_MIN, 30);
+  assert.deepEqual({ ...INTERVAL_MIN_RANGE }, { min: 1, max: 30 });
+  assert.ok(Object.isFrozen(INTERVAL_MIN_RANGE));
+  assert.deepEqual(readClock(DEFAULT_CLOCK), { clock: 'actions-chain', interval: DEFAULT_INTERVAL_MIN });
+  assert.equal(JSON.parse(readFileSync(DEFAULT_CLOCK, 'utf8')).interval_min, DEFAULT_INTERVAL_MIN, 'the file names the interval, not only the default');
+  // Each end of the range reads, and the default divides an hour, so the boundaries fall on the hour.
+  for (const interval_min of [INTERVAL_MIN_RANGE.min, INTERVAL_MIN_RANGE.max]) assert.equal(readClock('x', () => JSON.stringify({ clock: 'actions-chain', interval_min })).interval, interval_min);
+  assert.equal(60 % DEFAULT_INTERVAL_MIN, 0);
+});
+
+test('chain: an interval out of 1 to 30, a clock not of the four, a file not JSON and no repository are exit 2', async () => {
+  for (const interval_min of [0, 31, 60, 2.5, '30', null]) {
     const r = await chain(['sleep'], { clock: { clock: 'actions-chain', interval_min } });
     assert.equal(r.code, EXIT.usage, r.text);
-    assert.match(r.text, /interval_min is .+, not a whole number of 1 to 12/);
+    assert.match(r.text, /interval_min is .+, not a whole number of 1 to 30/);
+    assert.deepEqual(r.log, [], 'no sleep');
   }
   const clock = await chain(['start'], { clock: { clock: 'cron' } });
   assert.equal(clock.code, EXIT.usage);
@@ -205,12 +243,12 @@ test('chain: an interval out of 1 to 12, a clock not of the four, a file not JSO
 // The job chain as GitHub runs it, with the steps that run a script and a
 // planted failing step after the start: in order, a step with no `if` while no
 // step before it failed, and the sleep when the start succeeded (its `if` in
-// ingest-live.yml, held by the test below). Each step's outcome, and the log
-// of the fake gh and sleep.
+// ingest-live.yml, held by the test below). The steps read the committed
+// config/clock.json. Each step's outcome, and the log of the fake gh and sleep.
 async function chainJobModel({ dispatch, planted = false } = {}) {
   const f = fake({ dispatch });
   const out = [];
-  const deps = { gh: f.gh, sleep: f.sleep, env: ENV, readFile: () => '{"clock":"actions-chain"}', now: () => Date.parse('2026-11-01T02:00:00Z'), out: (l) => out.push(l), err: () => undefined };
+  const deps = { gh: f.gh, sleep: f.sleep, env: ENV, readFile: (p) => readFileSync(p, 'utf8'), now: () => Date.parse('2026-11-01T02:00:00Z'), out: (l) => out.push(l), err: () => undefined };
   const outcome = {};
   const plant = async () => {
     f.log.push('planted step fails');
@@ -245,18 +283,19 @@ test('chain: a step of the chain job that fails after the start does not stop th
   const dispatched = r.log.indexOf('gh workflow run ingest-live.yml --ref main --repo pkgforge-dev/domains.pkgforge.dev');
   assert.ok(dispatched >= 0, r.log.join('\n'));
   assert.ok(dispatched < r.log.indexOf('planted step fails'), r.log.join('\n'));
-  assert.deepEqual(r.out, ['chain started: the successor is dispatched (try 1)', 'sleep 600 s to 2026-11-01T02:10:00Z']);
-  assert.equal(r.log.at(-1), 'sleep 600000', 'the sleep after the failure ran');
+  // On the boundary of 02:00, the committed interval of 30 minutes sleeps to 02:30.
+  assert.deepEqual(r.out, ['chain started: the successor is dispatched (try 1)', 'sleep 1800 s to 2026-11-01T02:30:00Z']);
+  assert.equal(r.log.at(-1), 'sleep 1800000', 'the sleep after the failure ran');
   // With no plant, the due step runs between the start and the sleep.
   const clean = await chainJobModel();
   assert.deepEqual(clean.outcome, { start: 'success', due: 'success', sleep: 'success' });
   assert.deepEqual(clean.out.slice(0, 2), ['chain started: the successor is dispatched (try 1)', 'due compact-daily.yml: dispatched for 2026-11-01T01:35:00Z']);
-  assert.equal(clean.out.at(-1), 'sleep 600 s to 2026-11-01T02:10:00Z');
+  assert.equal(clean.out.at(-1), 'sleep 1800 s to 2026-11-01T02:30:00Z');
   // A start that fails skips the due step and the sleep: with no successor, the sleep holds no grid.
   const broken = await chainJobModel({ dispatch: [1, 1, 1] });
   assert.deepEqual(broken.outcome, { start: 'failure', due: 'skipped', sleep: 'skipped' });
   assert.equal(
-    broken.log.some((l) => l.includes('compact-daily.yml') || l === `sleep ${600_000}`),
+    broken.log.some((l) => l.includes('compact-daily.yml') || l === `sleep ${1_800_000}`),
     false,
     broken.log.join('\n'),
   );
@@ -269,12 +308,14 @@ test('chain: the production defaults read the clock file, the environment and th
     assert.equal(off.status, EXIT.ok, off.stderr);
     assert.equal(off.stdout, 'chain off: config/clock.json does not exist; only the cron and dispatches start runs\n');
     // A boundary one second away: the real sleep ends, and the process exits 0.
+    // The bound of 30 s fails a sleep that ignores the file's interval at once
+    // (status null), where the default of 30 minutes would hang the suite.
     const clock = join(dir, 'clock.json');
     writeFileSync(clock, '{"clock":"actions-chain","interval_min":1}');
     const now = new Date();
     const at = `${new Date(now.getTime() - (now.getTime() % 60_000) + 59_000).toISOString().slice(0, 19)}Z`;
-    const slept = spawnSync(process.execPath, [SCRIPT, 'sleep', '--clock', clock, '--now', at], { encoding: 'utf8' });
-    assert.equal(slept.status, EXIT.ok, slept.stderr);
+    const slept = spawnSync(process.execPath, [SCRIPT, 'sleep', '--clock', clock, '--now', at], { encoding: 'utf8', timeout: 30_000 });
+    assert.equal(slept.status, EXIT.ok, `${slept.stderr} ${slept.signal ?? ''}`);
     assert.match(slept.stdout, /^sleep 1 s to \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00Z\n$/);
     assert.deepEqual(readClock(clock), { clock: 'actions-chain', interval: 1 });
     // The production gh answers a code and its output, whether or not gh is installed.
@@ -431,7 +472,7 @@ test('chain: lastInstant gives the latest instant at or before now of each cron 
 test('chain: lastInstant refuses a cron of a form outside the table, and one that names no instant in 367 days', () => {
   for (const [cron, re] of [
     ['*/5 * * * *', /the minute "\*\/5" is not a number of 0 to 59/],
-    ['7,22,37,52 * * * *', /the minute "7,22,37,52" is not a number of 0 to 59/],
+    ['5,35 * * * *', /the minute "5,35" is not a number of 0 to 59/],
     ['35 * * * *', /the hour "\*" is not a number of 0 to 23/],
     ['60 1 * * *', /the minute "60" is not a number of 0 to 59/],
     ['35 24 * * *', /the hour "24" is not a number of 0 to 23/],

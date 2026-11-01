@@ -95,8 +95,12 @@ record guard refuses an order that lists an entry before an open dependency.
    failure drills, the runbooks, the external writer path and the measurement
    topic of OpenINTEL.
 9. **Documents and the consumer contract last (DOM-059, DOM-060).** They
-   describe every route, so every route exists first. A consumer can start on
-   `/v1/new` from DOM-032 and read the root from DOM-020.
+   describe every route, so every route exists first (ruling 26). Each route
+   is deployed, driven with `curl` and never gated as its entry closes, and
+   nothing announces or documents it to consumers before DOM-059, the
+   agent's reading of ruling 26 under ruling 20. A consumer that knows a
+   route can use it from its entry's close: `/v1/new` from DOM-032, the root
+   from DOM-020.
 
 ## Counts
 

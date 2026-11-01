@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import { parse } from 'yaml';
 import { ACTION_PINS, checkText } from '../check-workflows.mjs';
 import { ROOT } from '../files.mjs';
+import { DEFAULT_CLOCK, DEFAULT_INTERVAL_MIN, INTERVAL_MIN_RANGE, readClock } from '../ingest/chain.mjs';
 import { BASH, JQ, runStep, stepScript } from '../lib/workflow-step.mjs';
 
 const FILE = join(ROOT, '.github', 'workflows', 'ingest-live.yml');
@@ -165,7 +166,7 @@ function step(t, id, must, { env = {}, stub = {}, files = {}, fake = {} } = {}) 
 test('ingest-live: the triggers are the backstop cron and a dispatch with sources, from and to, which reach steps through env alone', () => {
   assert.equal(WF.name, 'Ingest live');
   assert.deepEqual(Object.keys(WF.on), ['schedule', 'workflow_dispatch']);
-  assert.deepEqual(WF.on.schedule, [{ cron: '7,22,37,52 * * * *' }]);
+  assert.deepEqual(WF.on.schedule, [{ cron: '7,37 * * * *' }]);
   const inputs = WF.on.workflow_dispatch.inputs;
   assert.deepEqual(Object.keys(inputs), ['sources', 'from', 'to']);
   for (const [name, input] of Object.entries(inputs)) {
@@ -230,8 +231,8 @@ test("ingest-live: each job's grants, timeout, needs and if", () => {
 
   assert.equal(chain.needs, undefined, 'the chain starts with the run');
   assert.equal(chain.if, MAIN);
-  // The start and the due step, 2 minutes each at most, and a sleep of 12 at most, interval_min's top.
-  assert.equal(chain['timeout-minutes'], 17);
+  // The start and the due step, 2 minutes each at most, a sleep of 30 at most, interval_min's top, the checkout and the setup.
+  assert.equal(chain['timeout-minutes'], 36);
   assert.deepEqual(chain.permissions, { actions: 'write', contents: 'read' });
 
   // issues: write waits for scripts/track-issue (DOM-034).
@@ -269,7 +270,7 @@ test('ingest-live: the steps keep their names, ids, order and timeouts, and push
     move: ['push', 'Move state:latest', 5],
     start: ['chain', 'Start the successor', 2],
     due: ['chain', 'Dispatch the scheduled workflows when due', 2],
-    sleep: ['chain', 'Sleep to the next boundary', 13],
+    sleep: ['chain', 'Sleep to the next boundary', 31],
   });
   // The move runs after a failed hours step too, never after a failed advance.
   assert.equal(STEPS.get('move').step.if, "${{ !cancelled() && steps.advance.outcome == 'success' }}");
@@ -299,6 +300,55 @@ test('ingest-live: the steps keep their names, ids, order and timeouts, and push
     '@domains/state',
   ]);
   for (const job of ['plan', 'ingest', 'push']) assert.match(link(job), /npm ci --omit=dev --ignore-scripts --no-audit --no-fund/, job);
+});
+
+// A text with the `#` or `//` that starts a comment line dropped and each run
+// of white space made one space, so a phrase matches across the wrap.
+const flatComments = (text) => text.replace(/^\s*(?:#|\/\/) ?/gm, '').replace(/\s+/g, ' ');
+
+test('ingest-live: the backstop cron has one slot an interval of config/clock.json, and the chain job holds a sleep of the top of interval_min', () => {
+  const { interval } = readClock(DEFAULT_CLOCK);
+  // One cron, a list of minutes of every hour of every day, read by name.
+  const [cron] = WF.on.schedule.map((s) => s.cron);
+  const [minute, ...rest] = cron.split(' ');
+  assert.deepEqual(rest, ['*', '*', '*', '*'], cron);
+  const minutes = minute.split(',').map(Number);
+  assert.ok(
+    minutes.every((m, i) => Number.isInteger(m) && m >= 0 && m < 60 && (i === 0 || m > minutes[i - 1])),
+    cron,
+  );
+  // Each gap between two slots, the last one across the hour, is the interval: a backstop more often than the chain queues runs faster than the group runs them.
+  // The interval divides an hour, so the hour holds a whole number of slots.
+  assert.equal(60 % interval, 0, `an interval of ${interval} min does not divide an hour`);
+  const gaps = minutes.map((m, i) => (i + 1 < minutes.length ? minutes[i + 1] : minutes[0] + 60) - m);
+  assert.deepEqual(gaps, Array(60 / interval).fill(interval), `${cron} at an interval of ${interval} min`);
+  // The chain job: the start and the due step at their timeouts, a sleep of the top of the range, and 2 minutes for the checkout and the setup.
+  const steps = Object.fromEntries(WF.jobs.chain.steps.filter((s) => s.id).map((s) => [s.id, s['timeout-minutes']]));
+  const job = WF.jobs.chain['timeout-minutes'];
+  assert.equal(job, steps.start + steps.due + INTERVAL_MIN_RANGE.max + 2);
+  // The longest sleep is a whole interval, 1,800 s at 30, and node's start before it.
+  assert.equal(steps.sleep, INTERVAL_MIN_RANGE.max + 1);
+  // The comments that derive the two timeouts, and the header of chain.mjs, give the same numbers.
+  const wf = flatComments(TEXT);
+  for (const f of [`config/clock.json, ${INTERVAL_MIN_RANGE.max} at most: ${job - 2} minutes, the checkout and the setup`, `at most interval_min minutes, ${INTERVAL_MIN_RANGE.max} at most`])
+    assert.ok(wf.includes(f), `ingest-live.yml lacks: ${f}`);
+  const header = flatComments(readFileSync(join(ROOT, 'scripts', 'ingest', 'chain.mjs'), 'utf8'));
+  const derived = `file, ${INTERVAL_MIN_RANGE.min} to ${INTERVAL_MIN_RANGE.max}, default ${DEFAULT_INTERVAL_MIN}, the interval of ruling 27 (the job's timeout of ${job} minutes holds the start and the due step, ${steps.start} minutes each at most, a sleep of ${INTERVAL_MIN_RANGE.max}, the checkout and the setup)`;
+  assert.ok(header.includes(derived), `the header of chain.mjs lacks: ${derived}`);
+});
+
+test('ingest-live: the backstop cron is written the same in the header, docs/architecture.md and docs/resources.md, and no other list of minutes stays', () => {
+  const [cron] = WF.on.schedule.map((s) => s.cron);
+  const minutes = cron.split(' ')[0].split(',');
+  const docs = Object.fromEntries(['docs/architecture.md', 'docs/resources.md'].map((rel) => [rel, readFileSync(join(ROOT, rel), 'utf8')]));
+  for (const [rel, text] of Object.entries(docs)) assert.ok(text.includes(`\`${cron}\``), `${rel} does not name the cron \`${cron}\``);
+  // Any cron of a list of minutes every hour, in the two documents and the whole workflow, is this one.
+  const LIST = /\b\d{1,2}(?:,\d{1,2})+ \* \* \* \*/g;
+  for (const [rel, text] of [...Object.entries(docs), ['.github/workflows/ingest-live.yml', TEXT]]) for (const [m] of text.matchAll(LIST)) assert.equal(m, cron, `${rel} names the cron ${m}`);
+  // The prose of the header and of section 5.2 names the same minutes.
+  const prose = `at ${minutes.slice(0, -1).join(', ')} and ${minutes.at(-1)} minutes past`;
+  assert.ok(flatComments(TEXT).includes(prose), `the header of ingest-live.yml lacks: ${prose}`);
+  assert.ok(docs['docs/architecture.md'].replace(/\s+/g, ' ').includes(prose), `docs/architecture.md lacks: ${prose}`);
 });
 
 test('ingest-live: every action is a pin of ACTION_PINS, checkout keeps no credential, and the token is in the env of the steps that push, move, dispatch or read the live state with it, and no other', () => {

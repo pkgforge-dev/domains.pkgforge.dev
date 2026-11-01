@@ -284,3 +284,52 @@ test('check 15: a record line stamped later than now fails, whatever its label a
     assert.match(g.stderr, new RegExp(`DOM-002: its ${label} line is stamped ${later}, later than now`));
   }
 });
+
+test('check 16: a ruling cited by a number that section 5 of RULES.md does not number fails, wherever it is cited, and so does a gap in the numbering', () => {
+  // The word is built, so this file cites no ruling of the repository's own record.
+  const word = 'ruling';
+  const rules = (...ns) => `# Rules\n\n## 5. Settled decisions\n\n${ns.map((n) => `${n}. **A decision** (operator).`).join('\n')}\n\n## 6. After\n\n9. **A step of section 6.**\n`;
+  const good = makeRecord();
+  good.write('TODO/RULES.md', rules(1, 2));
+  good.edit('TODO/foundation.md', (t) => t.replace(section('DOM-002'), `$1\n- **Note:** ${word} 2, ${word}s 1 and 2, ${word}s 1 to 2, and ${word} 1, 319.9 MB of it.\n`));
+  const ok = good.guard();
+  assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+  // A number past the last ruling, in an entry, a narrative document, CHANGELOG.md, a script and a workflow.
+  for (const [rel, text] of [
+    ['TODO/foundation.md', null],
+    ['docs/architecture.md', `# Architecture\n\nAs ${word}s 1 and 3 say.\n`],
+    ['CHANGELOG.md', `# Changelog\n\n- By ${word} 3.\n`],
+    ['scripts/lib/x.mjs', `// ${word} 3 sets it.\nexport const X = 1;\n`],
+    ['.github/workflows/x.yml', `# ${word} 3\nname: x\n`],
+  ]) {
+    const r = makeRecord();
+    r.write('TODO/RULES.md', rules(1, 2));
+    if (text === null) r.edit(rel, (t) => t.replace(section('DOM-002'), `$1\n- **Note:** ${word} 3 says so.\n`));
+    else r.write(rel, text);
+    const g = r.guard();
+    assert.equal(g.status, 1, rel);
+    assert.match(g.stderr, new RegExp(`${rel.replace(/[./]/g, '\\$&')}:\\d+ cites ${word} 3, which TODO/RULES\\.md section 5 does not number`), rel);
+  }
+  // A numbered line of another section is no ruling, and the fixture with no section 5 holds none.
+  const other = makeRecord();
+  other.write('TODO/RULES.md', rules(1, 2));
+  other.edit('TODO/foundation.md', (t) => t.replace(section('DOM-002'), `$1\n- **Note:** ${word} 9.\n`));
+  assert.match(other.guard().stderr, new RegExp(`cites ${word} 9,`));
+  const none = makeRecord();
+  none.edit('TODO/foundation.md', (t) => t.replace(section('DOM-002'), `$1\n- **Note:** ${word} 1.\n`));
+  assert.match(none.guard().stderr, new RegExp(`TODO/foundation\\.md:\\d+ cites ${word} 1,`));
+  // A gap, a repeat or a disorder in the numbering fails, and a dated report under docs/research/ is not read.
+  for (const ns of [
+    [1, 3],
+    [1, 1, 2],
+    [2, 1],
+  ]) {
+    const r = makeRecord();
+    r.write('TODO/RULES.md', rules(...ns));
+    assert.match(r.guard().stderr, new RegExp(`TODO/RULES\\.md section 5 numbers its ${word}s ${ns.join(', ')}: not 1 to ${ns.length}`), ns.join());
+  }
+  const research = makeRecord();
+  research.write('TODO/RULES.md', rules(1, 2));
+  research.write('docs/research/2026-01-01-x.md', `# A report\n\nIts ${word} 7 is another project's.\n`);
+  assert.equal(research.guard().status, 0);
+});

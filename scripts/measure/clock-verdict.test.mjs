@@ -1,8 +1,10 @@
 // scripts/measure/clock-verdict.mjs: the verdict of the four mixes of PASS and
 // FAIL, the edges of the rule, the results it refuses, --check against each way
 // config/clock.json can differ, the exit code of the process, and the committed
-// results against the committed config/clock.json, docs/clock.md and the
-// numbers of the rule in docs/architecture.md and TODO/RULES.md.
+// results against the committed config/clock.json, docs/clock.md, the
+// numbers of the rule in docs/architecture.md and TODO/RULES.md, and the
+// interval of ruling 27 in TODO/RULES.md, docs/architecture.md and
+// docs/sources.md.
 //
 // Every test runs offline, on files it writes under the system's temporary
 // directory, except the ones that read the committed files.
@@ -13,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEFAULT_INTERVAL_MIN, DUE_GRACE_S, readClock } from '../ingest/chain.mjs';
+import { DEFAULT_INTERVAL_MIN, DUE_GRACE_S, INTERVAL_MIN_RANGE, readClock } from '../ingest/chain.mjs';
 import { RULE } from './clock-gaps.mjs';
 import { CLOCKS, checkClockFile, DEFAULT_CLOCK_FILE, decide, HOURS, INTERVAL_MIN, judge, judgeFiles, lines, main, passes, TABLE_HEAD, tableRows } from './clock-verdict.mjs';
 
@@ -204,7 +206,7 @@ test('clock verdict: the lines and the rows say none for a gap that does not exi
 
 test('clock verdict: --check agrees with a matching config/clock.json and names each difference', () => {
   const { dir, flags } = filesOf(FAILING('A'), PASSING('B'), PASSING('C'));
-  const good = { clock: 'actions-chain', decided: '2026-11-03T01:00:00Z', evidence: ['DOM-001', 'DOM-002'], p90_gap_min: 5.02, max_gap_min: 5.9, rule: { ...RULE }, interval_min: 10 };
+  const good = { clock: 'actions-chain', decided: '2026-11-03T01:00:00Z', evidence: ['DOM-001', 'DOM-002'], p90_gap_min: 5.02, max_gap_min: 5.9, rule: { ...RULE }, interval_min: 30 };
   const now = Date.parse('2026-11-03T02:00:00Z');
   const path = join(dir, 'clock.json');
   const check = (doc) => {
@@ -233,8 +235,10 @@ test('clock verdict: --check agrees with a matching config/clock.json and names 
     [{ ...good, rule: { p90_max_min: 20, max_max_min: 60 } }, /its rule is \{"p90_max_min":20,"max_max_min":60\}/],
     ...['decided', 'evidence', 'p90_gap_min', 'max_gap_min', 'rule'].map((k) => [without(k), new RegExp(`it has no ${k}\\n`)]),
     [{ ...good, note: 'x' }, /it has the key note, which no reader reads/],
-    [{ ...good, interval_min: 5 }, /its interval is 5 min, and DOM-003 decided 10 \(INTERVAL_MIN\)/],
-    [{ ...good, interval_min: 12 }, /its interval is 12 min, and DOM-003 decided 10 \(INTERVAL_MIN\)/],
+    [{ ...good, interval_min: 5 }, /its interval is 5 min, and ruling 27 sets 30 \(INTERVAL_MIN\)/],
+    // DOM-003's interval of 10, which ruling 27 replaced, and the top of the range less one.
+    [{ ...good, interval_min: 10 }, /its interval is 10 min, and ruling 27 sets 30 \(INTERVAL_MIN\)/],
+    [{ ...good, interval_min: 29 }, /its interval is 29 min, and ruling 27 sets 30 \(INTERVAL_MIN\)/],
     [{ ...good, decided: '2026-11-03T02:00:01Z' }, /its decided, 2026-11-03T02:00:01Z, is later than now/],
     [{ ...good, decided: '2026-11-02T23:59:59Z' }, /its decided, 2026-11-02T23:59:59Z, is earlier than 2026-11-03T00:00:00Z, the end of the last window the verdict rests on/],
     [{ ...good, decided: '0001-01-01T00:00:00Z' }, /its decided, 0001-01-01T00:00:00Z, is earlier than 2026-11-03T00:00:00Z/],
@@ -249,7 +253,7 @@ test('clock verdict: --check agrees with a matching config/clock.json and names 
     notUtc('2026-11-03T01:00:00Zjunk'),
     notUtc('+012026-11-03T01:00:00Z'),
     [{ ...good, decided: 5 }, /its decided is 5, not a UTC time/],
-    [{ ...good, interval_min: 13 }, /it does not read as scripts\/ingest\/chain\.mjs reads it: .*interval_min is 13/],
+    [{ ...good, interval_min: 31 }, /it does not read as scripts\/ingest\/chain\.mjs reads it: .*interval_min is 31/],
     [{ ...good, clock: 'sundial' }, /it does not read as scripts\/ingest\/chain\.mjs reads it: .*clock is "sundial"/],
     ['{"clock":', /it does not read as scripts\/ingest\/chain\.mjs reads it: .*is not JSON/],
     [undefined, /it does not exist/],
@@ -367,6 +371,12 @@ test('clock verdict: every number in the prose of docs/clock.md comes from the f
     `sets \`interval_min\` to ${INTERVAL_MIN}, the default of \`scripts/ingest/chain.mjs\``,
     `sleeps to the next multiple of ${INTERVAL_MIN} minutes`,
     `At an interval of ${INTERVAL_MIN} minutes the p90 gap is expected to be about ${INTERVAL_MIN} minutes [E]`,
+    // Ruling 27's reading of the rule: each bound in its own sentence, so a swap of the numbers fails.
+    `So the rule's p90 of ${p} minutes judges the three clocks above and does not bound the chain.`,
+    `The largest gap of ${m} minutes stays the bound it is held to (ruling 27).`,
+    'would replace the estimate and show whether the bound holds, and DOM-034 runs it.',
+    `\`clock-verdict.mjs\`. Ruling 27 sets the interval.`,
+    'The cron backstop of `ingest-live.yml` has one slot an interval (`docs/architecture.md` section 5.3).',
     `the measured chain used ${runnerS.toLocaleString('en-US')} s, about ${Math.round(runnerS / 360) / 10} hours, of runner time`,
     `The chain at ${INTERVAL_MIN} minutes is not measured`,
     `the grace of ${DUE_GRACE_S / 60} minutes`,
@@ -383,7 +393,7 @@ test('clock verdict: every number in the prose of docs/clock.md comes from the f
   for (const [n] of bare.matchAll(/(?<![\w.,-])\d+(?:[.,]\d+)*(?!\w)/g)) assert.ok(allowed.has(n), `docs/clock.md states ${n}, which no file or constant gives`);
 });
 
-test("clock verdict: docs/architecture.md and ruling 17 state the rule's numbers", () => {
+test("clock verdict: docs/architecture.md and ruling 17 state the rule's numbers, and ruling 27, docs/architecture.md and docs/sources.md the interval", () => {
   const p = RULE.p90_max_min;
   const m = RULE.max_max_min;
   const architecture = flat(readFileSync(join(ROOT, 'docs', 'architecture.md'), 'utf8'));
@@ -392,4 +402,31 @@ test("clock verdict: docs/architecture.md and ruling 17 state the rule's numbers
   }
   const rules = flat(readFileSync(join(ROOT, 'TODO', 'RULES.md'), 'utf8'));
   assert.ok(rules.includes(`**The clock thresholds are ${p} and ${m} minutes**`), 'ruling 17 of TODO/RULES.md does not state RULE');
+  // Ruling 27, by its number: the interval INTERVAL_MIN holds, the operator's
+  // words, and the agent's reading that keeps the largest gap of RULE as the
+  // bound the chain is held to.
+  for (const f of [
+    `27. **The chain runs every ${INTERVAL_MIN} minutes** (operator, 2026-11-01: "change to ${INTERVAL_MIN}mins, I will add a dedicated vps or on cf itself for live later").`,
+    `\`config/clock.json\` sets \`interval_min\` to ${INTERVAL_MIN}.`,
+    `The rest is the agent's reading under ruling 20, not the operator's words: ruling 17's p90 bound of ${p} minutes judged the clocks DOM-001 and DOM-002 measured`,
+    `it is not the bound of the live chain, whose gaps are about ${INTERVAL_MIN} minutes by design.`,
+    `Its largest-gap bound of ${m} minutes stays the bound the live chain is held to, and DOM-034 measures whether the chain meets it.`,
+  ])
+    assert.ok(rules.includes(f), `ruling 27 of TODO/RULES.md lacks: ${f}`);
+  // docs/architecture.md: each statement of the interval, built from the constants.
+  const day = (24 * 60) / INTERVAL_MIN;
+  const adapter = readFileSync(join(ROOT, 'adapters', 'oi-nrd', 'src', 'index.ts'), 'utf8').match(/^\s*windowS: (\d+),$/m);
+  assert.ok(adapter, 'adapters/oi-nrd/src/index.ts names windowS');
+  for (const f of [
+    `| The chain runs every ${INTERVAL_MIN} minutes. A live tier faster than the chain comes later, from the operator (ruling 27). | §5.2 |`,
+    `about ${day} \`state-\` tags a day if the state moves on every run of the chain, one run every ${INTERVAL_MIN} minutes (§5.2)`,
+    `the optional whole number \`interval_min\` of the file, ${INTERVAL_MIN_RANGE.min} to ${INTERVAL_MIN_RANGE.max}, default ${DEFAULT_INTERVAL_MIN}; \`config/clock.json\` sets ${INTERVAL_MIN} (ruling 27).`,
+    `Ruling 27 sets the interval to ${INTERVAL_MIN} minutes. The p90 bound of ${p} minutes judged the three clocks above and does not bound the chain, whose gaps are about ${INTERVAL_MIN} minutes by design [E]. The largest gap of ${m} minutes stays the bound the chain is held to`,
+    `the newest window a caller reads ended about ${INTERVAL_MIN} minutes and a run earlier [E]`,
+    `A stream adapter cuts windows of ${Number(adapter[1]) / 60} minutes whatever the interval`,
+    `about ${day} \`state-\` tags and at most ${day} promotions a day`,
+  ])
+    assert.ok(architecture.includes(f), `docs/architecture.md lacks: ${f}`);
+  const sources = flat(readFileSync(join(ROOT, 'docs', 'sources.md'), 'utf8'));
+  assert.ok(sources.includes(`The adapter reads at the chain interval, ${INTERVAL_MIN} minutes (\`config/clock.json\`, ruling 27).`), 'docs/sources.md gives the interval of ruling 27');
 });

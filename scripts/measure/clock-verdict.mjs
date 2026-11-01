@@ -49,10 +49,11 @@ import { RULE } from './clock-gaps.mjs';
 
 export const HOURS = 48;
 export const EVIDENCE = Object.freeze(['DOM-001', 'DOM-002']);
-// The interval of the chain in minutes: DOM-003's Decision of
-// 2026-10-31T01:27Z. Each run pushes segments and nothing is deleted from
-// GHCR, so a shorter interval keeps more for ever.
-export const INTERVAL_MIN = 10;
+// The interval of the chain in minutes: ruling 27. RULE's p90 of 15 minutes
+// judges the three measured clocks, not the chain at this interval, whose
+// gaps are about INTERVAL_MIN by design; its largest gap of 60 minutes is the
+// bound DOM-034 holds the chain to, and measures.
+export const INTERVAL_MIN = 30;
 export const DEFAULT_CLOCK_FILE = join(ROOT, 'config', 'clock.json');
 const MEASURE = join(ROOT, 'docs', 'research', 'measure');
 
@@ -181,7 +182,7 @@ export function checkClockFile(path, verdict, { now = Date.now(), readFile = (p)
   for (const k of REQUIRED_KEYS) if (!Object.hasOwn(v, k)) diffs.push(`it has no ${k}`);
   for (const k of Object.keys(v)) if (!REQUIRED_KEYS.includes(k) && !OPTIONAL_KEYS.includes(k)) diffs.push(`it has the key ${k}, which no reader reads`);
   if (v.clock !== verdict.clock) diffs.push(`its clock is ${JSON.stringify(v.clock)}, and the verdict is ${verdict.clock}`);
-  if (read.interval !== INTERVAL_MIN) diffs.push(`its interval is ${read.interval} min, and DOM-003 decided ${INTERVAL_MIN} (INTERVAL_MIN)`);
+  if (read.interval !== INTERVAL_MIN) diffs.push(`its interval is ${read.interval} min, and ruling 27 sets ${INTERVAL_MIN} (INTERVAL_MIN)`);
   if (Object.hasOwn(v, 'evidence') && !isDeepStrictEqual(v.evidence, [...EVIDENCE])) diffs.push(`its evidence is ${JSON.stringify(v.evidence)}, not ${JSON.stringify(EVIDENCE)}`);
   if (Object.hasOwn(v, 'rule') && !isDeepStrictEqual(v.rule, { ...RULE })) diffs.push(`its rule is ${JSON.stringify(v.rule)}, not ${JSON.stringify(RULE)}`);
   if (Object.hasOwn(v, 'p90_gap_min') && v.p90_gap_min !== verdict.won.p90) diffs.push(`its p90_gap_min is ${JSON.stringify(v.p90_gap_min)}, and clock ${verdict.won.letter}'s is ${verdict.won.p90}`);

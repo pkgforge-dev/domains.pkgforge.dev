@@ -26,6 +26,12 @@
 //      passing.
 //  15. No Closed, Measured, Read, Found, Built, Done or Correction label is
 //      stamped later than the guard runs, so none is later than its commit.
+//  16. The rulings of TODO/RULES.md section 5 are numbered from 1, in order,
+//      each once, and every ruling that TODO/, the narrative documents,
+//      CHANGELOG.md or the code (scripts/, packages/, adapters/, apps/,
+//      probes/, config/, .github/) cites by its number is one of them, so a
+//      renumbered or a dropped ruling leaves no citation pointing at nothing.
+//      docs/research/ is exempt, as for check 10.
 //
 // Category entry files are not narrative documents for checks 7 and 10: their
 // Approach and Prove lines name files the entry will create.
@@ -206,6 +212,45 @@ function checkLinks(file) {
   }
 }
 
+// The numbers of the rulings of TODO/RULES.md section 5: each line that opens
+// `N. **` between `## 5. ` and the next `## ` heading.
+function rulingNumbers() {
+  const path = join(TODO_DIR, 'RULES.md');
+  if (!existsSync(path)) return [];
+  const body = readFileSync(path, 'utf8');
+  const at = body.search(/^## 5\. /m);
+  if (at === -1) return [];
+  const rest = body.slice(at + 1);
+  const end = rest.search(/^## /m);
+  return [...(end === -1 ? rest : rest.slice(0, end)).matchAll(/^(\d+)\. \*\*/gm)].map((m) => Number(m[1]));
+}
+
+// A citation by number: one ruling, or a list of rulings joined by commas,
+// `and`, `or` or `to` (a range, whose two ends are checked). A singular word
+// cites its first number only, so `ruling N, 319.9 MB` cites N.
+const CITE_RULING = /\b(rulings?)\s+(\d+(?:(?:,\s*|\s+(?:and|or|to)\s+)\d+)*)/gi;
+const CODE_DIRS = ['scripts', 'packages', 'adapters', 'apps', 'probes', 'config', '.github'];
+const CODE_EXT = /\.(?:mjs|cjs|js|ts|yml|yaml)$/;
+
+function checkRulings(docs) {
+  const numbers = rulingNumbers();
+  if (numbers.some((n, i) => n !== i + 1)) fail(`TODO/RULES.md section 5 numbers its rulings ${numbers.join(', ')}: not 1 to ${numbers.length}, each once and in order`);
+  const known = new Set(numbers);
+  const files = new Set([...todoFiles().map((f) => join(TODO_DIR, f)), ...docs, join(ROOT, 'CHANGELOG.md')]);
+  for (const d of CODE_DIRS) for (const f of walk(join(ROOT, d))) if (CODE_EXT.test(f)) files.add(f);
+  for (const f of files) {
+    if (!existsSync(f) || rel(f).startsWith('docs/research/')) continue;
+    readFileSync(f, 'utf8')
+      .split('\n')
+      .forEach((line, i) => {
+        for (const m of line.matchAll(CITE_RULING)) {
+          const cited = m[1].toLowerCase() === 'ruling' ? [Number(m[2].match(/\d+/)[0])] : m[2].match(/\d+/g).map(Number);
+          for (const n of cited) if (!known.has(n)) fail(`${rel(f)}:${i + 1} cites ruling ${n}, which TODO/RULES.md section 5 does not number`);
+        }
+      });
+  }
+}
+
 function hasCycle(graph) {
   const state = new Map();
   const visit = (n, path) => {
@@ -348,6 +393,9 @@ function run() {
   // 9
   for (const h of PROGRESS_SECTIONS) headingOnce('TODO/PROGRESS.md', progress, h);
   countsLineIn('TODO/PROGRESS.md', progress, '## Baseline', line);
+
+  // 16
+  checkRulings(docs);
 
   // 11
   const notes = [];

@@ -144,8 +144,9 @@ failure this section prevents. Rulings 1 to 9 are the operator's, given on
 never re-asked (rulings 10 and 11 were chosen from options on the same day, and
 ruling 12 is a fact the operator ruled on that day, stated without quoted
 words). Rulings 14 to 17 are the operator's answers of 2026-10-28 to the
-questions the session of that day asked at its start. Where the operator's own words are recorded they are quoted;
-where this record holds none, it says so.
+questions the session of that day asked at its start. Rulings 26 and 27 are
+the operator's answers of 2026-11-01, in chat. Where the operator's own
+words are recorded they are quoted; where this record holds none, it says so.
 
 1. **The project** (operator, 2026-10-27). The repository is
    `pkgforge-dev/domains.pkgforge.dev`, public, licensed 0BSD, served at
@@ -334,6 +335,34 @@ where this record holds none, it says so.
     is deleted from GHCR. The root names whichever is live. DOM-023 builds it
     in `tierTag` and `checkTag` of `packages/ghcr` and in `validatePack`.
     Overturn: the operator's ruling.
+26. **The documents and the contract come last** (operator, 2026-11-01,
+    choosing "Keep the current order" over shipping the generated documents
+    with the first routes: "keep the current order, better to publish routes
+    & contracts only after the project is ready"). DOM-059 (the route
+    registry and `llms.txt`, `llms-full.txt`, `openapi.json`, `SKILL.md`)
+    and DOM-060 (the consumer contract and the reference reader) stay after
+    every route family, as their `Depends on` lines and the work order have
+    them, so the documents describe the finished project. The rest is the
+    agent's reading under ruling 20, not the operator's words: each route is
+    still deployed and driven with `curl` as its entry closes (absolute 7,
+    gate part b), and is never gated (absolute 8), but nothing announces or
+    documents a route to consumers before DOM-059. The literal reading, that
+    no route is deployed before the project is ready, was not taken: gate
+    part (b) drives each route on the deployed Worker. Until DOM-059 the
+    `see` member of an error answer names a guide that does not exist yet,
+    which DOM-030 settles (its Found on the `see` member). Overturn: the
+    operator's ruling.
+27. **The chain runs every 30 minutes** (operator, 2026-11-01: "change to
+    30mins, I will add a dedicated vps or on cf itself for live later").
+    `config/clock.json` sets `interval_min` to 30. A live tier faster than
+    the chain, on a machine of the project's own (DOM-057) or on Cloudflare,
+    comes later, from the operator. The rest is the agent's reading under
+    ruling 20, not the operator's words: ruling 17's p90 bound of 15 minutes
+    judged the clocks DOM-001 and DOM-002 measured and stays the rule of that
+    verdict; it is not the bound of the live chain, whose gaps are about 30
+    minutes by design. Its largest-gap bound of 60 minutes stays the bound
+    the live chain is held to, and DOM-034 measures whether the chain meets
+    it. Overturn: the operator's ruling.
 
 Also settled, as a default and not as an operator ruling:
 
