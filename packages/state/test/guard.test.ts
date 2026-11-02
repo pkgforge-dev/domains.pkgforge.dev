@@ -567,6 +567,75 @@ test("guard: settle drops held, covered, withdrawn and expired items, and keeps 
   refuses(() => settle({ ...old, format: "domains.state.v2" } as unknown as State, () => null, now), "format");
 });
 
+test("guard: settle drops a replaced segment that held answers as held, keeps one held answers null until it expires, and refuses covered for either", () => {
+  const now = "2026-10-30T12:00:00Z";
+  const d = (c: string) => `sha256:${c.repeat(64)}`;
+  const seg = (hhmm: string, digest: string, since: string): OwedItem => {
+    const start = `2026-10-29T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`;
+    const end = new Date(Date.parse(start) + 600_000).toISOString().replace(".000Z", "Z");
+    return { ref: `obs:${segTag("oi-cs", start, end)}`, digest, dataset: "names", tier: "seg", start, end, since };
+  };
+  // replaced: an older root named it and a compaction replaced it (the walk of
+  // scripts/state/lib.mjs, DOM-063); unnamed: no root named it while it was owed.
+  const replaced = seg("0010", d("1"), "2026-10-30T07:00:00Z");
+  const unnamed = seg("0020", d("2"), "2026-10-30T07:00:00Z");
+  const old = seg("0030", d("3"), "2026-10-23T11:59:59Z");
+  const state = validateState({ ...emptyState("2026-10-30T07:00:00Z"), owed: [replaced, unnamed, old] });
+  const detail = "root_seq 2 named it, root_seq 3 replaced it, and names:names-d-20261029 holds it in root_seq 4";
+  const held: Held = (item) => (item.ref === replaced.ref ? { code: "held", detail } : null);
+  const { state: next, settled } = settle(state, held, now);
+  assert.deepEqual(
+    settled.map((s) => [s.item.ref, s.code, s.detail.startsWith("root_seq 2") ? "walk" : "clock"]),
+    [
+      [replaced.ref, "held", "walk"],
+      [old.ref, "expired", "clock"],
+    ],
+  );
+  assert.equal(settled[0]!.detail, detail);
+  assert.deepEqual(next.owed, [unnamed]);
+  // The unnamed segment stays owed for OWED_DAYS, and expires one second after.
+  const day7 = new Date(Date.parse(unnamed.since) + OWED_DAYS * 86_400_000).toISOString().replace(".000Z", "Z");
+  assert.deepEqual(settle(next, () => null, day7).settled, []);
+  const after = new Date(Date.parse(day7) + 1000).toISOString().replace(".000Z", "Z");
+  assert.deepEqual(
+    settle(next, () => null, after).settled.map((s) => s.code),
+    ["expired"],
+  );
+  // A replaced segment is held, never covered: settle refuses covered for a segment whatever held knows.
+  refuses(() => settle(state, (item) => (item.ref === replaced.ref ? { code: "covered", detail } : null), now), "usage");
+});
+
+test("guard: a state this code writes holds only the fields a reader of commit 9b142c6 knows, and this code reads a state of those fields", () => {
+  // Copied from that commit's packages/state/src/state.ts: a run queued on it
+  // reads state:latest with them and refuses another field (DOM-063's Decision).
+  const known = {
+    state: ["cursors", "format", "history", "moved", "owed", "updated"],
+    moved: ["at", "run"],
+    history: ["count", "day", "quarantined"],
+    owed: ["dataset", "digest", "end", "ref", "since", "start", "tier"],
+  };
+  const start = "2026-10-29T00:10:00Z";
+  const end = "2026-10-29T00:20:00Z";
+  const owed: OwedItem = { ref: `obs:${segTag("oi-cs", start, end)}`, digest: `sha256:${"1".repeat(64)}`, dataset: "names", tier: "seg", start, end, since: "2026-10-30T07:00:00Z" };
+  const written = JSON.parse(
+    new TextDecoder().decode(
+      encodeState({
+        ...emptyState("2026-10-30T07:00:00Z"),
+        cursors: { "oi-cs": { through: end } },
+        moved: { "oi-cs": { at: "2026-10-30T07:00:00Z", run: "40000000001" } },
+        history: { "isc-new": [{ day: "2026-10-29", count: 3, quarantined: false }] },
+        owed: [owed],
+      }),
+    ),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(written).sort(), known.state);
+  assert.deepEqual(Object.keys((written.moved as Record<string, object>)["oi-cs"]!).sort(), known.moved);
+  assert.deepEqual(Object.keys((written.history as Record<string, object[]>)["isc-new"]![0]!).sort(), known.history);
+  assert.deepEqual(Object.keys((written.owed as object[])[0]!).sort(), known.owed);
+  // The other way: a state written before DOM-063 holds these fields, and this code reads it.
+  assert.deepEqual(validateState(written).owed, [owed]);
+});
+
 test("guard: a run with no proposal leaves the state as it is, and pushes no state, the first one included", () => {
   const reg = new MockRegistry();
   const none = pushJob(reg, [], { now: NOW1, run: RUN1 });

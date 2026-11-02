@@ -1,6 +1,8 @@
 // scripts/state/advance.mjs: the next state from one run's proposals, and the
 // owed packs settled against the live root (D4, D5 and D24 of DOM-024), against
-// the GHCR double of scripts/root/fixture.mjs. The proposals are the ones
+// the GHCR double of scripts/root/fixture.mjs, and the walk of the chain of
+// roots that settles a segment a compaction replaced (DOM-063, the tests
+// named `replaced segment`). The proposals are the ones
 // scripts/ingest/run.mjs writes for the two fixture adapters, beside planted
 // files: one that does not parse, one whose `before` is not the live cursor,
 // one naming a tag GHCR does not hold, and two of one adapter. The root's
@@ -11,15 +13,18 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { artifactType, segTag } from '@domains/ghcr';
-import { buildRoot } from '@domains/root';
-import { emptyState, encodeProposal, encodeState, parseProposal, parseState, propose, STATE_MAX_BYTES } from '@domains/state';
-import { pack } from '../../packages/root/test/helpers.ts';
+import { artifactType, GhcrError, segTag } from '@domains/ghcr';
+import { buildRoot, sourcesLayer } from '@domains/root';
+import { emptyState, encodeProposal, encodeState, OWED_DAYS, parseProposal, parseState, propose, STATE_MAX_BYTES, settle } from '@domains/state';
+import { digestOf, pack } from '../../packages/root/test/helpers.ts';
 import { ADAPTERS, call, inRegistry, PSL, PSL_FILE, RECORDINGS, SOURCES, seedRoot, stateFile } from '../ingest/fixture.mjs';
 import { main as runMain } from '../ingest/run.mjs';
 import { EPOCH_MS } from '@domains/ledger';
+import { ROOT } from '../files.mjs';
+import { RateLimitError } from '../ghcr/rate.mjs';
 import { Fault } from '../root/lib.mjs';
-import { filterTagOf, heldBy, newestFilterTag } from './lib.mjs';
+import { loadRegistry } from '../verify-pack.mjs';
+import { CHAIN_ROOTS, CHAIN_SECONDS, chainLine, filterTagOf, heldBy, newestFilterTag, replacedOnChain } from './lib.mjs';
 import { ADVANCE_FORMAT, EXIT, main } from './advance.mjs';
 
 const NOW = '2026-10-30T08:40:00Z';
@@ -349,4 +354,366 @@ test('advance: heldBy holds an hour at the very start of a feed day pack, and no
     () => filterTagOf({ asOf: asOf + 3600 }),
     (e) => e instanceof Fault && /is not the end of a UTC day/.test(e.message),
   );
+});
+
+// ---------------------------------------------------------------- DOM-063: a replaced segment
+
+// The roots of a chain, oldest first, each built by buildRoot from the one
+// before: { now, add, replace }. Each digest is synthetic (digestOf of its
+// root_seq). { live, byDigest, readOlder, reads }: readOlder answers a root by
+// its digest and records its root_seq in reads.
+function chainOf(steps) {
+  const byDigest = new Map();
+  let live = null;
+  for (const s of steps) {
+    const root = buildRoot({ live, psl: PSL, now: s.now, add: s.add ?? [], replace: s.replace ?? [] });
+    const digest = digestOf(`root ${root.root_seq}`);
+    byDigest.set(digest, root);
+    live = { root, digest };
+  }
+  const reads = [];
+  const readOlder = async (digest) => {
+    const root = byDigest.get(digest);
+    reads.push(root.root_seq);
+    return root;
+  };
+  return { live: live.root, byDigest, readOlder, reads };
+}
+
+// The owed item of a segment's pack entry, owed since `since`.
+const owedOf = (np, since, o = {}) => ({ ref: `obs:${np.pack.tag}`, digest: np.pack.manifest, dataset: np.dataset, tier: 'seg', start: np.pack.span.start, end: np.pack.span.end, since, ...o });
+
+// The case of DOM-024's Found of 2026-11-01T07:56Z, in small: root_seq 2 adds
+// the segment x, owed since 07:00; root_seq 3, a compaction, replaces y and x
+// with the day pack names-d-20261029; root_seq 4 adds z. w lies in the same
+// day of the same source, and no root named it; v is of another source.
+const SEG = (start, source = 'oi-cs') => pack('names', 'seg', start, { sources: [source] });
+const d28 = pack('names', 'd', '2026-10-28T00:00:00Z', { sources: ['oi-cs'] });
+const d29 = pack('names', 'd', '2026-10-29T00:00:00Z', { sources: ['oi-cs'] });
+const y = SEG('2026-10-29T00:00:00Z');
+const x = SEG('2026-10-29T00:10:00Z');
+const w = SEG('2026-10-29T00:20:00Z');
+const v = SEG('2026-10-29T01:00:00Z', 'isc-new');
+const z = SEG('2026-10-30T00:00:00Z');
+const SINCE = '2026-10-30T07:00:00Z';
+const STEPS = [
+  { now: '2026-10-30T06:00:00Z', add: [d28, y] },
+  { now: '2026-10-30T07:30:00Z', add: [x] },
+  { now: '2026-10-30T07:40:00Z', replace: [{ old: [y.pack.manifest, x.pack.manifest], new: d29 }] },
+  { now: '2026-10-30T07:50:00Z', add: [z] },
+];
+const LINE = 'chain read 2 root(s), root_seq 3 to 2, for 2 owed segment(s) that a live pack of a higher tier spans: 1 held, 1 named by no root while owed, 0 undecided';
+
+// The chain of STEPS seeded in the double, each root under its dated tag, the
+// last one as latest; the digest of each root, oldest first.
+function seedChain(reg) {
+  let live = null;
+  const digests = [];
+  for (const [i, s] of STEPS.entries()) {
+    const root = buildRoot({ live, psl: PSL, now: s.now, add: s.add ?? [], replace: s.replace ?? [] });
+    const digest = reg.seedRoot(root, { latest: i === STEPS.length - 1, sources: sourcesLayer({ registry: loadRegistry(SOURCES), root }) });
+    digests.push(digest);
+    live = { root, digest };
+  }
+  return digests;
+}
+
+test('advance: a replaced segment that a promotion added and a later root replaced settles as held, and an owed segment no root named while it was owed stays owed', () =>
+  inRegistry(async (reg, tmp) => {
+    const digests = seedChain(reg);
+    // y, owed one second more than OWED_DAYS before NOW, is no candidate of the
+    // walk (root_seq 2 named it): settle expires it.
+    const owed = [owedOf(y, '2026-10-23T08:39:59Z'), owedOf(x, SINCE), owedOf(w, SINCE, { digest: D('a') }), owedOf(v, SINCE, { digest: D('b') }), owedOf(z, SINCE)];
+    reg.seed('state', 'latest', TYPE, {}, [{ title: 'state.json', bytes: encodeState({ ...emptyState(SINCE), owed }) }]);
+    const from = reg.w.requests.length;
+    const out = join(tmp, 'state');
+    const r = await call(main, ['--proposals', join(tmp, 'none'), '--out', out, '--now', NOW], { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.equal(r.out[1], LINE, r.text);
+    assert.deepEqual(
+      r.out.filter((l) => l.startsWith('settled ')),
+      [
+        `settled obs:${y.pack.tag} expired obs:${y.pack.tag} is owed since 2026-10-23T08:39:59Z, more than ${OWED_DAYS} days before ${NOW}, and no root names it`,
+        `settled obs:${x.pack.tag} held root_seq 2 named obs:${x.pack.tag} (${x.pack.manifest}), root_seq 3 replaced it, and names:names-d-20261029 (tier d, 2026-10-29T00:00:00Z to 2026-10-30T00:00:00Z) holds it in root_seq 4`,
+        `settled obs:${z.pack.tag} held root_seq 4 names obs:${z.pack.tag} (${z.pack.manifest})`,
+      ],
+    );
+    // w and v stay owed: no root named w while it was owed, and no live pack carries v's source.
+    assert.deepEqual(
+      parseState(readFileSync(join(out, 'next.json'))).owed.map((o) => o.ref),
+      [`obs:${w.pack.tag}`, `obs:${v.pack.tag}`],
+    );
+    // The walk read root_seq 3 and 2 by digest, each its manifest and its
+    // root.json alone: the live root's three layers and one layer of each.
+    const urls = reg.w.requests.slice(from).map((q) => q.url);
+    const manifests = urls.filter((u) => /\/root\/manifests\/sha256:/.test(u)).map((u) => u.slice(u.lastIndexOf('/') + 1));
+    assert.deepEqual(manifests, [digests[2], digests[1]]);
+    assert.equal(urls.filter((u) => /\/root\/blobs\/sha256:/.test(u)).length, 3 + 2, urls.join('\n'));
+  }));
+
+test('replaced segment: the walk decides each candidate at the first root that names it, or that holds no pack spanning it, and reads nothing with no candidate', async () => {
+  const c = chainOf(STEPS);
+  const hour = { ref: 'feed:feed-h-2026102900', digest: D('c'), dataset: 'feed', tier: 'h', start: '2026-10-29T00:00:00Z', end: '2026-10-29T01:00:00Z', since: SINCE };
+  const walk = await replacedOnChain(c.live, [owedOf(x, SINCE), owedOf(w, SINCE, { digest: D('a') }), owedOf(v, SINCE, { digest: D('b') }), owedOf(z, SINCE), hour], c.readOlder);
+  assert.deepEqual(c.reads, [3, 2]);
+  assert.deepEqual([...walk.replaced.keys()], [`obs:${x.pack.tag}`]);
+  assert.deepEqual(
+    { candidates: walk.candidates, read: walk.read, oldest: walk.oldest, unnamed: walk.unnamed, open: walk.open, stopped: walk.stopped },
+    { candidates: 2, read: 2, oldest: 2, unnamed: 1, open: 0, stopped: null },
+  );
+  assert.equal(chainLine(c.live, walk), LINE);
+  // heldBy asks the live root first, then the walk's map: x is held, w is not, and z is held by the live root.
+  const held = heldBy(c.live, walk.replaced);
+  assert.equal(held(owedOf(x, SINCE)).code, 'held');
+  assert.match(held(owedOf(x, SINCE)).detail, /^root_seq 2 named obs:oi-cs\.20261029t001000z\.20261029t002000z \(sha256:[0-9a-f]{64}\), root_seq 3 replaced it, and names:names-d-20261029 /);
+  assert.equal(held(owedOf(w, SINCE, { digest: D('a') })), null);
+  assert.equal(held(owedOf(z, SINCE)).detail, `root_seq 4 names obs:${z.pack.tag} (${z.pack.manifest})`);
+  // Without the walk's map the live root alone holds no replaced segment.
+  assert.equal(heldBy(c.live)(owedOf(x, SINCE)), null);
+  // No candidate: nothing is read, and no line is printed.
+  const none = chainOf(STEPS);
+  const quiet = await replacedOnChain(none.live, [owedOf(z, SINCE), owedOf(v, SINCE, { digest: D('b') }), hour], none.readOlder);
+  assert.deepEqual([none.reads, quiet.candidates, chainLine(none.live, quiet)], [[], 0, null]);
+});
+
+test('replaced segment: a root created before the segment was owed, a digest that differs and a withdrawn digest give no held', async () => {
+  // Owed after root_seq 3 was created: root_seq 3 cannot name it, so the walk stops there.
+  const late = chainOf(STEPS);
+  const lw = await replacedOnChain(late.live, [owedOf(w, '2026-10-30T07:45:00Z', { digest: D('a') })], late.readOlder);
+  assert.deepEqual([late.reads, lw.unnamed, lw.replaced.size], [[3], 1, 0]);
+  // A root that names the ref under another manifest does not name this segment.
+  const other = chainOf(STEPS);
+  const ow = await replacedOnChain(other.live, [owedOf(x, SINCE, { digest: D('9') })], other.readOlder);
+  assert.deepEqual([other.reads, ow.replaced.size, ow.unnamed], [[3, 2], 0, 1]);
+  // A digest the live root withdrew is no candidate: settle takes it as withdrawn.
+  const gone = chainOf(STEPS);
+  const live = { ...gone.live, withdrawn: [{ manifest: x.pack.manifest, at: '2026-10-30T07:50:00Z' }] };
+  const gw = await replacedOnChain(live, [owedOf(x, SINCE)], gone.readOlder);
+  assert.deepEqual([gone.reads, gw.candidates], [[], 0]);
+  assert.equal(heldBy(live, gw.replaced)(owedOf(x, SINCE)).code, 'withdrawn');
+});
+
+// Four more roots after root_seq 4: x is named 6 roots back from root_seq 8.
+const LONG = [...STEPS, ...Array.from({ length: 4 }, (_, i) => ({ now: `2026-10-30T08:0${i}:00Z`, add: [SEG(`2026-10-30T00:${(i + 1) * 10}:00Z`)] }))];
+
+test('replaced segment: the walk stops at CHAIN_ROOTS roots, at CHAIN_SECONDS, at the first root, at a root_seq out of order and at a read that fails, and the segment stays owed', async () => {
+  const long = LONG;
+  // The bounds DOM-063's Decision and docs/architecture.md section 5.4 state.
+  assert.deepEqual([CHAIN_ROOTS, CHAIN_SECONDS], [96, 120]);
+  assert.ok(readFileSync(join(ROOT, 'docs', 'architecture.md'), 'utf8').includes(`A walk reads at most ${CHAIN_ROOTS} roots and ${CHAIN_SECONDS} seconds`), 'section 5.4 states the bounds');
+  const full = chainOf(long);
+  assert.equal((await replacedOnChain(full.live, [owedOf(x, SINCE)], full.readOlder)).replaced.size, 1);
+  assert.deepEqual(full.reads, [7, 6, 5, 4, 3, 2]);
+  const capped = chainOf(long);
+  const cw = await replacedOnChain(capped.live, [owedOf(x, SINCE)], capped.readOlder, { max: 3 });
+  assert.deepEqual([capped.reads, cw.replaced.size, cw.open, cw.stopped], [[7, 6, 5], 0, 1, 'the walk reads at most 3 roots']);
+  assert.equal(
+    chainLine(capped.live, cw),
+    'chain read 3 root(s), root_seq 7 to 5, for 1 owed segment(s) that a live pack of a higher tier spans: 0 held, 0 named by no root while owed, 1 undecided; the walk stopped: the walk reads at most 3 roots',
+  );
+  // 50 s on the clock between asks: the third read would start at 150 s, past 120 s.
+  const slow = chainOf(long);
+  let t = 0;
+  const clock = () => {
+    t += 50_000;
+    return t;
+  };
+  const tw = await replacedOnChain(slow.live, [owedOf(x, SINCE)], slow.readOlder, { clock });
+  assert.deepEqual([slow.reads, tw.stopped], [[7, 6], 'the walk reads for at most 120 s']);
+  // The day pack is in every root back to the first, so nothing decides w before the chain ends.
+  const first = chainOf([
+    { now: '2026-10-30T06:00:00Z', add: [d28, d29] },
+    { now: '2026-10-30T07:50:00Z', add: [z] },
+  ]);
+  const fw = await replacedOnChain(first.live, [owedOf(w, '2026-10-30T05:00:00Z', { digest: D('a') })], first.readOlder);
+  assert.deepEqual([first.reads, fw.open, fw.stopped], [[1], 1, 'root_seq 1 is the first root']);
+  // A previous that answers a root of another root_seq ends the walk.
+  const gap = chainOf(STEPS);
+  const skip = async (digest) => (digest === digestOf('root 3') ? gap.byDigest.get(digestOf('root 2')) : gap.readOlder(digest));
+  const sw = await replacedOnChain(gap.live, [owedOf(x, SINCE)], skip);
+  assert.deepEqual([sw.replaced.size, sw.open, sw.stopped], [0, 1, 'the previous of root_seq 4 is root_seq 2, not 3']);
+  // A read that fails with a Fault, a GhcrError or a RateLimitError ends the walk; another error passes through.
+  const { live } = chainOf(STEPS);
+  for (const e of [new Fault('synthetic fault'), new GhcrError('missing', 'synthetic 404', 404), new RateLimitError('synthetic pause cap')]) {
+    const failing = async () => {
+      throw e;
+    };
+    const ew = await replacedOnChain(live, [owedOf(x, SINCE)], failing);
+    assert.deepEqual([ew.read, ew.open, ew.stopped], [0, 1, `the read of ${digestOf('root 3')}, the previous of root_seq 4, failed: ${e.message}`]);
+  }
+  const defect = async () => {
+    throw new TypeError('a planted defect');
+  };
+  await assert.rejects(replacedOnChain(live, [owedOf(x, SINCE)], defect), /a planted defect/);
+});
+
+// The case of STEPS in one dataset and one source: d28 and y, then x, then
+// the day pack of 2026-10-29 replacing y and x, then a segment of 2026-10-30.
+function scenario(dataset, source) {
+  const seg = (start) => pack(dataset, 'seg', start, { sources: [source] });
+  const day = (start) => pack(dataset, 'd', start, { sources: [source] });
+  const sy = seg('2026-10-29T00:00:00Z');
+  const sx = seg('2026-10-29T00:10:00Z');
+  const steps = [
+    { now: '2026-10-30T06:00:00Z', add: [day('2026-10-28T00:00:00Z'), sy] },
+    { now: '2026-10-30T07:30:00Z', add: [sx] },
+    { now: '2026-10-30T07:40:00Z', replace: [{ old: [sy.pack.manifest, sx.pack.manifest], new: day('2026-10-29T00:00:00Z') }] },
+    { now: '2026-10-30T07:50:00Z', add: [seg('2026-10-30T00:00:00Z')] },
+  ];
+  return { steps, x: sx };
+}
+
+test('replaced segment: a segment of domains, and one of oi-nrd-fqdn, settle as held by the day pack of their own dataset and source', async () => {
+  for (const [dataset, source, holder] of [
+    ['domains', 'oi-cs', 'names:domains-d-20261029'],
+    ['names', 'oi-nrd-fqdn', 'names:names-d-20261029'],
+  ]) {
+    const s = scenario(dataset, source);
+    const c = chainOf(s.steps);
+    const walk = await replacedOnChain(c.live, [owedOf(s.x, SINCE)], c.readOlder);
+    assert.deepEqual([walk.candidates, walk.replaced.size, c.reads], [1, 1, [3, 2]], `${dataset} ${source}`);
+    assert.ok(walk.replaced.get(`obs:${s.x.pack.tag}`).includes(`root_seq 3 replaced it, and ${holder} (tier d, `), `${dataset} ${source}`);
+  }
+});
+
+test('replaced segment: the edges of the walk: the default of CHAIN_ROOTS roots, a budget spent to the second, a previous that is no older, and a root created in the second the segment was owed', async () => {
+  // 99 roots after root_seq 4: with no `max`, the walk reads CHAIN_ROOTS of them.
+  const iso = (ms) => new Date(ms).toISOString().replace('.000Z', 'Z');
+  const many = Array.from({ length: CHAIN_ROOTS + 3 }, (_, i) => ({ now: iso(Date.parse('2026-10-30T08:00:00Z') + i * 60_000), add: [SEG(iso(Date.parse('2026-10-30T00:10:00Z') + i * 600_000))] }));
+  const deep = chainOf([...STEPS, ...many]);
+  const dw = await replacedOnChain(deep.live, [owedOf(x, SINCE)], deep.readOlder);
+  assert.deepEqual([dw.read, dw.replaced.size, dw.open, dw.stopped], [CHAIN_ROOTS, 0, 1, `the walk reads at most ${CHAIN_ROOTS} roots`]);
+  // 60 s on the clock between asks: after one read exactly 120 s have passed, and the walk stops.
+  const even = chainOf(LONG);
+  let t = 0;
+  const clock = () => {
+    t += 60_000;
+    return t;
+  };
+  const ew = await replacedOnChain(even.live, [owedOf(x, SINCE)], even.readOlder, { clock });
+  assert.deepEqual([even.reads, ew.stopped], [[7], `the walk reads for at most ${CHAIN_SECONDS} s`]);
+  // A previous that answers the live root again ends the walk.
+  const same = chainOf(STEPS);
+  const sw = await replacedOnChain(same.live, [owedOf(x, SINCE)], async () => same.live);
+  assert.deepEqual([sw.read, sw.replaced.size, sw.open, sw.stopped], [1, 0, 1, 'the previous of root_seq 4 is root_seq 4, not 3']);
+  // root_seq 3, created at 07:40:00Z, the second x was owed, is not before
+  // it: the walk reads on to root_seq 2, which names it.
+  const edge = chainOf(STEPS);
+  const gw = await replacedOnChain(edge.live, [owedOf(x, '2026-10-30T07:40:00Z')], edge.readOlder);
+  assert.deepEqual([edge.reads, gw.replaced.size], [[3, 2], 1]);
+});
+
+test('replaced segment: heldBy answers from the live root and its withdrawn before the walk map, a segment the live root names costs no read, and a walk whose first read failed prints no root', async () => {
+  const c = chainOf(STEPS);
+  const map = new Map([
+    [`obs:${z.pack.tag}`, 'from the walk'],
+    [`obs:${x.pack.tag}`, 'from the walk'],
+  ]);
+  assert.equal(heldBy(c.live, map)(owedOf(z, SINCE)).detail, `root_seq 4 names obs:${z.pack.tag} (${z.pack.manifest})`);
+  const gone = { ...c.live, withdrawn: [{ manifest: x.pack.manifest, at: '2026-10-30T07:50:00Z' }] };
+  assert.equal(heldBy(gone, map)(owedOf(x, SINCE)).code, 'withdrawn');
+  // A root no writer builds (checkLiveSet refuses a segment inside a pack of
+  // its source): it names x beside d29, and x is no candidate.
+  const named = structuredClone(c.live);
+  named.datasets.names.push(x.pack);
+  const nw = await replacedOnChain(named, [owedOf(x, SINCE)], c.readOlder);
+  assert.deepEqual([nw.candidates, c.reads], [0, []]);
+  const failed = await replacedOnChain(c.live, [owedOf(x, SINCE)], async () => {
+    throw new Fault('synthetic fault');
+  });
+  assert.equal(
+    chainLine(c.live, failed),
+    `chain read no root for 1 owed segment(s) that a live pack of a higher tier spans: 0 held, 0 named by no root while owed, 1 undecided; the walk stopped: the read of ${digestOf('root 3')}, the previous of root_seq 4, failed: synthetic fault`,
+  );
+});
+
+test("replaced segment: a read that pauses for GHCR's 429 pauses no further than CHAIN_SECONDS, and the segment stays owed", async () => {
+  const c = chainOf(STEPS);
+  let t = 0;
+  const pauses = [];
+  const clock = () => t;
+  const sleep = async (ms) => {
+    pauses.push(ms);
+    t += ms;
+  };
+  // A read that meets a 429 at each ask, and pauses 20 s each time as readPaused does with random() 0,
+  // up to readPaused's cap of 600 s.
+  const readOlder = async (_digest, pause) => {
+    for (let paused = 0; paused < 600_000; paused += 20_000) await pause(20_000);
+    throw new RateLimitError('GHCR answered 429 again after 600 s of pauses');
+  };
+  const walk = await replacedOnChain(c.live, [owedOf(x, SINCE)], readOlder, { clock, sleep });
+  assert.deepEqual([t, pauses.length], [CHAIN_SECONDS * 1000, 6]);
+  assert.deepEqual(
+    [walk.read, walk.open, walk.stopped],
+    [0, 1, `the read of ${digestOf('root 3')}, the previous of root_seq 4, failed: a pause of 20 s for GHCR's 429 would end past the walk's ${CHAIN_SECONDS} s`],
+  );
+});
+
+test("advance: a replaced segment whose walk meets GHCR's 429 at each read pauses CHAIN_SECONDS at most, exits 0 and keeps the segment owed", () =>
+  inRegistry(async (reg, tmp) => {
+    const digests = seedChain(reg);
+    reg.seed('state', 'latest', TYPE, {}, [{ title: 'state.json', bytes: encodeState({ ...emptyState(SINCE), owed: [owedOf(x, SINCE), owedOf(z, SINCE)] }) }]);
+    // The double answers 429 to each GET of a root manifest by its digest: the walk's reads alone.
+    const inner = reg.w.intercept;
+    reg.w.intercept = (url, init) =>
+      /\/root\/manifests\/sha256:[0-9a-f]{64}$/.test(url) && (init.method ?? 'GET') === 'GET'
+        ? reg.w.response(429, '{"errors":[{"code":"TOOMANYREQUESTS","message":"rate limited"}]}', { 'content-type': 'application/json' }, { url })
+        : inner(url, init);
+    let clock = Date.parse(NOW);
+    let slept = 0;
+    const sleep = async (ms) => {
+      clock += ms;
+      slept += ms;
+    };
+    const out = join(tmp, 'state');
+    const r = await call(main, ['--proposals', join(tmp, 'none'), '--out', out, '--now', NOW], { reg, now: NOW, extra: { now: () => clock, sleep } });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.equal(slept, CHAIN_SECONDS * 1000, r.text);
+    // Six pauses of 20 s; readPaused prints the seventh before the walk's sleep refuses it.
+    assert.equal(r.err.filter((l) => /GHCR answered 429; pausing 20 s/.test(l)).length, 7, r.text);
+    assert.equal(
+      r.out[1],
+      `chain read no root for 1 owed segment(s) that a live pack of a higher tier spans: 0 held, 0 named by no root while owed, 1 undecided; the walk stopped: the read of ${digests[2]}, the previous of root_seq 4, failed: a pause of 20 s for GHCR's 429 would end past the walk's ${CHAIN_SECONDS} s`,
+      r.text,
+    );
+    assert.deepEqual(
+      r.out.filter((l) => l.startsWith('settled ')),
+      [`settled obs:${z.pack.tag} held root_seq 4 names obs:${z.pack.tag} (${z.pack.manifest})`],
+    );
+    assert.deepEqual(
+      parseState(readFileSync(join(out, 'next.json'))).owed.map((o) => o.ref),
+      [`obs:${x.pack.tag}`],
+    );
+  }));
+
+test('replaced segment: a segment owed a second time after a compaction replaced it stays owed, since no root of its second owing names it', async () => {
+  // x was named by root_seq 2 and replaced by root_seq 3 (07:40:00Z) in its
+  // first owing, and is owed again at 07:45:00Z, as a backfill window
+  // dispatched again owes it: root_seq 3 was created before, and the walk stops there.
+  const c = chainOf(STEPS);
+  const again = owedOf(x, '2026-10-30T07:45:00Z');
+  const walk = await replacedOnChain(c.live, [again], c.readOlder);
+  assert.deepEqual([c.reads, walk.replaced.size, walk.unnamed, walk.open], [[3], 0, 1, 0]);
+  assert.equal(heldBy(c.live, walk.replaced)(again), null);
+});
+
+test('replaced segment: an owed segment older than OWED_DAYS is no candidate and costs no read, and settle expires it; one owed exactly OWED_DAYS is walked for', async () => {
+  const iso = (ms) => new Date(ms).toISOString().replace('.000Z', 'Z');
+  const day7 = iso(Date.parse(NOW) - OWED_DAYS * 86_400_000);
+  const old = owedOf(x, iso(Date.parse(day7) - 1000));
+  const c = chainOf(STEPS);
+  const ow = await replacedOnChain(c.live, [old], c.readOlder, { now: NOW });
+  assert.deepEqual([ow.candidates, c.reads], [0, []]);
+  const s = settle({ ...emptyState(old.since), owed: [old] }, heldBy(c.live, ow.replaced), NOW);
+  assert.deepEqual(
+    s.settled.map((e) => e.code),
+    ['expired'],
+  );
+  // With no `now` nothing is left out: the walk finds root_seq 2 naming it.
+  const all = chainOf(STEPS);
+  assert.equal((await replacedOnChain(all.live, [old], all.readOlder)).replaced.size, 1);
+  const edge = chainOf(STEPS);
+  const ew = await replacedOnChain(edge.live, [owedOf(x, day7)], edge.readOlder, { now: NOW });
+  assert.deepEqual([ew.candidates, ew.replaced.size, edge.reads], [1, 1, [3, 2]]);
 });

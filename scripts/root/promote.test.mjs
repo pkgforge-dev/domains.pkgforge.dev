@@ -21,7 +21,7 @@ import { ROOT } from '../files.mjs';
 import { anonymousReader } from '../ghcr/check-public.mjs';
 import { DEFAULT_SOURCES, loadRegistry } from '../verify-pack.mjs';
 import { depsFor, PSL_LIVE, PSL_TAG, registry, runFixture, sha } from './fixture.mjs';
-import { Fault, guardLatest, readRoot } from './lib.mjs';
+import { Fault, guardLatest, readRoot, readRootJson } from './lib.mjs';
 import { EXIT, keepLiveSet, main, parsePromoteArgs } from './promote.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./promote.mjs', import.meta.url));
@@ -787,6 +787,34 @@ test('promote: readRoot refuses a root of another type, a layer twice, a layer i
     // A reader (strict false) takes the layer it does not know.
     reg.seed('root', 'later', artifactType('root'), {}, [rootJson, sources, coverage, L('tidx.json', {})]);
     assert.equal((await readRoot(reader, 'later', deps, { strict: false })).root.root_seq, 1);
+  }));
+
+test('promote: readRootJson reads the manifest and root.json alone, as a reader, and refuses what readRoot refuses of those', () =>
+  inRegistry(async (reg) => {
+    const root = buildRoot({ live: null, psl: PSL_LIVE, now: '2026-10-29T08:00:00Z', add: [entry('names', 'd', '2026-10-26T00:00:00Z')] });
+    const L = (title, value) => ({ title, bytes: layerBytes(value), mediaType: 'application/json' });
+    const deps = { sleep: async () => undefined, random: () => 0, log: () => undefined };
+    const reader = anonymousReader();
+    // A sources layer that disagrees, a layer it does not know and a field it
+    // does not know: readRootJson reads none of the first two and ignores the third.
+    const stale = L('sources.json', { format: SOURCES_LAYER_FORMAT, sources: [] });
+    const digest = reg.seed('root', 'r', artifactType('root'), {}, [L('root.json', { ...root, later: 1 }), stale, L('coverage.json', EMPTY_COVERAGE), L('tidx.json', {})]);
+    const from = reg.w.requests.length;
+    const got = await readRootJson(reader, digest, deps);
+    assert.deepEqual([got.digest, got.root.root_seq], [digest, 1]);
+    assert.equal(reg.w.requests.slice(from).filter((q) => /\/root\/blobs\//.test(q.url)).length, 1, 'one blob: root.json');
+    // Read by its tag, it answers the manifest's digest, not the tag.
+    assert.equal((await readRootJson(reader, 'r', deps)).digest, digest);
+    await assert.rejects(readRoot(reader, digest, deps), /holds the layer "tidx\.json"/, 'a writer refuses it');
+    for (const [what, type, layers, re] of [
+      ['another type', artifactType('ref'), [L('root.json', root)], /root:bad is "application\/vnd\.pkgforge\.domains\.ref\.v1", not application\/vnd\.pkgforge\.domains\.root\.v1/],
+      ['no root.json', artifactType('root'), [L('coverage.json', EMPTY_COVERAGE)], /root:bad holds no layer root\.json/],
+      ['root.json twice', artifactType('root'), [L('root.json', root), L('root.json', root)], /root:bad holds the layer root\.json twice/],
+      ['a root that does not validate', artifactType('root'), [L('root.json', { ...root, root_seq: 0 })], /root:bad: root_seq is 0, not a whole number of at least 1/],
+    ]) {
+      reg.seed('root', 'bad', type, {}, layers);
+      await assert.rejects(readRootJson(reader, 'bad', deps), (e) => e instanceof Fault && re.test(e.message), what);
+    }
   }));
 
 test('promote: bad arguments and a missing token are exit 2 before anything is read', async () => {

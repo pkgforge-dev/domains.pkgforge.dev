@@ -104,15 +104,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**63 items. 36 open, 2 partial, 0 blocked, 25 done.**
+**63 items. 35 open, 3 partial, 0 blocked, 25 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 19 | 2 | 0 | 24 | 45 |
+| P1 | 18 | 3 | 0 | 24 | 45 |
 | P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 36 | 2 | 0 | 25 | 63 |
+| **All** | 35 | 3 | 0 | 25 | 63 |
 
 ## Entries
 
@@ -180,4 +180,4 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-060](serve.md) | P1 | serve | open | The consumer contract and the reference reader |
 | [DOM-061](ops.md) | P1 | ops | **done** | Deploy the probe Worker and its R2 bucket |
 | [DOM-062](serve.md) | P1 | serve | open | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |
-| [DOM-063](ingest.md) | P1 | ingest | open | An owed segment that a compaction replaced settles as held |
+| [DOM-063](ingest.md) | P1 | ingest | partial | An owed segment that a compaction replaced settles as held |

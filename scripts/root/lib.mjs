@@ -1,8 +1,10 @@
-// scripts/root/lib.mjs — what promote.mjs, rollback.mjs and show.mjs share:
+// scripts/root/lib.mjs — what promote.mjs, rollback.mjs and show.mjs share,
+// and the root reads of scripts/state/ and scripts/ingest/:
 // reading a root and the packs it names from GHCR with no credential, and the
 // one way `root:latest` moves (docs/architecture.md sections 4.6 and 4.7).
 //
 //   readRoot(reader, ref)         a root manifest, its three layers checked by digest, root.json validated
+//   readRootJson(reader, ref)     a root manifest and its layer root.json alone, validated as a reader
 //   packFacts(reader, 'PKG:TAG')  the root's entry for a pack: its manifest and its index head, and its time index head when it has a time copy (one range read each)
 //   missingPacks(reader, root)    every pack the root names that GHCR does not hold, by a HEAD by digest
 //   publish({ root, layers, expected, live, rollback }, ctx)   the dated push, the guard, the move, the read-back
@@ -117,13 +119,10 @@ const parseJson = (bytes, what) => {
   }
 };
 
-// The root `ref` names (a tag or a digest), read with no credential. Its
-// manifest is at most the Worker's 64 KiB, its type is the root's, it holds
-// the three layers once each, and each layer hashes to its digest. root.json
-// passes validateRoot (`strict`: a writer; false: a reader), and sources.json
-// is held to it. GhcrError passes through: the caller decides what an absent
-// or a private root means.
-export async function readRoot(reader, ref, deps = {}, { strict = true } = {}) {
+// The manifest of the root `ref` names, read with no credential: its type is
+// the root's, and it holds each layer once. A layer that is not one of LAYERS
+// is refused when `strict`, and ignored otherwise. { m, at, layerOf(title) }.
+async function rootManifest(reader, ref, deps, strict) {
   const m = await readPaused(`the manifest ${ref} of ${ROOT_REPO}`, () => reader.getManifest(ROOT_REPO, ref), pausing(deps));
   const at = `${ROOT_REF}:${ref}`;
   if (m.json.artifactType !== ROOT_TYPE) throw new Fault(`${at} is ${JSON.stringify(m.json.artifactType ?? null)}, not ${ROOT_TYPE}`);
@@ -134,18 +133,47 @@ export async function readRoot(reader, ref, deps = {}, { strict = true } = {}) {
     if (!LAYERS.includes(title) && strict) throw new Fault(`${at} holds the layer ${JSON.stringify(title ?? null)}; a root holds ${LAYERS.join(', ')}`);
     byTitle.set(title, layer);
   }
-  const layers = {};
-  for (const title of LAYERS) {
+  const layerOf = (title) => {
     const desc = byTitle.get(title);
     if (desc === undefined) throw new Fault(`${at} holds no layer ${title}`);
-    layers[title] = await readBlob(reader, ROOT_REPO, desc, deps);
-  }
+    return desc;
+  };
+  return { m, at, layerOf };
+}
+
+// The root `ref` names (a tag or a digest), read with no credential. Its
+// manifest is at most the Worker's 64 KiB, its type is the root's, it holds
+// the three layers once each, and each layer hashes to its digest. root.json
+// passes validateRoot (`strict`: a writer; false: a reader), and sources.json
+// is held to it. GhcrError passes through: the caller decides what an absent
+// or a private root means.
+export async function readRoot(reader, ref, deps = {}, { strict = true } = {}) {
+  const { m, at, layerOf } = await rootManifest(reader, ref, deps, strict);
+  const layers = {};
+  for (const title of LAYERS) layers[title] = await readBlob(reader, ROOT_REPO, layerOf(title), deps);
   try {
     const root = validateRoot(parseJson(layers['root.json'], `${at} root.json`), { strict });
     const sources = checkSourcesLayer(root, parseJson(layers['sources.json'], `${at} sources.json`));
     const coverage = parseJson(layers['coverage.json'], `${at} coverage.json`);
     if (coverage === null || typeof coverage !== 'object' || Array.isArray(coverage)) throw new Fault(`${at} coverage.json is not an object`);
     return { digest: m.digest, annotations: m.json.annotations ?? {}, root, sources, coverage, layers };
+  } catch (e) {
+    if (e instanceof RootError) throw new Fault(`${at}: ${e.message}`);
+    throw e;
+  }
+}
+
+// root.json alone of the root `ref` names, read with no credential: the
+// manifest as readRoot reads it as a reader, and the one layer root.json,
+// held to its digest and validated as a reader validates it (strict false).
+// The other layers are not read. { digest, root }. The walk of settle reads
+// the chain of `previous` with it, two GETs a root (scripts/state/lib.mjs,
+// DOM-063). A Fault or a GhcrError as readRoot.
+export async function readRootJson(reader, ref, deps = {}) {
+  const { m, at, layerOf } = await rootManifest(reader, ref, deps, false);
+  const bytes = await readBlob(reader, ROOT_REPO, layerOf('root.json'), deps);
+  try {
+    return { digest: m.digest, root: validateRoot(parseJson(bytes, `${at} root.json`), { strict: false }) };
   } catch (e) {
     if (e instanceof RootError) throw new Fault(`${at}: ${e.message}`);
     throw e;

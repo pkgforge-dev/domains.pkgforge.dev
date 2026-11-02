@@ -11,9 +11,14 @@
 //   2. the live state, state:latest read with no credential, the job's token
 //      telling an absent state (the first) from a private one (D21 of DOM-024),
 //      and its digest, which move.mjs --expect takes;
-//   3. the live root, root:latest read with no credential; then settle: the
-//      owed packs the root holds, withdrew or covers, and those owed more than
-//      OWED_DAYS, leave `owed`;
+//   3. the live root, root:latest read with no credential; then the walk of
+//      the chain of `previous` for the owed segments that a compaction
+//      replaced (replacedOnChain of lib.mjs, DOM-063: nothing is read when no
+//      owed segment is a candidate, and at most CHAIN_ROOTS roots or
+//      CHAIN_SECONDS otherwise, its pauses for a 429 among them, root.json
+//      alone of each); then settle: the
+//      owed packs the root holds, withdrew or covers, the segments the walk
+//      found replaced, and those owed more than OWED_DAYS, leave `owed`;
 //   4. an anonymous HEAD of every ref the proposals name, HEAD_CONCURRENCY at
 //      once (a tag that reads as absent answers null);
 //   5. advance of @domains/state: the accepted proposals move their cursors,
@@ -28,6 +33,8 @@
 // reads, D21 of DOM-024), ORAS, RUNNER_TEMP.
 // stdout:
 //   live state:latest sha256:... | live state:latest none
+//   chain read N root(s), root_seq A to B, for M owed segment(s) ...: H held, U named by no root while owed, O undecided[; the walk stopped: WHY]
+//                                        (only when an owed segment is a candidate of the walk)
 //   settled REF CODE DETAIL
 //   accepted ADAPTER segments N raw N history N cursor moved|kept
 //   dropped ADAPTER|- CODE DETAIL
@@ -52,9 +59,9 @@ import { orasRunner } from '../ghcr/push.mjs';
 import { RateLimitError, readPaused, realSleep } from '../ghcr/rate.mjs';
 import { isoSecond, nowIso } from '../ingest/plan.mjs';
 import { parseArgs, repeatedFlag } from '../lib/args.mjs';
-import { Fault, HEAD_CONCURRENCY, parsePackRef, PrivateRoot, tempDir, UsageError } from '../root/lib.mjs';
+import { Fault, HEAD_CONCURRENCY, parsePackRef, PrivateRoot, readRootJson, tempDir, UsageError } from '../root/lib.mjs';
 import { oneLine } from '../lib/line.mjs';
-import { heldBy, liveRootOf, liveState, PrivateState, tokenFrom } from './lib.mjs';
+import { chainLine, heldBy, liveRootOf, liveState, PrivateState, replacedOnChain, tokenFrom } from './lib.mjs';
 
 export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, private: 4, internal: 70 });
 export const ADVANCE_FORMAT = 'domains.advance.v1';
@@ -156,8 +163,13 @@ async function advanceJob(argv, deps) {
     const root = await liveRootOf(d.reader, withToken, d);
     let base = live?.state ?? null;
     let settled = [];
+    let chain = null;
     if (base !== null) {
-      const s = settle(base, heldBy(root?.root ?? null), args.now);
+      // Each read pauses for a 429 with the walk's sleep, which ends the walk at CHAIN_SECONDS.
+      const readOlder = async (digest, sleep) => (await readRootJson(d.reader, digest, { ...d, sleep })).root;
+      const walk = root === null ? null : await replacedOnChain(root.root, base.owed, readOlder, { clock: d.now, sleep: d.sleep, now: args.now });
+      if (walk !== null) chain = chainLine(root.root, walk);
+      const s = settle(base, heldBy(root?.root ?? null, walk?.replaced ?? null), args.now);
       base = s.state;
       settled = s.settled;
     }
@@ -179,6 +191,7 @@ async function advanceJob(argv, deps) {
         `${e.message}: ${next.owed.length} pack(s) owed, the oldest since ${oldest ?? 'none'}; nothing is written, and the cursors stay until the root takes owed packs or they expire after ${OWED_DAYS} days`,
       );
     }
+    if (chain !== null) d.out(oneLine(chain));
     for (const x of settled) d.out(oneLine(`settled ${x.item.ref} ${x.code} ${x.detail}`));
     for (const p of result.accepted) d.out(`accepted ${p.adapter} segments ${p.segments.length} raw ${p.raw.length} history ${p.history.length} cursor ${cursorWord(p)}`);
     for (const x of dropped) d.out(oneLine(`dropped ${x.adapter ?? '-'} ${x.code} ${x.detail}`));

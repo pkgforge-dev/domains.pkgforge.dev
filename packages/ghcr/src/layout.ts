@@ -245,6 +245,15 @@ export function annotationProblem(value: unknown): string | null {
 const SOURCE_PART = /^([a-z0-9]+(?:-[a-z0-9]+)*)\./;
 const FILE_FORM = /^[a-z0-9-]+\.[0-9]{8}\.([0-9a-f]{12})(?:-[a-z0-9]{1,8})?$/;
 
+// The source id that a segment's tag starts with: the part before its first
+// dot, for segTag and fileTag alike. null when `tag` has no such part. It
+// reads the source alone; segmentTagProblem holds the whole tag to its facts.
+// replacedOnChain of scripts/state/lib.mjs reads the source of an owed
+// segment with it (DOM-063).
+export function segmentSource(tag: unknown): string | null {
+  return typeof tag === "string" ? (SOURCE_PART.exec(tag)?.[1] ?? null) : null;
+}
+
 // Why `tag` is not the tag of a `dataset` segment (names or domains) from
 // start to end, or null: segTag of the window, or fileTag of the window's
 // first day for a file segment, with the dataset's variant (none for names,
@@ -254,8 +263,7 @@ const FILE_FORM = /^[a-z0-9-]+\.[0-9]{8}\.([0-9a-f]{12})(?:-[a-z0-9]{1,8})?$/;
 export function segmentTagProblem(tag: string, dataset: string, start: string, end: string, source?: string): string | null {
   if (typeof tag !== "string") return `${JSON.stringify(tag)} is not a tag`;
   if (dataset !== "names" && dataset !== "domains") return `${tag}: a segment holds names or domains, not ${JSON.stringify(dataset)}`;
-  const own = SOURCE_PART.exec(tag)?.[1];
-  const src = source ?? own;
+  const src = source ?? segmentSource(tag) ?? undefined;
   if (src === undefined) return `${tag} is not <source>.<start>.<end>[-d] nor <source>.<YYYYMMDD>.<sha12>[-d]`;
   const variant = dataset === "domains" ? "d" : undefined;
   const file = FILE_FORM.exec(tag);

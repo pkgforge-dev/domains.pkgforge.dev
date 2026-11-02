@@ -40,6 +40,7 @@ import {
   repoOf,
   rootTag,
   SOURCE_ID,
+  segmentSource,
   segmentTagProblem,
   segTag,
   stateRunTag,
@@ -186,6 +187,15 @@ test("layout: segmentTagProblem holds a segment's tag to its source, window and 
     ["raw-oi-cs.20261030t080000z.20261030t081000z", "names", start, end, undefined, /has no tag: "raw-oi-cs" is not a source id/],
   ];
   for (const [tag, dataset, s, e, source, re] of cases) assert.match(segmentTagProblem(tag, dataset, s, e, source) ?? "null", re, `${tag} ${dataset}`);
+});
+
+test("layout: segmentSource reads the source a segment's tag starts with, of a window and of a file, and null with none", () => {
+  assert.equal(segmentSource(segTag("oi-nrd-fqdn", "2026-10-28T13:00:00Z", "2026-10-28T14:00:00Z")), "oi-nrd-fqdn");
+  assert.equal(segmentSource(segTag("oi-nrd", "2026-10-28T13:00:00Z", "2026-10-28T13:10:00Z", "d")), "oi-nrd");
+  assert.equal(segmentSource(`${fileTag("thc-ct", "2026-10-26", SHA)}-d`), "thc-ct");
+  // The one rule: segmentTagProblem reads the same source when none is given.
+  assert.match(segmentTagProblem("oi-cs.20261030t080000z.20261030t081000z", "names", "2026-10-30T08:00:00Z", "2026-10-30T08:20:00Z") ?? "null", /a names segment of oi-cs from/);
+  for (const bad of ["x", "X.y", ".oi-cs", "oi--cs.x", "", 7, null, undefined]) assert.equal(segmentSource(bad), null, JSON.stringify(bad));
 });
 
 test("layout: a run tag of state and of ledger-delta takes a year from 1000 to 9999 alone", () => {

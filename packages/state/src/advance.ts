@@ -31,12 +31,16 @@
 // calls.
 //
 // settle drops each owed item for which `held(item)` answers a code (`held`:
-// the live root names the ref; `covered`: a live feed pack of a higher tier
-// spans an owed hour pack; `withdrawn`: the root's `withdrawn` lists its
+// the live root names the ref, or a root on the chain of `previous` named the
+// segment and a compaction replaced it; `covered`: a live feed pack of a higher
+// tier spans an owed hour pack; `withdrawn`: the root's `withdrawn` lists its
 // digest), and each whose `since` is more than OWED_DAYS days before `now`
 // (`expired`). A segment is never covered: a pack of a higher tier built while
-// the segment was owed does not hold its records, so a `covered` answer for a
-// segment is refused (`usage`), never taken.
+// the segment was owed and not in the root does not hold its records, so a
+// `covered` answer for a segment is refused (`usage`), never taken. Only a
+// root that named the segment tells the two apart: the caller's `held` reads
+// that (replacedOnChain of scripts/state/lib.mjs, DOM-063), and this package
+// reads no root.
 import { canonicalJson, jsonEqual } from "@domains/adapter";
 import { StateError } from "./errors.ts";
 import { type Proposal, proposedRefs, validateProposal } from "./proposal.ts";

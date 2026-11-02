@@ -5,7 +5,21 @@
 // guard's own. Every pack, digest and source here is synthetic (helpers.ts).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildRoot, canonical, derive, type PackEntry, RootError, type RootErrorCode, validateRoot } from "../src/index.ts";
+import {
+  buildRoot,
+  canonical,
+  derive,
+  PACK_FIELDS,
+  PACK_OPTIONAL_FIELDS,
+  type PackEntry,
+  ROOT_FIELDS,
+  RootError,
+  type RootErrorCode,
+  rollbackRoot,
+  TIME_FIELDS,
+  validateRoot,
+  WITHDRAWN_FIELDS,
+} from "../src/index.ts";
 import { digestOf, hours, live, PSL_LIVE, PSL_OLD, pack, plain } from "./helpers.ts";
 
 const NOW = "2026-10-29T08:00:00Z";
@@ -464,4 +478,47 @@ test("root: the gaps are sorted days of source ids", () => {
 test("root: canonical JSON orders keys, so field order never decides equality", () => {
   assert.equal(canonical({ b: 1, a: [{ d: 2, c: 3 }] }), canonical({ a: [{ c: 3, d: 2 }], b: 1 }));
   assert.notEqual(canonical([1, 2]), canonical([2, 1]));
+});
+
+// The fields that the strict validateRoot of commit 9b142c6 knows, copied
+// from that commit's packages/root/src/root.ts. A writer of that commit reads
+// the live root with it: a run of ingest-live.yml queued on it when a later
+// commit is pushed, and a re-run of one of its runs for GitHub's 30 days. It
+// refuses a root that holds another field, exit 1 (DOM-063's Decision). A
+// change to root.json that adds a field fails here first; its entry then says
+// what the runs of the earlier commits do with the new root.
+const KNOWN_9B142C6 = {
+  root: ["format", "root_seq", "as_of", "created", "previous", "psl", "psl_live", "corpus_since", "gaps", "through", "counts", "datasets", "withdrawn"],
+  pack: ["repo", "tag", "tier", "span", "manifest", "pack", "idx", "parts", "count", "key_min", "key_max", "sources", "psl", "time"],
+  time: ["idx", "parts"],
+  withdrawn: ["manifest", "at"],
+};
+
+test("root: a root this code builds holds only the fields a writer of commit 9b142c6 knows, and this code's writer reads a root of those fields", () => {
+  assert.deepEqual([...ROOT_FIELDS], KNOWN_9B142C6.root);
+  assert.deepEqual([...PACK_FIELDS, ...PACK_OPTIONAL_FIELDS], KNOWN_9B142C6.pack);
+  assert.deepEqual([...TIME_FIELDS], KNOWN_9B142C6.time);
+  assert.deepEqual([...WITHDRAWN_FIELDS], KNOWN_9B142C6.withdrawn);
+  // A promotion's root with a time copy, and a rollback's root with withdrawn entries.
+  const promoted = sample();
+  const first = buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-28T00:00:00Z" });
+  const rolled = rollbackRoot({ live: live(promoted), target: first, between: [], psl: PSL_LIVE, now: "2026-10-29T09:00:00Z" });
+  assert.ok(rolled.withdrawn.length > 0);
+  const outside = (obj: object, known: readonly string[]): string[] => Object.keys(obj).filter((k) => !known.includes(k));
+  for (const r of [promoted, rolled]) {
+    assert.deepEqual(outside(r, KNOWN_9B142C6.root), []);
+    for (const p of Object.values(r.datasets).flat()) {
+      assert.deepEqual(outside(p, KNOWN_9B142C6.pack), [], p.tag);
+      if (p.time !== undefined) assert.deepEqual(outside(p.time, KNOWN_9B142C6.time), []);
+    }
+    for (const w of r.withdrawn) assert.deepEqual(outside(w, KNOWN_9B142C6.withdrawn), []);
+    // The other way: a root written before DOM-063 holds these fields, and this code's writer takes it.
+    assert.equal(validateRoot(plain(r)).root_seq, r.root_seq);
+  }
+  assert.ok(
+    Object.values(promoted.datasets)
+      .flat()
+      .some((p) => p.time !== undefined),
+    "the sample holds a time copy",
+  );
 });

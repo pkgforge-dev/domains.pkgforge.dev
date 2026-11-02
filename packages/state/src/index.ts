@@ -11,7 +11,8 @@
 //                propose, validateProposal, parseProposal, encodeProposal,
 //                proposalFile, proposedRefs
 //   advance.ts   advance: the proposals applied to the live state; settle: the owed
-//                packs the live root holds, or that expired, dropped
+//                packs the live root holds or a compaction replaced, or that
+//                expired, dropped
 //   guard.ts     guard: the digest guard of every moving tag of the package state
 // The GHCR side, reading the live state and moving its tags, is scripts/state/.
 // This package reads and writes no network and imports nothing from `node:`;

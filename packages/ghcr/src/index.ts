@@ -5,7 +5,8 @@
 //              (the ledger's tags of state and the run tags a moving tag of state
 //              moves to among them), the tier tag read back with its rebuild
 //              suffix (ruling 25), a segment's tag held to its facts
-//              (segmentTagProblem), and the one rule of an annotation value
+//              (segmentTagProblem) and its source read (segmentSource),
+//              and the one rule of an annotation value
 //              the push tool takes (annotationProblem)
 // The writer is scripts/ghcr/push.mjs, which runs oras on a runner.
 //
@@ -43,6 +44,7 @@ export {
   rootTag,
   SOURCE_ID,
   SOURCE_URL,
+  segmentSource,
   segmentTagProblem,
   segTag,
   stateRunTag,

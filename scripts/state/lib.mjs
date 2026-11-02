@@ -4,7 +4,9 @@
 //
 //   liveState(reader, withToken, deps)   state:latest read with no credential, the token telling absent from private (D21 of DOM-024)
 //   readStateAt(reader, ref, deps)       one state object: its manifest, its layer state.json held to its digest, parsed
-//   heldBy(root)                         the `held` of settle from the live root (docs/architecture.md section 5.4, Owed packs)
+//   heldBy(root, replaced)               the `held` of settle from the live root (docs/architecture.md section 5.4, Owed packs)
+//   replacedOnChain(live, owed, readOlder, options)   DOM-063: the owed segments that a root on the chain of
+//                                        previous named and a compaction replaced; chainLine(live, walk) its line
 //   newestFilterTag(tags)                the newest ledger-filter-YYYYMMDD of a tag list
 //   readLedgerObject(reader, tag, title, dir, deps)   a filter or delta of state, its layer held to its digest, as a file
 //   liveRootOf(reader, withToken, deps) the live root, or null before the first promotion
@@ -34,12 +36,13 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DELTA_TITLE } from '@domains/compact';
-import { artifactType, LATEST, LEDGER_DELTA_TAG, ledgerDeltaRunTag, ledgerFilterTag, MANIFEST_LIMIT_BYTES, REGISTRY_HOST, repoOf } from '@domains/ghcr';
+import { artifactType, GhcrError, LATEST, LEDGER_DELTA_TAG, ledgerDeltaRunTag, ledgerFilterTag, MANIFEST_LIMIT_BYTES, REGISTRY_HOST, repoOf, segmentSource } from '@domains/ghcr';
 import { EPOCH_MS, HashDelta } from '@domains/ledger';
-import { guard, parseState, STATE_MAX_BYTES, STATE_TITLE, StateError } from '@domains/state';
+import { packNamed, packSpanning } from '@domains/root';
+import { guard, OWED_DAYS, parseState, STATE_MAX_BYTES, STATE_TITLE, StateError } from '@domains/state';
 import { isNotPublic } from '../ghcr/check-public.mjs';
 import { READBACK_ATTEMPTS, RETRY_PAUSE_S } from '../ghcr/push.mjs';
-import { readPaused } from '../ghcr/rate.mjs';
+import { RateLimitError, readPaused, realSleep } from '../ghcr/rate.mjs';
 import { pushFiles } from '../ingest/pack.mjs';
 import { nowIso } from '../ingest/plan.mjs';
 import { Fault, fetchTag, liveRoot, login, parsePackRef, readBlob, readRoot, tagAs } from '../root/lib.mjs';
@@ -135,23 +138,159 @@ export function tokenFrom(work, deps) {
 // root yet, nothing is held). An item is `held` when a pack entry of the
 // root has its repository and tag, `withdrawn` when the root's withdrawn
 // lists its digest, `covered` when it is an hour pack of feed and a feed pack
-// of tier d, w, m or y spans its hour. No manifest is read.
-export function heldBy(root) {
+// of tier d, w, m or y spans its hour, and `held` when `replaced` (the Map
+// of replacedOnChain: ref to detail) names it. No manifest is read.
+export function heldBy(root, replaced = null) {
   return (item) => {
     if (root === null) return null;
     const { repo, tag } = parsePackRef(item.ref);
-    for (const packs of Object.values(root.datasets)) {
-      const p = packs.find((x) => x.repo === repo && x.tag === tag);
-      if (p !== undefined) return { code: 'held', detail: `root_seq ${root.root_seq} names ${item.ref} (${p.manifest})` };
-    }
+    const named = packNamed(root, repo, tag);
+    if (named !== null) return { code: 'held', detail: `root_seq ${root.root_seq} names ${item.ref} (${named.pack.manifest})` };
     const w = root.withdrawn.find((x) => x.manifest === item.digest);
     if (w !== undefined) return { code: 'withdrawn', detail: `root_seq ${root.root_seq} withdrew ${item.digest} at ${w.at}` };
     if (item.tier === 'h' && item.dataset === 'feed') {
       const over = (root.datasets.feed ?? []).find((p) => HIGHER_TIERS.has(p.tier) && p.span.start <= item.start && item.end <= p.span.end);
       if (over !== undefined) return { code: 'covered', detail: `feed:${over.tag} of tier ${over.tier} spans ${item.start} to ${item.end}` };
     }
+    if (replaced?.has(item.ref)) return { code: 'held', detail: replaced.get(item.ref) };
     return null;
   };
+}
+
+// The most roots one walk of replacedOnChain reads: two days of the chain's
+// roots at its interval of 30 minutes (ruling 27), one promotion a run. The
+// walk of a segment that a compaction replaced ends at the root before the
+// replacement, a few roots back when the next run settles it; the first walk
+// after DOM-063's push reads back to root_seq 14 (READ 2026-11-01T15:21:34Z:
+// root_seq 14 of 60 named the 11 owed segments of oi-nrd-fqdn, and 15 named
+// names-d-20261028 in their place).
+export const CHAIN_ROOTS = 96;
+// The longest one walk reads, its pauses for GHCR's 429 among them: the step
+// "Advance the cursors" of ingest-live.yml stops after 5 minutes, and a walk
+// that ran it out would stop the cursors for as long as the segment stays
+// owed. A read pauses up to 600 s for a 429 (readPaused of
+// scripts/ghcr/rate.mjs), so the walk hands each read a sleep that ends the
+// walk in place of a pause past this bound. A root read in 0.98 s, a manifest
+// and root.json from the operator's machine (MEASURED 2026-11-01T17:23:49Z to
+// 17:24:10Z, 20 roots in 19.6 s; DOM-063), so CHAIN_ROOTS fits up to about
+// 1.25 s a root; a slower walk stops here, and its segments stay owed.
+export const CHAIN_SECONDS = 120;
+
+const spanLabel = (p) => `${p.repo.slice(p.repo.lastIndexOf('/') + 1)}:${p.tag} (tier ${p.tier}, ${p.span.start} to ${p.span.end})`;
+
+// The owed segments that a compaction replaced (DOM-063): heldBy, with the
+// Map this returns, answers each `held` to settle. A candidate is an owed
+// segment owed no more than OWED_DAYS before `now` (an older one expires in
+// the same settle; with `now` null none is left out), that the live root does
+// not name, whose digest the live root's withdrawn does not list, and that a
+// live pack of a tier above seg spans, in its dataset and carrying its source
+// (packSpanning of @domains/root): that pack can hold its records. With no
+// candidate nothing is read. Otherwise the walk reads the chain of `previous`
+// back from `live`, one older root at a time with `readOlder(digest, sleep)`
+// (a RootJson), and decides each candidate at the first older root that:
+//   - names it, by its repository, tag and digest: `held`. The root after
+//     that one names it no more. A rollback that took it out lists its digest
+//     in withdrawn, which the live root carries for WITHDRAWN_DAYS, and the
+//     segment is then no candidate; so a replacement took it out, and the
+//     live pack that spans it holds its records (chain.ts);
+//   - was created before the segment was owed (`since`). A promotion adds a
+//     segment after it is owed, so in its first owing no older root names it.
+//     A segment owed a second time, as a backfill window dispatched again
+//     owes it, was named before `since`, and stays owed until it expires.
+//     The stop keeps the walk to the roots of this owing, less than
+//     OWED_DAYS old, whose rollbacks the live root's withdrawn still lists;
+//   - holds no pack of a tier above seg that spans it and carries its source:
+//     the replacements began after this root, and this root did not name the
+//     segment, so no compaction took it in.
+// The second and the third leave the segment owed. The walk stops when every
+// candidate is decided, at the first root (previous null), after `max` roots,
+// after `budgetMs` by `clock`, at a root whose root_seq is not the one after
+// it minus 1, and at a read that fails with a Fault, a GhcrError or a
+// RateLimitError; a candidate it did not decide stays owed, as an owed pack
+// stays until a root names it or it expires. Another error is a defect and
+// passes through. The `sleep` handed to readOlder pauses with `sleep` and
+// throws RateLimitError in place of a pause that would end past `budgetMs`,
+// so a read's pauses for GHCR's 429 end the walk at its bound.
+// Returns { replaced, candidates, read, oldest, unnamed, open, stopped }:
+// replaced maps each held ref to its detail; oldest is the root_seq of the
+// last root read (null when none); unnamed counts the candidates decided
+// owed, open those undecided; stopped is the reason the walk stopped with an
+// undecided candidate, or null.
+export async function replacedOnChain(live, owed, readOlder, { max = CHAIN_ROOTS, budgetMs = CHAIN_SECONDS * 1000, clock = Date.now, sleep = realSleep, now = null } = {}) {
+  const replaced = new Map();
+  const open = [];
+  const nowMs = now === null ? null : Date.parse(now);
+  for (const item of owed) {
+    if (item.tier !== 'seg') continue;
+    if (nowMs !== null && nowMs - Date.parse(item.since) > OWED_DAYS * DAY_MS) continue;
+    const { repo, tag } = parsePackRef(item.ref);
+    if (packNamed(live, repo, tag) !== null || live.withdrawn.some((w) => w.manifest === item.digest)) continue;
+    const source = segmentSource(tag);
+    const span = { start: item.start, end: item.end };
+    const holder = source === null ? null : packSpanning(live, item.dataset, span, source);
+    if (holder !== null) open.push({ item, repo, tag, source, span, holder });
+  }
+  const result = { replaced, candidates: open.length, read: 0, oldest: null, unnamed: 0, open: 0, stopped: null };
+  const t0 = clock();
+  const pause = async (ms) => {
+    if (clock() - t0 + ms > budgetMs) throw new RateLimitError(`a pause of ${ms / 1000} s for GHCR's 429 would end past the walk's ${budgetMs / 1000} s`);
+    await sleep(ms);
+  };
+  let newer = live;
+  while (open.length > 0) {
+    if (newer.previous === null) {
+      result.stopped = `root_seq ${newer.root_seq} is the first root`;
+      break;
+    }
+    if (result.read >= max) {
+      result.stopped = `the walk reads at most ${max} roots`;
+      break;
+    }
+    if (clock() - t0 >= budgetMs) {
+      result.stopped = `the walk reads for at most ${budgetMs / 1000} s`;
+      break;
+    }
+    let older;
+    try {
+      older = await readOlder(newer.previous, pause);
+    } catch (e) {
+      if (!(e instanceof Fault || e instanceof GhcrError || e instanceof RateLimitError)) throw e;
+      result.stopped = `the read of ${newer.previous}, the previous of root_seq ${newer.root_seq}, failed: ${e.message}`;
+      break;
+    }
+    result.read += 1;
+    result.oldest = older.root_seq;
+    if (older.root_seq !== newer.root_seq - 1) {
+      result.stopped = `the previous of root_seq ${newer.root_seq} is root_seq ${older.root_seq}, not ${newer.root_seq - 1}`;
+      break;
+    }
+    for (let i = open.length - 1; i >= 0; i -= 1) {
+      const c = open[i];
+      const named = packNamed(older, c.repo, c.tag);
+      if (named !== null && named.pack.manifest === c.item.digest) {
+        replaced.set(
+          c.item.ref,
+          `root_seq ${older.root_seq} named ${c.item.ref} (${c.item.digest}), root_seq ${newer.root_seq} replaced it, and ${spanLabel(c.holder)} holds it in root_seq ${live.root_seq}`,
+        );
+        open.splice(i, 1);
+      } else if (older.created < c.item.since || packSpanning(older, c.item.dataset, c.span, c.source) === null) {
+        result.unnamed += 1;
+        open.splice(i, 1);
+      }
+    }
+    newer = older;
+  }
+  result.open = open.length;
+  return result;
+}
+
+// The line advance.mjs prints for a walk of replacedOnChain, or null when it
+// had no candidate.
+export function chainLine(live, walk) {
+  if (walk.candidates === 0) return null;
+  const reach = walk.read === 0 ? 'no root' : `${walk.read} root(s), root_seq ${live.root_seq - 1} to ${walk.oldest},`;
+  const tail = walk.stopped === null ? '' : `; the walk stopped: ${walk.stopped}`;
+  return `chain read ${reach} for ${walk.candidates} owed segment(s) that a live pack of a higher tier spans: ${walk.replaced.size} held, ${walk.unnamed} named by no root while owed, ${walk.open} undecided${tail}`;
 }
 
 // The newest ledger-filter-YYYYMMDD of `tags`, by its day, or null. The run
