@@ -7,7 +7,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
 ## DOM-030 — The Worker: custom domain, GHCR reads, root cache and healthz
 
 - **Status:** partial
-- **Waiting:** until 2026-11-02T09:45:00Z; the deploy, then the Prove's curl lines, then D16's move of wrangler, the date and the types
+- **Waiting:** until 2026-11-02T14:00:00Z; D16's move of wrangler, the date and the types, then a second deploy and the Prove again, then close
 - **Priority:** P1
 - **Effort:** M
 - **Source:** mirror-archlinux at commit 669ac725f8081445c164113f2ed092533de112e2: `docs/worker.md`, `worker/wrangler.toml`, `worker/src/index.js` lines 212 to 376 (`send`, `bearerRealm`, `tokenKept`, `tokenNew`, `ghcr`), `worker/test/*.test.js`. The reference reader `docs/research/reference/ghcr.ts`. Architecture sections 4.3, 7.1, 7.5 and 12.
@@ -154,6 +154,23 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `npx biome check apps/api packages/core scripts/lib/user-agent.mjs` exit 0, 27 files; `npm run typecheck` exit 0.
   - `node scripts/test.mjs apps/api` exit 0, 72 tests in 7 files. `--name healthz` exit 0, 10 tests; `--name ghcr` exit 0, 17 tests; `--name compatibility` exit 0, 1 test; `--name pack` exit 0, 11 tests; `--name workerd` exit 0, 2 tests. `node scripts/test.mjs packages/core` exit 0, 32 tests.
   - `node scripts/todo/check.mjs` exit 0, `node scripts/todo/count.mjs --check` exit 0, `node scripts/text-check.mjs` exit 0 (22 technical documents) and `node scripts/scan-secrets.mjs --all` exit 0 (857 files). The four run again after this line, and `npm run gate` runs last, on the tree the lead commits.
+- **READ 2026-11-02T07:56:14Z to 07:57:24Z (before the first deploy, each exit read from its own process):**
+  - `node .tmp/dom030-whoami.mjs` (a scratch script, gitignored, which prints no account name or id), exit 0: `npx wrangler@4.150.0 whoami` exits 0, is logged in and lists one account, and that account holds the zone `pkgforge.dev` (`cf zones list --name pkgforge.dev`).
+  - `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev` exit 0: no record.
+  - `curl -sS -m 15 https://domains.pkgforge.dev/healthz` exit 6, `Could not resolve host`: no other Worker holds the name.
+- **MEASURED 2026-11-02T07:57:30Z to 07:57:49Z (the first deploy):** `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:c0c7cd58f19e` with `WRANGLER_SEND_METRICS=false`, from the worktree at c0c7cd5, exit 0. No `account_id` in `apps/api/wrangler.toml` and no `CLOUDFLARE_ACCOUNT_ID` in the shell: wrangler found the one account itself.
+  - It printed `Total Upload: 95.14 KiB / gzip: 27.16 KiB`, `Worker Startup Time: 1 ms` and one binding, `env.BUILD`.
+  - Then `Deployed domains-pkgforge-dev triggers`, `domains.pkgforge.dev (custom domain)` and `Current Version ID: ee2d30ae-d08c-44af-a004-9a7cab4364fe`.
+- **READ 2026-11-02T07:58:29Z (the custom domain):** `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev` exit 0: one record, `AAAA`, proxied, which the deploy created. `https://cloudflare-dns.com/dns-query?name=domains.pkgforge.dev&type=A` answers two addresses of Cloudflare, TTL 300.
+  - The machine's resolver still held the failed lookup of 07:57:24Z, so the Prove's `curl` lines to the host take `--doh-url https://cloudflare-dns.com/dns-query`. They change nothing else.
+- **READ 2026-11-02T07:58:41Z to 07:58:50Z (the Prove's `curl` lines, against the deployed Worker):** `bash .tmp/dom030/prove.sh` (a scratch script, gitignored, that writes each answer to a file before `jq` or `grep` reads it), each exit 0 but the one noted.
+  - `/healthz`: `"ok": true`, `"version": "c0c7cd58f19e"`, `"root_age_s": 1593`.
+  - `/v1/index/latest`: `HTTP/1.1 200 OK` with `Access-Control-Allow-Origin: *` and `x-domains-root: sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae`. It also carries `Cache-Control: public, max-age=30`, `x-domains-as-of: 2026-11-02T07:30:00Z`, `x-domains-body: derived`, `x-domains-cache: ghcr`, an empty `x-domains-sources-used` and `x-domains-tiers-read: 0`.
+  - GHCR's `root:latest` manifest, read with the anonymous token `QQ==`, has the artifact type `application/vnd.pkgforge.domains.root.v1`.
+  - At 07:58:48Z its `docker-content-digest` and the route's `.data.root`, read in the same second, are both `sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae`.
+  - `POST /healthz` gives `405`, `GET /` gives `200` with `text/plain; charset=utf-8`, and `GET /nothing` gives `404`.
+- **MEASURED 2026-11-02T07:59:02Z to 07:59:13Z (the Prove's tests, on c0c7cd5):** each from its own process, exit 0. `node scripts/test.mjs apps/api --name healthz` passes 10 tests, `--name ghcr` 17, `--name compatibility` 1 and `--name pack` 11.
+- **READ 2026-11-02T07:59:52Z (the workflows of the push):** `worker.yml` run 41409385897 on c0c7cd5, its first, concluded `success`. `ci.yml` run 41409385936 on c0c7cd5 was `in_progress`.
 
 ## DOM-032 — GET /v1/new for registrable domains
 
