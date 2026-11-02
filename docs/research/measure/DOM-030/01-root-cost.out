@@ -1,0 +1,7 @@
+total size from Content-Range: 435492
+bytes read: 435492
+run 1: parse 1.00 ms, validateRoot 9.87 ms, root_seq 73, as_of 2026-11-02T00:00:00Z, created 2026-11-02T00:02:28Z
+run 2: parse 1.61 ms, validateRoot 7.77 ms, root_seq 73, as_of 2026-11-02T00:00:00Z, created 2026-11-02T00:02:28Z
+run 3: parse 1.28 ms, validateRoot 5.72 ms, root_seq 73, as_of 2026-11-02T00:00:00Z, created 2026-11-02T00:02:28Z
+run 4: parse 0.93 ms, validateRoot 5.40 ms, root_seq 73, as_of 2026-11-02T00:00:00Z, created 2026-11-02T00:02:28Z
+run 5: parse 1.02 ms, validateRoot 4.99 ms, root_seq 73, as_of 2026-11-02T00:00:00Z, created 2026-11-02T00:02:28Z

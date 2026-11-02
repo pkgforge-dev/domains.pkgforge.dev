@@ -32,6 +32,14 @@ test("provenance: a GHCR answer names its root, time, pack count, sources, cache
   });
 });
 
+test("provenance: a root with no as_of names no time, and keeps the other headers", () => {
+  const headers = provenanceHeaders(base({ asOf: null }));
+  assert.equal(Object.hasOwn(headers, "x-domains-as-of"), false);
+  assert.equal(headers["x-domains-root"], ROOT);
+  assert.equal(headers["x-domains-cache"], "ghcr");
+  assert.equal(headers["x-domains-body"], "derived");
+});
+
 test("provenance: cache r2 with no R2 read is refused", () => {
   assert.throws(
     () => provenanceHeaders(base({ cache: "r2" })),
@@ -51,8 +59,40 @@ test("provenance: one tier gives that tier, the Cache API gives hit, and two tie
   for (const claim of ["hit", "r2", "ghcr"] as const) assert.throws(() => provenanceHeaders(base({ reads, cache: claim })), ProvenanceError, claim);
 });
 
-test("provenance: a record with no read is refused", () => {
-  assert.throws(() => provenanceHeaders(base({ reads: [], sourcesUsed: [] })), /no read/);
+test("provenance: a record with no read is refused, unless the answer is stale", () => {
+  assert.throws(() => provenanceHeaders(base({ reads: [], sourcesUsed: [], cache: null })), /no read, and only a stale answer may/);
+  assert.throws(() => provenanceHeaders(base({ reads: [], sourcesUsed: [], cache: null, stale: false })), /no read/);
+  assert.equal(cacheOf([]), null);
+});
+
+test("provenance: a stale answer that no read of its request served names no tier: no x-domains-cache, no pack, degraded", () => {
+  const headers = provenanceHeaders(base({ reads: [], sourcesUsed: [], cache: null, stale: true }));
+  assert.deepEqual(headers, {
+    "x-domains-root": ROOT,
+    "x-domains-as-of": "2026-10-27T05:50:00Z",
+    "x-domains-tiers-read": "0",
+    "x-domains-sources-used": "",
+    "x-domains-body": "derived",
+    "x-domains-degraded": "1",
+  });
+  // A stale answer still may not claim a tier it did not read.
+  assert.throws(() => provenanceHeaders(base({ reads: [], sourcesUsed: [], cache: "hit", stale: true })), /cache "hit" is claimed, but the reads give "null"/);
+});
+
+test("provenance: a root read counts in x-domains-cache and never in x-domains-tiers-read, and names no source", () => {
+  const root = [
+    { tier: "cache" as const, pack: "latest", sources: [], root: true },
+    { tier: "ghcr" as const, pack: ROOT, sources: [], root: true },
+  ];
+  const rootOnly = provenanceHeaders(base({ reads: root, cache: "mixed", sourcesUsed: [] }));
+  assert.equal(rootOnly["x-domains-tiers-read"], "0");
+  assert.equal(rootOnly["x-domains-cache"], "mixed");
+  const withPack = [...root, { tier: "ghcr" as const, pack: "names-d-20261026", sources: ["thc-ct"] }];
+  const one = provenanceHeaders(base({ reads: withPack, cache: "mixed", sourcesUsed: ["thc-ct"], body: "verbatim" }));
+  assert.equal(one["x-domains-tiers-read"], "1");
+  assert.equal(one["x-domains-body"], "verbatim");
+  assert.throws(() => provenanceHeaders(base({ reads: root, cache: "mixed", sourcesUsed: [], body: "verbatim" })), /reads name 0/);
+  assert.throws(() => provenanceHeaders(base({ reads: [{ tier: "ghcr", pack: ROOT, sources: ["thc-ct"], root: true }], cache: "ghcr", sourcesUsed: [] })), /root read of sha256:a{64} names sources/);
 });
 
 test("provenance: a source that no read holds is refused", () => {

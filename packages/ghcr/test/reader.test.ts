@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { BLOB_HOST, inWorld, MANIFEST_TYPE, manifestJson, REGISTRY, T0, type World, type WorkerModule } from "@domains/testkit";
 import { NAMESPACE } from "../src/layout.ts";
 import {
+  bearerRealm,
   DUMMY,
   dialer,
   GhcrError,
@@ -127,6 +128,36 @@ test("reader: the dummy token refused, the anonymous flow asks the realm for a p
       assert.equal(authOf(w.requests[3]?.init ?? {}), "Bearer tok1");
     },
   );
+});
+
+test("reader: a kept token GHCR refuses is dropped, so a token flow that then fails leaves the next read on the dummy token", async () => {
+  await run(
+    (w) => {
+      w.manifest("ref:psl-x", [["public_suffix_list.dat", LAYER]]);
+      privateFlow(w);
+    },
+    async (w) => {
+      const g = ghcrReader({ userAgent: UA });
+      await g.getManifest(REPO, "psl-x");
+      // GHCR now refuses tok1 and its token endpoint fails.
+      w.intercept = (url, init) => {
+        if (url.startsWith(`${GHCR}/token`)) return w.response(500, "down", {}, { url });
+        if (url.startsWith(REGISTRY) && authOf(init) === "Bearer tok1") return w.response(401, '{"errors":[{"code":"UNAUTHORIZED"}]}', CHALLENGE, { url });
+        return undefined;
+      };
+      await assert.rejects(() => g.getManifest(REPO, "psl-x"), GhcrError);
+      const from = w.requests.length;
+      await g.getManifest(REPO, "psl-x");
+      assert.equal(authOf(w.requests[from]?.init ?? {}), DUMMY, "the refused token is not sent again");
+    },
+  );
+});
+
+test("reader: a challenge of another scheme than Bearer names no realm, so no token flow follows it", () => {
+  assert.equal(bearerRealm('Bearer realm="https://ghcr.io/token",service="ghcr.io"'), "https://ghcr.io/token");
+  assert.equal(bearerRealm('Basic realm="https://ghcr.io/token"'), null);
+  assert.equal(bearerRealm('realm="https://ghcr.io/token"'), null);
+  assert.equal(bearerRealm(null), null);
 });
 
 test("reader: a token with no expires_in is kept 30 s (the default 60 less 30), and one with expires_in is kept at most 300 s", async () => {

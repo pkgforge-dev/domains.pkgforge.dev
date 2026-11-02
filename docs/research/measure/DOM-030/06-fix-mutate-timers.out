@@ -1,0 +1,5 @@
+KILLED  ghcr-send-timer-x100 (packages/ghcr) exit=1
+KILLED  ghcr-body-timer-x100 (packages/ghcr) exit=1
+KILLED  ghcr-manifest-body-default (packages/ghcr) exit=1
+KILLED  ghcr-range-body-default (packages/ghcr) exit=1
+KILLED  ghcr-send-timer-never-cleared (packages/ghcr) exit=1

@@ -15,6 +15,19 @@ test("problem: a 404 answers problem+json with status, title, detail, reason, se
   assert.deepEqual(await res.json(), { status: 404, title: "Not Found", detail: "No route answers /v2/x.", reason: "not-found", see: "/llms-full.txt#reason-not-found" });
 });
 
+test("problem: the titles of the statuses the Worker answers are RFC 9110's", async () => {
+  for (const [status, title] of [
+    [404, "Not Found"],
+    [405, "Method Not Allowed"],
+    [500, "Internal Server Error"],
+    [502, "Bad Gateway"],
+    [503, "Service Unavailable"],
+  ] as const) {
+    assert.equal(TITLES[status], title);
+    assert.equal(((await problem(status, "a-reason", "detail").json()) as { title: string }).title, title);
+  }
+});
+
 test("problem: see is a relative reference, so no host is written into an answer", async () => {
   const body = (await problem(502, "source-unavailable", "GHCR answered 500.").json()) as { see: string };
   assert.ok(body.see.startsWith("/"), body.see);

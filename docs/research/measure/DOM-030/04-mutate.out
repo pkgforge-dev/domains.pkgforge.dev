@@ -1,0 +1,19 @@
+killed (exit 1) cache.ts: man entry of a tag kept 60 s; failing: ✖ ghcr: a 403 to the dummy token runs the token flow once, and the next request of the isolate sends the kept token (1 | ✖ ghcr: root:latest is kept 30 s in the man entry: a request within 30 s makes no GHCR request, and one after 31 s reads GHCR again (1 | ✖ ghcr: a read by digest is kept 1 year: the body entry of root.json, and a manifest by digest (1
+killed (exit 1) cache.ts: signed URL kept to se - 60 s; failing: ✖ ghcr: a signed URL is kept until its se less 120 s, and at most 600 s (6 | ✖ ghcr: a signed URL whose se is less than 120 s ahead is not kept (6
+killed (exit 1) cache.ts: digest manifest kept 30 s; failing: ✖ ghcr: a read by digest is kept 1 year: the body entry of root.json, and a manifest by digest (6
+killed (exit 1) root.ts: no artifactType check; failing: ✖ root: a manifest that is not of the root's artifact type, or holds root.json twice or not at all, gives 502 (6
+killed (exit 1) root.ts: kept root reused for any digest; failing: ✖ root: a new root:latest takes the kept root's place once the man entry expires (7
+killed (exit 1) root.ts: stale root not degraded; failing: ✖ ghcr: GHCR down with a root kept in the isolate answers that root, degraded, with the tier that last served its manifest (1
+killed (exit 1) root.ts: no format check; failing: ✖ root: the head check refuses another format, a root_seq below 1, a created that is not a time, a previous that is not a digest (1 | ✖ root: a format this Worker does not know gives 502 source-unavailable (2
+killed (exit 1) ghcr.ts: GHCR bytes not held to digest; failing: ✖ ghcr: root.json whose bytes do not hash to its layer digest gives 502, and nothing is kept (3
+killed (exit 1) ghcr.ts: cached body not held to digest; failing: ✖ ghcr: a body entry whose bytes do not hash to the digest is a miss: logged, and GHCR answers (5
+killed (exit 1) pack.ts: no partSizes; failing: ✖ pack: a manifest whose part size differs from the index is refused tiling at open, before any block is read (6
+killed (exit 1) pack.ts: bound 16 MiB; failing: ✖ pack: a manifest whose part size differs from the index is refused tiling at open, before any block is read (5 | ✖ pack: a block above maxRawBlockBytes is refused page with no part read, and a block under it reads (4 | ✖ pack: the bound is 1 MiB by default, a tighter one applies, and one above 1 MiB is refused (0
+killed (exit 1) health.ts: 6 h exactly fails; failing: ✖ healthz: a root older than 6 hours answers 503 with ok false; one of exactly 6 hours answers 200 (7
+killed (exit 1) health.ts: upper-case BUILD accepted; failing: ✖ healthz: a BUILD that is not 12 lowercase hex digits gives version null (1
+killed (exit 1) answer.ts: no CORS on errors; failing: ✖ router: a path with no route answers 404 problem+json with status, title, detail, reason and see, and CORS (4 | ✖ router: every method but GET, HEAD and OPTIONS answers 405 problem+json with allow, on a route and off one (1
+killed (exit 1) answer.ts: HEAD keeps the body; failing: ✖ healthz: HEAD answers as GET does, with no body (1 | ✖ router: HEAD of /v1/index/latest makes the reads of GET and answers no body (1
+killed (exit 1) index.ts: POST passes; failing: ✖ router: every method but GET, HEAD and OPTIONS answers 405 problem+json with allow, on a route and off one (1 | ✖ router: the see member of each problem names a marker that /llms-full.txt holds, for every reason of the list, and the stub names no route (3 | ✖ workerd: a 404, a 405, an OPTIONS and a HEAD answer in workerd as in Node (5
+killed (exit 1) index.ts: OPTIONS 404; failing: ✖ router: OPTIONS answers 204 with the CORS headers and no body, on any path (2 | ✖ workerd: a 404, a 405, an OPTIONS and a HEAD answer in workerd as in Node (4
+killed (exit 1) guide.ts: a reason dropped from the stub; failing: ✖ router: every reason the Worker's sources name is in the list of guide.ts (6
+killed 18 of 18

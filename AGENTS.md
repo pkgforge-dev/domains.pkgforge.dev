@@ -206,7 +206,7 @@ What holds whatever the design says, from the operator's rulings
 | the design | `docs/architecture.md` |
 | a source or a feed: its adapter, its definitions | `docs/sources.md`, `docs/architecture.md`, `TODO/ingest.md` |
 | the GHCR layout, the R2 cache | `docs/architecture.md`, `docs/resources.md`, `TODO/storage.md` |
-| the Worker and its queries | `docs/architecture.md`, `TODO/serve.md`, `HUMAN.md` |
+| the Worker and its queries | `docs/architecture.md`, `docs/worker.md`, `TODO/serve.md`, `HUMAN.md` |
 | the clock, health, the freshness measurement | `docs/architecture.md`, `docs/clock.md`, `TODO/ops.md` |
 | the skeleton, the tooling, the gate | `TODO/foundation.md` |
 | creating any cloud resource | `docs/resources.md`, `docs/security/secrets.md` |
@@ -227,7 +227,7 @@ SECURITY.md          the threat model and who holds what
 CHANGELOG.md         what shipped, newest first
 LICENSE              0BSD
 TODO/                PROGRESS (the record), INDEX (rows, counts, ordering), RULES, entries by area
-docs/                architecture, sources, clock, resources ledger, methodology, conventions, security, research
+docs/                architecture, sources, clock, the Worker, resources ledger, methodology, conventions, security, research
 apps/<worker>/       one Worker each: wrangler.toml, src/, tests (created by the serve entries)
 packages/<name>/     code that two Workers or workflows share, when it exists
 adapters/<source>/   one adapter each, of one or more sources: source.json, src/ (checked as Worker code), fixtures and tests (created by the ingest entries)
@@ -253,13 +253,14 @@ the TCP recordings and the sandbox of the harness (`packages/adapter/node/sandbo
 `scripts/workflows/` and `ingest-live.yml` (DOM-024), `config/clock.json`,
 `docs/clock.md` and `scripts/measure/clock-verdict.mjs` (DOM-003), the first
 adapter `adapters/oi-nrd/` (DOM-026),
-`probes/worker/` (DOM-061), the measurement workflows and `ci.yml` under
+`probes/worker/` (DOM-061), the Worker `apps/api/` with `docs/worker.md` and
+`worker.yml` (DOM-030), the measurement workflows and `ci.yml` under
 `.github/workflows/`, and `docs/research/measure/`, where each measurement
 writes its results under its entry id.
 
-⚠ Not yet created, each by the entry whose row says so: `apps/<worker>/`,
-every other `adapters/<source>/`, every other `packages/<name>/`,
-`probes/<name>/` and `.github/workflows/<name>.yml`.
+⚠ Not yet created, each by the entry whose row says so: every other
+`apps/<worker>/`, every other `adapters/<source>/`, every other
+`packages/<name>/`, `probes/<name>/` and `.github/workflows/<name>.yml`.
 
 ## 7. What a session owes at its end
 

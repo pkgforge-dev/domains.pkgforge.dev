@@ -1440,6 +1440,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Prove:** `node scripts/test.mjs apps/api --name "r2"` passes: read-through, the 4.3 GB guard, the recount, and the cache header values.
   - `curl -sI https://domains.pkgforge.dev/v1/index/latest | grep -i '^x-domains-cache'` prints `x-domains-cache: ghcr` for the first request and `hit` or `r2` for the second.
   - `npx wrangler@4.150.0 r2 bucket info domains-pkgforge-cache` reports a size under 5 GB after a day of traffic.
+- **Correction 2026-11-02T07:42Z (DOM-030, the Operator line):** the line says to record the account name that `whoami` prints. The name carries the account's workers.dev subdomain, and `docs/security/secrets.md` keeps its id out of every document. So the Closed line records that `whoami` named the account that holds the `pkgforge.dev` zone, and never its name or id (`HUMAN.md` section 1, the agent's reading of ruling 14).
 
 ## DOM-038 — The names dataset: tiers and source masks
 
@@ -1560,3 +1561,4 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Prove:** `node scripts/drill/r2-empty.mjs --base https://DRILL_HOST --compare https://domains.pkgforge.dev` prints `PASS bodies-equal`, `PASS first-pass-from-ghcr`, `PASS no-5xx`, `PASS p95-under-10s` and `PASS warmed-from-r2`. DRILL_HOST is the workers.dev host that `wrangler deploy` prints.
   - `node scripts/test.mjs apps/api --name "r2 empty"` passes in Miniflare with an empty `r2Buckets` binding.
   - After clean up, `npx wrangler@4.150.0 r2 bucket list` no longer names `domains-drill`.
+- **Correction 2026-11-02T07:42Z (DOM-030, the Operator line):** the line says to record the account name that `whoami` prints. The name carries the account's workers.dev subdomain, and `docs/security/secrets.md` keeps its id out of every document. So the Closed line records that `whoami` named the account that holds the `pkgforge.dev` zone, and never its name or id (`HUMAN.md` section 1, the agent's reading of ruling 14).

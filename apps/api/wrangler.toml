@@ -1,0 +1,63 @@
+# apps/api/wrangler.toml — the Worker domains-pkgforge-dev on the custom domain
+# domains.pkgforge.dev (DOM-030, TODO/serve.md; docs/worker.md). Its shape is
+# mirror-archlinux's worker/wrangler.toml at commit
+# 669ac725f8081445c164113f2ed092533de112e2.
+#
+# Deploy by hand with the operator's wrangler login (TODO/RULES.md section 5,
+# rulings 6 and 14). CI holds no Cloudflare credential and deploys nothing:
+# .github/workflows/worker.yml only runs the tests.
+#   cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
+# BUILD is /healthz's `version`; a deploy without it answers `"version": null`.
+# Check the configuration with no deploy:
+#   cd apps/api && npx wrangler@4.150.0 deploy --dry-run --outdir ../../.tmp/api-dry
+#
+# No account_id: the operator's wrangler login holds one account, the one that
+# holds the pkgforge.dev zone, and `npx wrangler@4.150.0 whoami` names it
+# before every deploy. A login with a second account makes wrangler ask which,
+# so no deploy goes to another account unasked. docs/security/secrets.md allows
+# the account_id a custom domain needs here; this Worker carries none, as the
+# probe does. That wrangler finds the zone of the custom domain with no
+# account_id is not measured: the first deploy measures it (docs/worker.md).
+#
+# The date is the harness's (packages/testkit COMPATIBILITY_DATE): the workerd
+# that wrangler 4.150.0 pins runs no later date, so the deploy and the tests run
+# one runtime. The test "compatibility" of apps/api/test/config.test.ts holds
+# the two equal, and the flags equal to the harness's COMPATIBILITY_FLAGS.
+name = "domains-pkgforge-dev"
+main = "src/index.ts"
+compatibility_date = "2026-10-13"
+# From 2026-08-04 the compatibility date turns on the Node.js APIs. This
+# Worker uses only Web APIs (fetch, Cache, Web Crypto, DecompressionStream), so
+# it opts out.
+compatibility_flags = ["no_nodejs_compat", "no_nodejs_compat_v2"]
+# Callers reach the Worker on its custom domain alone (SECURITY.md).
+workers_dev = false
+preview_urls = false
+
+# The custom domain is one label below the pkgforge.dev zone, so the zone's
+# Universal certificate covers it (docs/architecture.md section 7).
+routes = [
+  { pattern = "domains.pkgforge.dev", custom_domain = true },
+]
+
+# A request is at most one root manifest read (one cache lookup, or one GHCR
+# subrequest and the token flow on a refusal) and, when the root changed, one
+# root.json read (one cache lookup, or a blob redirect and a range read). Its
+# CPU on Cloudflare is not measured (DOM-054 reads it from wrangler tail). As a
+# proxy, the parse of root.json took 0.9 to 7.6 ms in Node v26.7.0 on Windows 11
+# for the root of 435,492 B, in two readings of five runs, without its SHA-256
+# and its UTF-8 decode (TODO/serve.md DOM-030, docs/research/measure/DOM-030/). validateRoot runs only when a route reads the datasets. DOM-008
+# measured the decode of one block of 4,096 names at a p99 of 2 ms of CPU on
+# Cloudflare, and kept the codec deflate-raw.
+[limits]
+cpu_ms = 50
+
+# Every request is sampled, but the invocation log is off. The Worker calls
+# console.error only on a 5xx answer, a cache failure or a stale root, so the
+# logs hold every failure and nothing else.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = false

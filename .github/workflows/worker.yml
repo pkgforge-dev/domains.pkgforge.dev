@@ -1,0 +1,53 @@
+# The Worker of apps/api (domains-pkgforge-dev on domains.pkgforge.dev, DOM-030;
+# docs/worker.md), in the shape of mirror-archlinux's .github/workflows/worker.yml
+# at commit 669ac725f8081445c164113f2ed092533de112e2.
+#
+#   test     node scripts/test.mjs apps/api, on the Node of .node-version
+#
+# The tests run the Worker in workerd (packages/testkit), which needs the locked
+# dependencies and a glibc runner, so the job installs them with the pinned
+# setup-node of ci.yml rather than in the mirror's node:24-alpine image.
+#
+# CI does not deploy, and holds no Cloudflare credential (AGENTS.md absolute
+# 14). The operator's wrangler login deploys, after this passes:
+#   cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
+name: Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/worker.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: worker-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # package.json names npm in packageManager, which turns setup-node's
+      # cache on by default. It is off, as in ci.yml.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install the locked dependencies
+        run: npm ci
+      - name: The Worker's tests
+        run: node scripts/test.mjs apps/api

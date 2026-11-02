@@ -5,6 +5,7 @@ What shipped and when, newest first. Times are UTC.
 ## 2026-11-02
 
 - An owed segment that a compaction replaced settles as held (DOM-063, closed): run 41367496155, the first of `ingest-live.yml` on 137a220, read 60 roots back to root_seq 14. It settled the 11 owed segments of `oi-nrd-fqdn` of 2026-10-28 as held, and its log holds no `waiting` line.
+- The Worker `domains-pkgforge-dev` is built (DOM-030, partial). `apps/api/` answers its health check and the digest of the live root with its GHCR references. It also serves two plain text stubs until DOM-059: an index that names no route, and the reasons that an error answer's `see` names. It reads GHCR through `ghcrReader` of `packages/ghcr` with the Cache API entries `man`, `blob` and `body`, and keeps the root in the isolate. While GHCR fails, it answers from that root with `x-domains-degraded: 1` and no tier. The reads of a root have 25 s in all. It opens packs with `partSizes`, a raw block bound of 1 MiB, at most 8,192 records a block and the index read whole. It keeps a block in the Cache API only once the block's CRC-32 held. `docs/worker.md` is its operator's document, and `worker.yml` runs its tests. The contact User-Agent now lives in `packages/core/src/contact.ts`, and `scripts/lib/user-agent.mjs` re-exports it. Not deployed: the operator's login deploys it with `--var BUILD:<12 hex>`, and the Prove's `curl` lines against `domains.pkgforge.dev` follow.
 
 ## 2026-11-01
 

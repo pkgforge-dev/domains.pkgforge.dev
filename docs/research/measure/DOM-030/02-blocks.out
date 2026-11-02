@@ -1,0 +1,10 @@
+root sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae seq 74 created 2026-11-02T00:31:54Z
+domains d key: packs 7, max raw block 164536 B (domains-d-20261030), max packed 75850 B
+domains seg key: packs 358, max raw block 114702 B (oi-nrd.20261024t010000z.20261024t020000z-d), max packed 54423 B
+feed d key: packs 7, max raw block 98343 B (feed-d-20261030), max packed 48726 B
+feed d time: packs 7, max raw block 90420 B (feed-d-20261030), max packed 45925 B
+feed h key: packs 24, max raw block 81963 B (feed-h-2026110123), max packed 43845 B
+feed h time: packs 24, max raw block 89091 B (feed-h-2026110123), max packed 45363 B
+names d key: packs 7, max raw block 76850 B (names-d-20261026), max packed 44581 B
+names seg key: packs 179, max raw block 75924 B (oi-nrd-fqdn.20261022t190000z.20261022t200000z), max packed 42501 B
+packs read 613 of 613; largest raw block 164536 B; GHCR requests 1229

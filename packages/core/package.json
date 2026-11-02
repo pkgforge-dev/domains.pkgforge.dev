@@ -4,7 +4,7 @@
   "private": true,
   "license": "0BSD",
   "type": "module",
-  "description": "Code that runs in Node and in workerd alike: the problem+json answer, the provenance headers and the one redaction helper.",
+  "description": "Code that runs in Node and in workerd alike: the problem+json answer, the provenance headers, the one redaction helper and the one contact User-Agent.",
   "exports": {
     ".": "./src/index.ts"
   }

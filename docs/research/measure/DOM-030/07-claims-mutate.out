@@ -1,0 +1,11 @@
+KILLED B2 kept moves back: exit 1, restored true
+KILLED F8 no manifest cap passed: exit 1, restored true
+KILLED C11g context outside try: exit 1, restored true
+KILLED C13 bulk files back: exit 1, restored true
+KILLED C13 cursor back: exit 1, restored true
+KILLED F10 old index line: exit 1, restored true
+KILLED C16 margin 119: exit 1, restored true
+KILLED C16 floor at 2: exit 1, restored true
+KILLED F5 literal in ghcr.ts: exit 1, restored true
+KILLED F5 literal in scripts: exit 1, restored true
+10 of 10 killed

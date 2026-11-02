@@ -10,8 +10,10 @@ never to ask for.
 - `npx wrangler whoami` names the Cloudflare account that holds the
   `pkgforge.dev` zone. Your wrangler login lives in your home directory, and no
   agent reads it. An agent may run `whoami`: it lists account names and reads no
-  secret. Every entry that deploys runs it first and records the account name it
-  printed.
+  secret. Every entry that deploys runs it first and records that it named the
+  account that holds the zone. It records neither the account's name, which
+  carries its workers.dev subdomain, nor its id, a fingerprint that
+  `docs/security/secrets.md` keeps out of every document.
 - `gh auth status` is signed in to an account that can push to
   `pkgforge-dev/domains.pkgforge.dev`.
 - `git config --get core.hooksPath` prints `.githooks`, so a commit that credits
@@ -82,26 +84,32 @@ The measurements that need a Worker on Cloudflare share one temporary probe
 ### Deploy the Worker
 
 Under your ruling of 2026-10-28 (`TODO/RULES.md` §5, ruling 14) the agent runs
-these steps itself, with your login on your machine, and records the account
-name `whoami` printed. Step 1's reading of the zone's rate-limit rules stays
-yours (ruling 15, DOM-062). CI never deploys. You deploy from your machine, with your own login, the way
+these steps itself, with your login on your machine, and records that `whoami`
+named the account that holds the zone, as section 1 says. A change of a zone
+rule stays yours (ruling 15, DOM-062). CI never deploys. You deploy from your machine, with your own login, the way
 `pkgforge-dev/mirror-archlinux` does (the "Deploy" section of its Worker
 document, docs/worker.md in that repository). From a
 clean tree at the tip of `origin/main` that the gate passed:
 
-1. `npx wrangler whoami` names the right account, and before the first deploy
-   you read the `pkgforge.dev` zone's rate-limit rules (dashboard: Security, WAF,
-   Rate limiting rules): none may cover `domains.pkgforge.dev`, because no
-   consumer is gated (`TODO/RULES.md` §5, ruling 12).
-2. From the Worker's directory, `npx wrangler deploy`. Its `wrangler.toml` binds
-   the custom domain `domains.pkgforge.dev`.
-3. `curl -sS https://domains.pkgforge.dev/` answers, and the entry's Prove
-   passes.
-4. Tell the session the version id that `wrangler deploy` printed. It adds a row
+1. `npx wrangler@4.150.0 whoami` names the account that holds the
+   `pkgforge.dev` zone. No rate-limit rule of the zone may cover
+   `domains.pkgforge.dev`, because no consumer is gated (`TODO/RULES.md` §5,
+   ruling 12). The one rule that covered the host now leaves it out (DOM-062,
+   and the Zone rules table of `docs/resources.md`).
+2. Before the first deploy, `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`
+   lists no record. If it lists one, the agent stops and asks you: when its
+   output is not a terminal, wrangler replaces such a record with no question
+   (`docs/worker.md`, Deploy).
+3. `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`.
+   Its `wrangler.toml` binds the custom domain `domains.pkgforge.dev`, and
+   `BUILD` is the version that `/healthz` names.
+4. `curl -sS https://domains.pkgforge.dev/healthz` answers `"ok":true` and the
+   12 hex digits of the commit, and the entry's Prove passes.
+5. Tell the session the version id that `wrangler deploy` printed. It adds a row
    to the Deploys table in `docs/resources.md`.
 
-The Worker directory and its `wrangler.toml` land with the serve entries. Until
-then there is nothing to deploy.
+The Worker is `apps/api/`. `docs/worker.md` gives its deploy, its rollback
+(`cd apps/api && npx wrangler@4.150.0 rollback`) and its checks.
 
 ## 5. Receiving a handoff
 

@@ -1,0 +1,5 @@
+names: 8,192 keys 245 B, shared prefix   records 8192 raw 66014 B -> retained 3.90 MiB heap + 0.06 MiB buffers; x6 = 23.8 MiB
+domains: 8,192 keys 245 B + 5 evidence   records 8192 raw 279006 B -> retained 7.68 MiB heap + 0.27 MiB buffers; x6 = 47.7 MiB
+feed: 8,192 keys 245 B                   records 8192 raw 82398 B -> retained 4.66 MiB heap + 0.20 MiB buffers; x6 = 29.1 MiB
+domains: 8,192 keys + 6 evidence         records 8192 raw 516574 B -> retained 8.12 MiB heap + 0.65 MiB buffers; x6 = 52.6 MiB
+domains: 8,192 keys + 12 evidence        records 8192 raw 958942 B -> retained 11.22 MiB heap + 1.82 MiB buffers; x6 = 78.2 MiB

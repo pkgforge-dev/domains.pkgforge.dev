@@ -1,0 +1,178 @@
+== 2026-11-02T00:49:35Z curl http://127.0.0.1:62939/healthz
+HTTP/1.1 200 OK
+Content-Length: 55
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: no-store
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+x-domains-as-of: 2026-11-02T00:30:00Z
+x-domains-body: derived
+x-domains-cache: ghcr
+x-domains-root: sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae
+x-domains-sources-used: 
+x-domains-tiers-read: 1
+
+
+-- http=200 time=2.454730s size=55
+-- exit=0
+{"ok":true,"version":"137a220541ba","root_age_s":1063}
+
+== 2026-11-02T00:49:37Z curl http://127.0.0.1:62939/healthz
+HTTP/1.1 200 OK
+Content-Length: 55
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: no-store
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+x-domains-as-of: 2026-11-02T00:30:00Z
+x-domains-body: derived
+x-domains-cache: hit
+x-domains-root: sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae
+x-domains-sources-used: 
+x-domains-tiers-read: 1
+
+
+-- http=200 time=0.006413s size=55
+-- exit=0
+{"ok":true,"version":"137a220541ba","root_age_s":1064}
+
+== 2026-11-02T00:49:38Z curl http://127.0.0.1:62939/v1/index/latest
+HTTP/1.1 200 OK
+Content-Length: 594
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=30
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+x-domains-as-of: 2026-11-02T00:30:00Z
+x-domains-body: derived
+x-domains-cache: hit
+x-domains-root: sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae
+x-domains-sources-used: 
+x-domains-tiers-read: 1
+
+
+-- http=200 time=0.008185s size=594
+-- exit=0
+{"data":{"format":"domains.root.v1","root_seq":74,"as_of":"2026-11-02T00:30:00Z","root":"sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae","references":{"root_latest":"ghcr.io/pkgforge-dev/domains.pkgforge.dev/root:latest","root_digest":"ghcr.io/pkgforge-dev/domains.pkgforge.dev/root@sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae"}},"meta":{"as_of":"2026-11-02T00:30:00Z","root":"sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae","sources_used":[],"sources_failed":[],"tiers_read":[],"partial":false,"next_cursor":null}}
+
+== 2026-11-02T00:49:38Z curl http://127.0.0.1:62939/
+HTTP/1.1 200 OK
+Content-Length: 281
+Content-Type: text/plain; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=300
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+
+
+-- http=200 time=0.005315s size=281
+-- exit=0
+domains.pkgforge.dev
+
+Certificate-transparency names, and newly registered and newly seen domains, as open data.
+No key, no account and no rate limit.
+The documents of the routes are published when the project is ready.
+Source: https://github.com/pkgforge-dev/domains.pkgforge.dev
+
+== 2026-11-02T00:49:38Z curl http://127.0.0.1:62939/nothing
+HTTP/1.1 404 Not Found
+Content-Length: 133
+Content-Type: application/problem+json
+Access-Control-Allow-Origin: *
+Cache-Control: no-store
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+
+
+-- http=404 time=0.005031s size=133
+-- exit=0
+{"status":404,"title":"Not Found","detail":"No route answers /nothing.","reason":"not-found","see":"/llms-full.txt#reason-not-found"}
+== 2026-11-02T00:49:39Z curl -X POST http://127.0.0.1:62939/healthz
+HTTP/1.1 405 Method Not Allowed
+Content-Length: 184
+Content-Type: application/problem+json
+Access-Control-Allow-Origin: *
+Allow: GET, HEAD, OPTIONS
+Cache-Control: no-store
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+
+
+-- http=405 time=0.002972s size=184
+-- exit=0
+{"status":405,"title":"Method Not Allowed","detail":"This service answers GET, HEAD, OPTIONS, not POST.","reason":"method-not-allowed","see":"/llms-full.txt#reason-method-not-allowed"}
+== 2026-11-02T00:49:39Z curl -X OPTIONS -H Origin: https://example.test -H Access-Control-Request-Method: GET http://127.0.0.1:62939/healthz
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: *
+Allow: GET, HEAD, OPTIONS
+access-control-allow-headers: *
+access-control-allow-methods: GET, HEAD, OPTIONS
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+access-control-max-age: 86400
+
+
+-- http=204 time=0.002673s size=0
+-- exit=0
+
+== 2026-11-02T00:49:39Z curl http://127.0.0.1:62939/llms-full.txt
+HTTP/1.1 200 OK
+Content-Length: 1882
+Content-Type: text/plain; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=300
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+
+
+-- http=200 time=0.003136s size=1882
+-- exit=0
+# domains.pkgforge.dev: the reasons of an error answer
+
+An error answer of domains.pkgforge.dev is application/problem+json with the members status, title, detail, reason and see.
+The member see names /llms-full.txt#reason-<reason>. Search this file for that marker.
+This file holds the reasons only. The full guide replaces it when the project is ready.
+
+reason-not-found: No route answers the path. Do not retry the same path.
+reason-method-not-allowed: The path does not answer this method. The allow header names the methods it answers. Do not retry with the same method.
+reason-bad-parameter: A parameter is not one the route reads, or its value is out of range. Do not retry; correct the request.
+reason-bad-window: The time window cannot be read: a bound is not a time, or the start is after the end. Do not retry; correct the request.
+reason-window-too-large: The time window is longer than one request reads. Do not retry; ask for a shorter window, or read the bulk files.
+reason-unknown-suffix: The suffix is not a public suffix of the list in use. Do not retry; correct the suffix.
+reason-bad-cursor: The cursor is not one this service gave, or it was given for another root. Do not retry it; start the listing again.
+reason-work-budget: The answer needs more reads than one request makes. Retry with a narrower request, or follow the cursor.
+reason-not-implemented: The service does not answer this request yet. Do not retry.
+reason-unsupported-by-source: No source the service mirrors ho
+== 2026-11-02T00:49:40Z curl -I http://127.0.0.1:62939/v1/index/latest
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=30
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+x-domains-as-of: 2026-11-02T00:30:00Z
+x-domains-body: derived
+x-domains-cache: hit
+x-domains-root: sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae
+x-domains-sources-used: 
+x-domains-tiers-read: 1
+
+
+-- http=200 time=0.005206s size=0
+-- exit=0
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: public, max-age=30
+access-control-expose-headers: x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow
+x-content-type-options: nosniff
+x-domains-as-of: 2026-11-02T00:30:00Z
+x-domains-body: derived
+x-domains-cache: hit
+x-domains-root: sha256:fdf22af452565e96d44b4f83c54ccf57e9362cd228c804bb4710b46cbc7fa8ae
+x-domains-sources-used: 
+x-domains-tiers-read: 1
+
+

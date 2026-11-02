@@ -83,10 +83,35 @@ function trackedBody(bytes: Uint8Array, track: BodyTrack, chunk = 0): ReadableSt
 }
 
 export interface CacheEntry {
+  // `bytes` is what match answers, so a binary body (a pack block) comes back
+  // byte for byte. `body` reads and writes the same bytes as UTF-8 text, so a
+  // test that plants a body as text still plants what match answers.
   body: string;
+  bytes: Uint8Array;
   status: number;
   headers: [string, string][];
   until: number;
+}
+
+function cacheEntry(bytes: Uint8Array, status: number, headers: [string, string][], until: number): CacheEntry {
+  let raw = bytes;
+  return {
+    get body(): string {
+      return new TextDecoder().decode(raw);
+    },
+    set body(text: string) {
+      raw = new TextEncoder().encode(text);
+    },
+    get bytes(): Uint8Array {
+      return raw;
+    },
+    set bytes(value: Uint8Array) {
+      raw = value;
+    },
+    status,
+    headers,
+    until,
+  };
 }
 
 // The Cache API as the Worker sees it: a GET Request key, a max-age the entry
@@ -113,7 +138,7 @@ export class CacheStub {
       this.entries.delete(url);
       return undefined;
     }
-    return new Response(e.body, { status: e.status, headers: e.headers });
+    return new Response(e.bytes.slice(), { status: e.status, headers: e.headers });
   }
 
   async put(key: Request | string, res: Response): Promise<void> {
@@ -124,9 +149,9 @@ export class CacheStub {
     const m = /(?:^|,)\s*max-age=(\d+)/.exec(cc);
     if (!m || /no-store/.test(cc)) throw new TypeError(`cache stub: no max-age in "${cc}"`);
     const ttl = Number(m[1]);
-    const body = await res.text();
-    this.entries.set(key.url, { body, status: res.status, headers: [...res.headers], until: this.clock.now + ttl * 1000 });
-    this.puts.push({ url: key.url, ttl, body });
+    const entry = cacheEntry(new Uint8Array(await res.arrayBuffer()), res.status, [...res.headers], this.clock.now + ttl * 1000);
+    this.entries.set(key.url, entry);
+    this.puts.push({ url: key.url, ttl, body: entry.body });
   }
 
   // The stored entries whose key path starts with /__cache/v1/<kind>/.

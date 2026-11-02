@@ -1,0 +1,8 @@
+{
+  "name": "@domains/api",
+  "version": "0.0.0",
+  "private": true,
+  "license": "0BSD",
+  "type": "module",
+  "description": "The Worker domains-pkgforge-dev on domains.pkgforge.dev (DOM-030): the router, its GHCR reads through @domains/ghcr, the Cache API entries, the root kept in the isolate, /healthz and /v1/index/latest. It only reads, holds no secret, and the operator's wrangler login deploys it."
+}

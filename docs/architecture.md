@@ -673,7 +673,7 @@ A job builds the `rev` packs from it (DOM-043): the keys are the address bytes, 
 ## 7. The API
 
 One Worker serves `domains.pkgforge.dev`. The hostname is one level below the `pkgforge.dev` zone, so the zone's Universal certificate covers it.
-The Worker reads and never writes GHCR. Its name is `domains-pkgforge-dev`. Its code lands in `apps/api/` with DOM-030.
+The Worker reads and never writes GHCR. Its name is `domains-pkgforge-dev`. Its code is `apps/api/` (DOM-030), and `docs/worker.md` is its operator's document: its paths, caching, limits, deploy and rollback.
 
 ### 7.1 Common rules
 
@@ -714,16 +714,18 @@ The Worker reads and never writes GHCR. Its name is `domains-pkgforge-dev`. Its 
 
 A day-precision value prints as a date. A second-precision value prints as a time.
 
+`corpus_since` and `confidence` belong to an answer that reads a dataset. An answer from the root alone, such as `/v1/index/latest`, carries neither, and its `tiers_read` is empty.
+
 Provenance headers say what answered, and nothing the path did not use.
 
 | Header | Value |
 | --- | --- |
 | `x-domains-root` | the digest of the root the answer was computed from |
-| `x-domains-as-of` | the root's `as_of` |
-| `x-domains-tiers-read` | the number of packs read |
+| `x-domains-as-of` | the root's `as_of`; absent when the root names no pack and has none |
+| `x-domains-tiers-read` | the number of packs read, which is the length of `meta.tiers_read`. The root is not a pack, so an answer from the root alone says `0` |
 | `x-domains-sources-used` | the source ids that contributed |
 | `x-domains-sources-failed` | the source ids that failed; absent when none |
-| `x-domains-cache` | `hit` (Cache API), `r2`, `ghcr` or `mixed` |
+| `x-domains-cache` | `hit` (Cache API), `r2`, `ghcr` or `mixed`, from every read of the request, the root's among them. Absent on a stale answer that no read of its request served, such as a root kept in the isolate while GHCR fails |
 | `x-domains-body` | `derived`, or `verbatim` for a dump served as stored |
 | `x-domains-degraded` | `1`, only when an answer used stale data or lacked a source |
 
@@ -754,7 +756,7 @@ Our own routes.
 | `GET /v1/sources`, `/v1/status`, `/v1/coverage` | Source health, freshness, `corpus_since` and the cross-source table |
 | `GET /v1/index/latest` | The root digest and the GHCR references, so a client can read with no Worker |
 | `GET /healthz` | `{ok, version, root_age_s}`. `503` with `ok: false` when the root is older than 6 h. |
-| `GET /`, `/llms.txt`, `/llms-full.txt`, `/openapi.json`, `/SKILL.md` | Generated documents (§7.7) |
+| `GET /`, `/llms.txt`, `/llms-full.txt`, `/openapi.json`, `/SKILL.md` | Generated documents (§7.7). Until DOM-059, `/` is a plain text stub that names no route, and `/llms-full.txt` a stub that holds the marker of each reason an error answer's `see` names (DOM-030) |
 
 ### 7.3 `GET /v1/new`
 
@@ -794,7 +796,7 @@ A page of 1,000 rows with no filter read 1 or 2 blocks of a day pack of 500,000 
 | Signed blob URLs | until the URL's `se` minus 120 s, at most 600 s |
 | Query answers | the minimum of the cache times of their inputs |
 
-The Cache API is per data centre. Single-flight per key inside one isolate. One query fans out over at most 6 concurrent subrequests.
+The Cache API is per data centre. Inside one isolate the Worker keeps the parsed root by its digest. No promise is shared between two requests, so two requests that meet a new root at once each read and parse it, and one request's reads never wait on the I/O of another (DOM-030's Decision). One query fans out over at most 6 concurrent subrequests.
 
 ### 7.6 Limits, and no gating
 

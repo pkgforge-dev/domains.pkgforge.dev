@@ -21,6 +21,7 @@ test('reads the technical documents, the generated root documents and the regist
     DOC,
     'docs/sources.md',
     'docs/clock.md',
+    'docs/worker.md',
     'docs/resources.md',
     'docs/methodology/gate.md',
     'docs/conventions/prose.md',

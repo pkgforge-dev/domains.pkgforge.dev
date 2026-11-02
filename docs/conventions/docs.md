@@ -27,6 +27,7 @@ never meant to apply.
 | `docs/architecture.md` | ⭐ the technical reference: the design in force. When any document conflicts with this one, this one wins and the other is the defect. |
 | `docs/sources.md` | the source catalogue: each feed, what it gives, its definitions and its measured limits |
 | `docs/clock.md` | the clock in force: the 48-hour numbers of the three clocks and the verdict they give |
+| `docs/worker.md` | the Worker for its operator: its paths and answers, GHCR tokens, caching, limits, deploy, rollback, monitoring, trust |
 | `docs/resources.md` | every cloud resource and its undo |
 | `docs/methodology/` | how work is done: sessions, the gate, reviews, entries, research |
 | `docs/conventions/` | how things are written and committed: prose, documents, code, forbidden patterns, git, shell |
@@ -78,7 +79,8 @@ git log, the entries in `TODO/`, `CHANGELOG.md` and the dated reports in
 these technical documents:
 
 - `AGENTS.md`, `README.md`, `HUMAN.md`, `SECURITY.md`;
-- `docs/architecture.md`, `docs/sources.md`, `docs/clock.md`, `docs/resources.md`;
+- `docs/architecture.md`, `docs/sources.md`, `docs/clock.md`, `docs/worker.md`,
+  `docs/resources.md`;
 - every page under `docs/methodology/`, `docs/conventions/` and
   `docs/security/`;
 - every generated root document, `apps/<worker>/public/*.md|txt|json`, when the
