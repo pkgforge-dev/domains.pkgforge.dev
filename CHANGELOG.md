@@ -2,6 +2,10 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-11-02
+
+- An owed segment that a compaction replaced settles as held (DOM-063, closed): run 41367496155, the first of `ingest-live.yml` on 137a220, read 60 roots back to root_seq 14. It settled the 11 owed segments of `oi-nrd-fqdn` of 2026-10-28 as held, and its log holds no `waiting` line.
+
 ## 2026-11-01
 
 - An owed segment that a compaction replaced settles as held (DOM-063, partial): `scripts/state/advance.mjs` reads the chain of `previous` back from the live root for each owed segment that the live root does not name and that a live pack of a higher tier spans, and settles it at the first older root that named it, at most 96 roots and 120 seconds a run, its pauses for GHCR's 429 among them. A segment owed a second time, after a compaction replaced it, still stays owed until it expires. No field of `root.json` or `state.json` changes, so a run queued on an earlier commit still reads every root. A dry run against the live roots read 46 roots and settled the 11 owed segments of `oi-nrd-fqdn` from root_seq 14; the live Prove waits on the first run of `ingest-live.yml` on the pushed commit.

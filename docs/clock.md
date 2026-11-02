@@ -117,7 +117,8 @@ takes DOM-025 up again (its Found on ruling 27).
 
 - The chain at 30 minutes is not measured (the lateness of the chain, above).
 - Each clock was measured once, over one window of 48 hours. GitHub's
-  queueing on another day, or with more of the organisation's jobs running,
-  is not measured.
+  queueing on another day is not measured. One burst of the organisation's
+  jobs is measured, in DOM-034's Found on the burst: how long no ingest leg
+  of the chain started. How often such bursts come is not measured.
 - The colo of clock C's cron invocations is not recorded, so C is one window
   from one colo that is not known.
