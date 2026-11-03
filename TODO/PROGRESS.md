@@ -8,7 +8,7 @@ is the only one.
 
 - **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), follows them, then the ingest skeleton (DOM-024) and the clocks (DOM-001 to DOM-003). The first adapter (DOM-026), the chain's step `due` (DOM-023) and its fix follow them, then the chain at 30 minutes (rulings 26 and 27). The closes of DOM-026 and DOM-024 on their live readings follow them (9b142c6). DOM-063's walk of the chain follows them (137a220), then its close on the live reading (d9c6d56). The Worker of DOM-030, partial, is the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, 18 to 25 on 2026-10-29, and 26 and 27 on 2026-11-01), then works the order unattended.
-- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). It holds `crons = []` from the deploy of 2026-10-30T18:30:46Z, and its last tick was scheduled at 18:34:24Z (DOM-002). Its version 529b760c, deployed 2026-10-30T19:51:58Z, serves `/`, `/gaps`, `/range` and `/decode` without `/kafka` (DOM-005). The bucket holds DOM-008's sample packs under `sample/v1/`. DOM-056 deletes both. The public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily by its cron `13 5 * * *`, which GitHub started hours late, or by the chain's step `due` at about 06:00 UTC on the chain at 30 minutes, DOM-023; on 2026-11-01 the chain at 10 minutes dispatched run 41277834331 at 05:40:23Z) stay (ruling 5). The data packages `root`, `obs`, `state`, `names` and `feed` are public and read with no credential; `ingest-live.yml` run 41257033038 created `obs` and `state`, and `compact-daily.yml` run 41266798719 created `names` and `feed` (`docs/resources.md`). The serving Worker `domains-pkgforge-dev` of `apps/api/` answers on its custom domain `domains.pkgforge.dev`: version `ee2d30ae` of c0c7cd5, deployed 2026-11-02T07:57:49Z (DOM-030). No cache bucket yet.
+- **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). It holds `crons = []` from the deploy of 2026-10-30T18:30:46Z, and its last tick was scheduled at 18:34:24Z (DOM-002). Its version 529b760c, deployed 2026-10-30T19:51:58Z, serves `/`, `/gaps`, `/range` and `/decode` without `/kafka` (DOM-005). The bucket holds DOM-008's sample packs under `sample/v1/`. DOM-056 deletes both. The public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily by its cron `13 5 * * *`, which GitHub started hours late, or by the chain's step `due` at about 06:00 UTC on the chain at 30 minutes, DOM-023; on 2026-11-01 the chain at 10 minutes dispatched run 41277834331 at 05:40:23Z) stay (ruling 5). The data packages `root`, `obs`, `state`, `names` and `feed` are public and read with no credential; `ingest-live.yml` run 41257033038 created `obs` and `state`, and `compact-daily.yml` run 41266798719 created `names` and `feed` (`docs/resources.md`). The serving Worker `domains-pkgforge-dev` of `apps/api/` answers on its custom domain `domains.pkgforge.dev`: version `c8a325ab` of 9f4da66, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1 (DOM-030, done). No cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
 
 ## Baseline
@@ -22,7 +22,7 @@ is the only one.
 | GitHub's schedule on a sibling repository | the `*/15` workflow of mirror-archlinux ran 40 times in its last 300 runs with a median gap of 233 min (MEASURED 2026-10-27T06:33Z by the operator's agent), and 67 runs with a median gap of 229 min, p90 314 and max 443 at 09:14Z; DOM-001 measures this repository |
 | the corpus | OpenINTEL's newly registered topics from 2026-10-22T13:00:50Z: READ 2026-11-01T10:31:45Z, `node scripts/root/show.mjs`, exit 0, `root_seq` 53 with 225 live packs of `domains`, 116 of `names` and 17 of `feed`, the day packs of 2026-10-25 to 2026-10-31 among them. THC's daily dumps give a horizon of 2026-09-01 once DOM-029 backfills them |
 
-**63 items. 34 open, 3 partial, 0 blocked, 26 done.**
+**63 items. 34 open, 2 partial, 0 blocked, 27 done.**
 
 ## What this session did
 
@@ -109,14 +109,14 @@ is the only one.
 - Deployed DOM-030 on 2026-11-02 with the operator's login (ruling 14): version `ee2d30ae` of c0c7cd5 answers on the custom domain `domains.pkgforge.dev` from 07:57:49Z. The Prove's `curl` lines and tests passed against it. The deploy made the name's proxied `AAAA` record and an advanced certificate pack of the zone (`docs/resources.md`).
 - Built D16 of DOM-030 on 2026-11-02, not deployed: wrangler 4.156.1 with its workerd 1.20261101.1, the compatibility date 2026-11-02 and `@cloudflare/workers-types` 5.20261102.1 move as one set. The test `pinned runtime refuses` runs the workerd binary itself.
 - Ran gate part (c) on D16 on 2026-11-03. The door sweep found 3 findings and the claim audit 10, and the guard mutation left 24 of 52 mutants alive. The fix pass changed the Worker for the one finding of the new runtime. workerd 1.20261101.1 gives a Response made with no statusText the statusText "", and a copy of it sent no reason phrase. The pass also made the harness start from any working directory, and the deploy expect the name's one record from the second deploy on. The ledger records the certificate pack. Two config tests hold the runtime set and every wrangler command of a procedure to the pins. DOM-030's line Gate part (c) of 2026-11-03 has each resolution.
+- Closed DOM-030 on 2026-11-03 (done, proven): the second deploy, version `c8a325ab` of 9f4da66 with wrangler 4.156.1, answers on `domains.pkgforge.dev` from 15:22:17Z. Every `curl` line of the Prove and its four test lines passed again, and `/healthz` now reads `HTTP/1.1 200 OK`.
 
 ## What is in progress
 
-Three entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
+Two entries are partial. Each one's Waiting line names the instant its result is due and what closes it:
 
 | entry | waits for |
 | --- | --- |
-| DOM-030 | deployed 2026-11-02T07:57:49Z and its Prove passed; D16's move is built and gated (wrangler 4.156.1, its workerd 1.20261101.1, the date 2026-11-02, the types 5.20261102.1); the second deploy with the new wrangler and the Prove again |
 | DOM-012 | 7 days of the `measure-feeds.yml` chain |
 | DOM-023 | its live Prove, once DOM-029's backfill has put THC's days in the root (DOM-024's guard that moves `ledger-delta` is built); the readings of the chain's step `due` are made, on the chain at 10 minutes (the Correction of 2026-11-01T05:42Z) |
 
@@ -128,7 +128,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
    - DOM-012 closes after its 7 days.
 2. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill (the feed's other adapters, below). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
 3. The feed's other adapters: DOM-029 first, since it can start now and DOM-023's live Prove waits on its backfill. Then DOM-027 and DOM-028, once DOM-012 closes.
-4. The Worker and the first routes: DOM-030 (partial: deployed, its Prove passed, D16's move built; a second deploy and the Prove again close it), DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+4. The first routes on the Worker (DOM-030, done): DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
 5. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
 6. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
 7. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.

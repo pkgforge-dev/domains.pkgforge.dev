@@ -4,6 +4,7 @@ What shipped and when, newest first. Times are UTC.
 
 ## 2026-11-03
 
+- The Worker runs the new runtime set (DOM-030, closed): version `c8a325ab` of 9f4da66, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1. Every `curl` line of the Prove passed against it, and `/healthz` reads `HTTP/1.1 200 OK`.
 - The Worker keeps its reason phrases under the new runtime (DOM-030, partial, gate part (c) of D16). workerd 1.20261101.1 gives a Response made with no statusText the statusText "", and `finish` of `apps/api/src/answer.ts` copied it. So each answer would leave as `HTTP/1.1 200 ` with no phrase. `finish` sets none now. The test harness of `packages/testkit` starts a Worker from any working directory. `docs/resources.md` records the advanced certificate pack that the custom domain made, where it said that the zone's Universal certificate covered the host. Two config tests hold wrangler, miniflare, workerd and the types as one set, and every wrangler command of a procedure to the pin. Section 10 of `docs/format.md` names the harness's constant in place of its dates. Those were 2026-10-13 in workerd 1.20261006.1 before D16, and 2026-11-02 in workerd 1.20261101.1 after it. Not deployed: the second deploy carries it.
 
 ## 2026-11-02

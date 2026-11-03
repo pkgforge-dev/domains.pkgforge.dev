@@ -6,8 +6,7 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
 
 ## DOM-030 — The Worker: custom domain, GHCR reads, root cache and healthz
 
-- **Status:** partial
-- **Waiting:** until 2026-11-03T18:00:00Z; the lead's second deploy with the new wrangler and the Prove again, then close
+- **Status:** done
 - **Priority:** P1
 - **Effort:** M
 - **Source:** mirror-archlinux at commit 669ac725f8081445c164113f2ed092533de112e2: `docs/worker.md`, `worker/wrangler.toml`, `worker/src/index.js` lines 212 to 376 (`send`, `bearerRealm`, `tokenKept`, `tokenNew`, `ghcr`), `worker/test/*.test.js`. The reference reader `docs/research/reference/ghcr.ts`. Architecture sections 4.3, 7.1, 7.5 and 12.
@@ -253,6 +252,24 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs packages/testkit --name "pinned runtime refuses"` exit 0, 1 test. `node scripts/test.mjs scripts --name "config:"` exit 0, 101 tests. `node scripts/test.mjs scripts/measure --name "decode cpu"` exit 0, 70 tests.
   - `node scripts/todo/check.mjs` exit 0 (63 entries), `node scripts/todo/count.mjs --check` exit 0, `node scripts/text-check.mjs` exit 0 (809 files, 22 technical documents) and `node scripts/scan-secrets.mjs --all` exit 0 (878 files).
   - The four record checks run again after this line, and `npm run gate` runs last, on the tree the lead commits.
+- **READ 2026-11-03T15:21:41Z to 15:21:53Z (before the second deploy, each exit read from its own process):**
+  - `node .tmp/dom030-whoami.mjs` (a scratch script, gitignored, which prints no account name or id), exit 0: `npx wrangler@4.156.1 whoami` exits 0, is logged in and lists one account, and that account holds the zone `pkgforge.dev`.
+  - `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`, read through a scratch script that prints the type, name, proxied flag and content only, exit 0: one record, `AAAA`, proxied, content `100::`. It is the record of the first deploy, as step 2 of the Deploy section of `docs/worker.md` expects.
+- **MEASURED 2026-11-03T15:21:58Z to 15:22:17Z (the second deploy):** `cd apps/api && npx wrangler@4.156.1 deploy --var BUILD:9f4da663dc5a` with `WRANGLER_SEND_METRICS=false`, exit 0. It ran from the serve worktree at 9f4da66, which equals `origin/main`, with a clean tree.
+  - It printed `Total Upload: 95.12 KiB / gzip: 27.16 KiB`, `Worker Startup Time: 1 ms` and one binding, `env.BUILD`.
+  - Then `Deployed domains-pkgforge-dev triggers`, `domains.pkgforge.dev (custom domain)` and `Current Version ID: c8a325ab-0650-4109-bdbc-a7ec4be85fb9`. Its banner read `update available 4.157.0`.
+- **READ 2026-11-03T15:22:45Z to 15:22:55Z (the Prove's `curl` lines, 20 s after the deploy):** `bash .tmp/dom030/prove.sh` exit 0, and every `curl` in it exit 0. Each `curl` to the host resolves the name over `--doh-url https://cloudflare-dns.com/dns-query`, as in the READ of 2026-11-02T07:58:41Z.
+  - `/healthz`: `ok: true`, `version: "9f4da663dc5a"`, `root_age_s: 1157`.
+  - `/v1/index/latest`: `HTTP/1.1 200 OK`, `Access-Control-Allow-Origin: *`, `x-domains-root`, `x-domains-body: derived`, `x-domains-cache: hit` and `x-domains-tiers-read: 0`.
+  - GHCR's `root:latest`, read anonymously: `artifactType` `application/vnd.pkgforge.domains.root.v1`. At 15:22:52Z its `docker-content-digest` and the route's `data.root` were both `sha256:1cfd35a7f8c8805c07d3b4106decc74dd94b2d7089e2726a5cd29bb647d68a18`.
+  - `curl --http1.1 -sS -o /dev/null -D - https://domains.pkgforge.dev/healthz` printed `HTTP/1.1 200 OK` as its first line. `POST /healthz` gave `405`, `GET /` gave `200 text/plain; charset=utf-8`, and `GET /nothing` gave `404`.
+- **MEASURED 2026-11-03T15:23:00Z to 15:23:30Z (the Prove's tests, on 9f4da66):** each from its own process, exit 0. `node scripts/test.mjs apps/api --name healthz` passed 10 tests, `--name ghcr` 17, `--name compatibility` 1 and `--name pack` 11.
+- **READ 2026-11-03T15:26:13Z (the workflows of the push):** `worker.yml` run 41663018114 on 9f4da66 concluded `success` at 15:21:46Z. `ci.yml` run 41663018129 on 9f4da66 concluded `success` at 15:26:00Z (`gh run watch --exit-status` exit 0).
+- **MEASURED 2026-11-03T15:13:07Z to 15:19:48Z (the gate of the deployed tree):** `npm run gate` exit 0, 2,058 tests, of which 2,055 pass and 3 are platform skips. It recorded tree a6787316d79e, the tree of 9f4da66, which the second deploy runs.
+- **Closed 2026-11-03T15:26Z (proven):** each clause of the Waiting line, one a bullet, so the close removes the line.
+  - "the lead's second deploy with the new wrangler": version `c8a325ab` of 9f4da66, deployed with wrangler 4.156.1 at 15:22:17Z (the MEASURED line of 15:21:58Z). The checks of the Deploy section ran first (the READ of 15:21:41Z).
+  - "and the Prove again": every `curl` line of the Prove passed against that version, the new `HTTP/1.1 200 OK` line among them (the READ of 15:22:45Z). The Prove's four test lines passed on 9f4da66 (the MEASURED line of 15:23:00Z).
+  - "then close": gate part (a) is the gate of the deployed tree (the MEASURED line of 15:13:07Z). Part (b) is the READ of 15:22:45Z. Part (c) is the lines Gate part (c) of 2026-11-02T04:20Z, the second fix pass of 2026-11-02T07:40Z, and 2026-11-03T15:09Z for D16.
 
 ## DOM-032 — GET /v1/new for registrable domains
 
