@@ -11,11 +11,12 @@
 // Every adapters/*/src is here too: an adapter module reads through ctx alone
 // (docs/architecture.md section 5.6), so it can run in a Worker later.
 // scripts/check-config.test.mjs holds this list to the packages that exist.
-// The types are @cloudflare/workers-types 5.20261013.1, which matches the
-// harness date 2026-10-13 (packages/testkit COMPATIBILITY_DATE, the newest the
-// pinned workerd runs), which probes/worker/wrangler.toml deploys with too: the
+// The types are the @cloudflare/workers-types of package.json, whose version
+// carries the harness date (packages/testkit COMPATIBILITY_DATE), which
+// apps/api/wrangler.toml and probes/worker/wrangler.toml deploy with too: the
 // code is checked against the compatibility date its tests run with and that it
-// deploys with. Cloudflare runs its own workerd build, which nothing here pins.
+// deploys with. scripts/check-config.test.mjs holds the types' date to it.
+// Cloudflare runs its own workerd build, which nothing here pins.
 // ⚠ @cloudflare/workers-types declares `Buffer` and `process` as `any`, so this
 // program does not catch a use of those two globals. Under no_nodejs_compat
 // they are undefined in workerd, so only a harness test (packages/testkit) that

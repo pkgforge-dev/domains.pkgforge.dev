@@ -1,0 +1,501 @@
+{
+  "lens": "the guard mutation (gate part (c) of DOM-030's D16)",
+  "swept": "52 mutants of the move: the dates held by packages/testkit and the two wrangler.toml files, the literals of the move's tests, the installed packages, package.json, the lock, tsconfig.worker.json, and the forward-looking wrangler@ commands and dates in the documents",
+  "copy": ".tmp/dom030/review-d16/mutation/copy (its own node_modules: junctions to the worktree's packages, @domains to the copy's packages, real copies of wrangler, miniflare, workerd and @cloudflare/workers-types)",
+  "canary": [
+    {
+      "step": "baseline",
+      "status": 0,
+      "sawCanary": null,
+      "same": null
+    },
+    {
+      "step": "baseline",
+      "status": 0,
+      "sawCanary": null,
+      "same": null
+    },
+    {
+      "step": "baseline",
+      "status": 0,
+      "sawCanary": null,
+      "same": null
+    },
+    {
+      "step": "baseline",
+      "status": 0,
+      "sawCanary": null,
+      "same": null
+    },
+    {
+      "step": "canary-testkit-from-apps-api",
+      "status": 1,
+      "sawCanary": true,
+      "same": null
+    },
+    {
+      "step": "canary-testkit-from-probe",
+      "status": 1,
+      "sawCanary": true,
+      "same": null
+    },
+    {
+      "step": "real-tree-unchanged",
+      "sawCanary": null,
+      "same": true
+    }
+  ],
+  "lensRuns": "results.jsonl, the last line of each id; the lens ended at a session limit after every run and before its report",
+  "before": {
+    "mutants": 52,
+    "killed": 28,
+    "survived": 24
+  },
+  "survivors": [
+    "B8",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "D2",
+    "D3",
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "E2",
+    "E3",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F9",
+    "F10",
+    "F11",
+    "F12"
+  ],
+  "fixPass": {
+    "synced": "sync-fix.mjs copied into the copy the 17 files that the fix pass had changed at 14:58Z, and no other file differed; at 15:08Z it copied the cwd test of packages/testkit, moved to a directory on the entry's drive, and rerun-cwd.mjs ran it without and with N2",
+    "baseline": [
+      "TK:0 ℹ pass 24",
+      "API:0 ℹ pass 72",
+      "PW:0 ℹ pass 116",
+      "CFG:0 ℹ pass 101",
+      "MEAS:0 ℹ pass 88",
+      "WF:0 ℹ pass 154"
+    ],
+    "reruns": "rerun-fix.mjs, results-fix.jsonl and out-fix/",
+    "weighed": [
+      {
+        "id": "B8",
+        "desc": "pinned runtime refuses: the refused run's config flags emptied (the binary then reads a Worker with the node flags default)",
+        "verdict": "test",
+        "change": "the Worker of the pinned runtime test fails when process or Buffer exists, which the date turns on without the two flags (packages/testkit/test/workerd.test.ts)",
+        "rerun": {
+          "at": "2026-11-03T15:00:19.129Z",
+          "killed": true,
+          "by": "TK exit 1: workerd: the pinned runtime refuses 2026-11-09, names 2026-11-08 as the newest date it supports, and runs the pinned date with the pinned flags and no Node.js API",
+          "error": null,
+          "ran": "TK:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "C3",
+        "desc": "installed wrangler's own dependency miniflare -> 5.20261006.2-beta",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:00:23.286Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "C4",
+        "desc": "installed workerd version -> 1.20261006.1 (miniflare loads another workerd than wrangler depends on)",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date (the installed workerd's own version against wrangler's dependency)",
+        "rerun": {
+          "at": "2026-11-03T15:00:38.206Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "C5",
+        "desc": "installed miniflare version -> 5.20261006.2-beta",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:00:54.251Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "C6",
+        "desc": "installed @cloudflare/workers-types version -> 5.20261013.1",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:01:08.327Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "D2",
+        "desc": "package.json miniflare -> 5.20261006.2-beta",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:01:22.280Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "D3",
+        "desc": "package.json @cloudflare/workers-types -> 5.20261013.1",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date (and the types' date against COMPATIBILITY_DATE)",
+        "rerun": {
+          "at": "2026-11-03T15:01:39.314Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "L1",
+        "desc": "package-lock node_modules/wrangler version -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:02:03.216Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "L2",
+        "desc": "package-lock node_modules/miniflare version -> 5.20261006.2-beta",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:02:20.967Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "L3",
+        "desc": "package-lock node_modules/@cloudflare/workers-types version -> 5.20261013.1",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:02:37.762Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "L4",
+        "desc": "package-lock node_modules/workerd version -> 1.20261006.1",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:02:50.656Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "L5",
+        "desc": "package-lock root devDependencies wrangler -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:03:06.419Z",
+          "killed": true,
+          "by": "CFG exit 1: config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "E2",
+        "desc": "tsconfig.worker.json comment: types 5.20261102.1 -> 5.20261013.1",
+        "verdict": "no target",
+        "change": "the comment of tsconfig.worker.json names the types of package.json and COMPATIBILITY_DATE in place of a copy of their values; the set test holds the types' date",
+        "rerun": {
+          "at": "2026-11-03T15:03:19.707Z",
+          "killed": false,
+          "by": null,
+          "error": "tsconfig.worker.json: the planted text is there 0 times, not 1: workers-types 5.20261102.1, which",
+          "ran": "",
+          "restored": null
+        }
+      },
+      {
+        "id": "E3",
+        "desc": "tsconfig.worker.json comment: harness date 2026-11-02 -> 2026-10-13",
+        "verdict": "no target",
+        "change": "as E2",
+        "rerun": {
+          "at": "2026-11-03T15:03:19.707Z",
+          "killed": false,
+          "by": null,
+          "error": "tsconfig.worker.json: the planted text is there 0 times, not 1: harness date 2026-11-02 (",
+          "ran": "",
+          "restored": null
+        }
+      },
+      {
+        "id": "F1",
+        "desc": "apps/api/wrangler.toml: every wrangler@4.156.1 -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:03:19.707Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F2",
+        "desc": "probes/worker/wrangler.toml: every wrangler@4.156.1 -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:03:36.158Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F3",
+        "desc": ".github/workflows/worker.yml: wrangler@4.156.1 -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:03:53.314Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F4",
+        "desc": "HUMAN.md: every wrangler@4.156.1 -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:04:08.271Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F5",
+        "desc": "docs/worker.md: every 4.156.1 -> 4.150.0",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:04:22.580Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F6",
+        "desc": "docs/resources.md: every wrangler@4.156.1 -> 4.150.0 (the delete columns)",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date (the delete column of docs/resources.md; its created columns keep the version that ran)",
+        "rerun": {
+          "at": "2026-11-03T15:04:39.528Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F9",
+        "desc": "TODO/serve.md DOM-054 tail command wrangler@4.156.1 -> 4.150.0 (an open entry)",
+        "verdict": "accepted",
+        "change": "an entry is the record: its dated lines and the done entries keep the version that ran, so no check can tell an open entry's command from a record without reading each field and status. The session that works DOM-054 reads its Approach against docs/worker.md",
+        "rerun": {
+          "at": "2026-11-03T15:04:53.702Z",
+          "killed": false,
+          "by": null,
+          "error": null,
+          "ran": "CFG:0,TK:0,API:0,PW:0,MEAS:0,WF:0",
+          "restored": true
+        }
+      },
+      {
+        "id": "F10",
+        "desc": "docs/worker.md: the date `2026-11-02` of the compatibility_date row -> 2026-10-13",
+        "verdict": "test",
+        "change": "scripts/check-config.test.mjs: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "rerun": {
+          "at": "2026-11-03T15:06:13.453Z",
+          "killed": true,
+          "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+          "error": null,
+          "ran": "CFG:1",
+          "restored": true
+        }
+      },
+      {
+        "id": "F11",
+        "desc": "docs/format.md: the date 2026-11-02 in the workerd paragraph -> 2026-10-13",
+        "verdict": "no target",
+        "change": "section 10 of docs/format.md names COMPATIBILITY_DATE of packages/testkit in place of the dates; the story of the dates went to CHANGELOG.md",
+        "rerun": {
+          "at": "2026-11-03T15:06:28.142Z",
+          "killed": false,
+          "by": null,
+          "error": "docs/format.md: the planted text is there 0 times, not 1: 2026-11-02 in workerd 1.20261101.1 since.",
+          "ran": "",
+          "restored": null
+        }
+      },
+      {
+        "id": "F12",
+        "desc": "decode-cpu.mjs comment: workers-types 5.20261102.1 -> 5.20261013.1",
+        "verdict": "no target",
+        "change": "the comment of scripts/measure/decode-cpu.mjs names the @cloudflare/workers-types of package.json in place of a copy of its version",
+        "rerun": {
+          "at": "2026-11-03T15:06:28.143Z",
+          "killed": false,
+          "by": null,
+          "error": "scripts/measure/decode-cpu.mjs: the planted text is there 0 times, not 1: @cloudflare/workers-types 5.20261102.1 declares",
+          "ran": "",
+          "restored": null
+        }
+      }
+    ],
+    "own": [
+      {
+        "id": "N1",
+        "desc": "finish() of apps/api/src/answer.ts copies statusText again (door-1)",
+        "at": "2026-11-03T15:06:28.143Z",
+        "killed": true,
+        "by": "API exit 1: workerd: a 404, a 405, an OPTIONS and a HEAD answer in workerd as in Node, each with its standard reason phrase",
+        "error": null,
+        "restored": true
+      },
+      {
+        "id": "N2",
+        "desc": "miniflareOptions of packages/testkit sets no modulesRoot (door-2)",
+        "at": "2026-11-03T15:06:33.457Z",
+        "killed": true,
+        "by": "TK exit 1: workerd: the instance is offline and local by default: loopback, a port the system picks, no cf, no telemetry, no dev registry",
+        "error": null,
+        "restored": true
+      },
+      {
+        "id": "N2cwd",
+        "desc": "N2 (no modulesRoot), the cwd test alone",
+        "at": "2026-11-03T15:08:06.897Z",
+        "killed": true,
+        "by": "TK exit 1: workerd: withWorker starts the Worker from a working directory that does not hold the entry, workerd printed internal error",
+        "error": null,
+        "restored": true
+      },
+      {
+        "id": "N3",
+        "desc": "miniflareOptions sets modulesRoot to the working directory (door-2, a root that does not hold the entry)",
+        "at": "2026-11-03T15:06:39.445Z",
+        "killed": true,
+        "by": "TK exit 1: workerd: the instance is offline and local by default: loopback, a port the system picks, no cf, no telemetry, no dev registry",
+        "error": null,
+        "restored": true
+      },
+      {
+        "id": "N4",
+        "desc": "docs/resources.md: the delete command of the R2 bucket alone names wrangler@4.150.0",
+        "at": "2026-11-03T15:06:45.402Z",
+        "killed": true,
+        "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "error": null,
+        "restored": true
+      },
+      {
+        "id": "N5",
+        "desc": "HUMAN.md: the rollback command alone names wrangler@4.150.0",
+        "at": "2026-11-03T15:07:01.380Z",
+        "killed": true,
+        "by": "CFG exit 1: config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date",
+        "error": null,
+        "restored": true
+      }
+    ],
+    "after": {
+      "applying": 48,
+      "killed": 47,
+      "survived": [
+        "F9"
+      ],
+      "noTarget": [
+        "E2",
+        "E3",
+        "F11",
+        "F12"
+      ],
+      "ownKilled": 6,
+      "ownRun": 6
+    }
+  }
+}

@@ -15,7 +15,7 @@
 // The steps:
 //   0. GET <url>/ must list /kafka, or the script cannot run (exit 2).
 //   1. Start `node node_modules/wrangler/bin/wrangler.js tail domains-probe
-//      --format json` from probes/worker (wrangler 4.150.0 of package.json, the
+//      --format json` from probes/worker (the wrangler pinned in package.json, the
 //      operator's login), and wait until it shows a request of this run
 //      (GET /?tail_ready=<id>), at most 90 s.
 //   2. Sockets: one call with sockets=2 and one with sockets=6 (certstream_domains

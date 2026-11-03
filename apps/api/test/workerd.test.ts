@@ -113,24 +113,31 @@ test("workerd: the Worker answers /healthz and /v1/index/latest from its real en
   });
 });
 
-test("workerd: a 404, a 405, an OPTIONS and a HEAD answer in workerd as in Node", async () => {
+// The status line of each answer carries the standard reason phrase. The client
+// of dispatchFetch reads statusText from the line that workerd sends.
+test("workerd: a 404, a 405, an OPTIONS and a HEAD answer in workerd as in Node, each with its standard reason phrase", async () => {
   const p = plant();
   await withWorker({ scriptPath: ENTRY, outbound: registry(p, []) }, async (w) => {
     const missing = await w.fetch("/nothing");
     assert.equal(missing.status, 404);
+    assert.equal(missing.statusText, "Not Found");
     assert.equal(missing.headers.get("content-type"), "application/problem+json");
     assert.equal(((await missing.json()) as { see: string }).see, "/llms-full.txt#reason-not-found");
     const post = await w.fetch("/healthz", { method: "POST" });
     assert.equal(post.status, 405);
+    assert.equal(post.statusText, "Method Not Allowed");
     assert.equal(post.headers.get("allow"), "GET, HEAD, OPTIONS");
     await post.arrayBuffer();
     const options = await w.fetch("/healthz", { method: "OPTIONS" });
     assert.equal(options.status, 204);
+    assert.equal(options.statusText, "No Content");
     assert.equal(options.headers.get("access-control-allow-origin"), "*");
     const head = await w.fetch("/", { method: "HEAD" });
     assert.equal(head.status, 200);
+    assert.equal(head.statusText, "OK");
     assert.equal(await head.text(), "");
     const health = await w.fetch("/healthz");
+    assert.equal(health.statusText, "OK");
     assert.equal(((await health.json()) as { version: unknown }).version, null, "no BUILD binding");
   });
 });

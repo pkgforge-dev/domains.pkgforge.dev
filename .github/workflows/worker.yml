@@ -10,7 +10,7 @@
 #
 # CI does not deploy, and holds no Cloudflare credential (AGENTS.md absolute
 # 14). The operator's wrangler login deploys, after this passes:
-#   cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
+#   cd apps/api && npx wrangler@4.156.1 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
 name: Worker
 
 on:

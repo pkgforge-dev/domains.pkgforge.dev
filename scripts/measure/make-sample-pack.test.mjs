@@ -137,7 +137,7 @@ test('make sample pack: the fixture names become three packs that decode to the 
   );
   const summary = JSON.parse(r.stdout);
   assert.equal(summary.packs[0].crc_last, manifest.packs[0].crc_through.at(-1));
-  assert.match(r.stderr, /npx wrangler@4\.150\.0 r2 object put domains-probe\/sample\/v1\/per-4096\.pack --file .*\/per-4096\.pack --content-type application\/octet-stream --remote/);
+  assert.match(r.stderr, /npx wrangler@4\.156\.1 r2 object put domains-probe\/sample\/v1\/per-4096\.pack --file .*\/per-4096\.pack --content-type application\/octet-stream --remote/);
   assert.deepEqual(readdirSync(out).sort(), ['manifest.json', 'per-1024.pack', 'per-16384.pack', 'per-4096.pack']);
 });
 
@@ -244,6 +244,6 @@ test('make sample pack: the read-back refuses a pack whose block is not the reco
   assert.throws(() => buildPack(records, 2048), /the route reads 1024, 4096, 16384/);
   assert.equal(
     uploadCommand('.tmp/measure/DOM-008/sample', 4096),
-    `npx wrangler@4.150.0 r2 object put domains-probe/${samplePackKey(4096)} --file .tmp/measure/DOM-008/sample/per-4096.pack --content-type application/octet-stream --remote`,
+    `npx wrangler@4.156.1 r2 object put domains-probe/${samplePackKey(4096)} --file .tmp/measure/DOM-008/sample/per-4096.pack --content-type application/octet-stream --remote`,
   );
 });

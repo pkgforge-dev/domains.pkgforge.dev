@@ -39,11 +39,14 @@ export function preflight(): Response {
 }
 
 // The answer as it leaves the Worker: CORS on every answer, and no body for HEAD.
+// It sets no statusText, so the runtime sends the standard reason phrase. A
+// Response that a route made without one has the statusText "" in workerd
+// 1.20261101.1, and a copy of that "" sends `HTTP/1.1 200 ` with no phrase.
 export function finish(method: string, res: Response): Response {
   const headers = new Headers(res.headers);
   for (const [name, value] of Object.entries(CORS)) headers.set(name, value);
   const body = method === "HEAD" || res.status === 204 ? null : res.body;
-  return new Response(body, { status: res.status, statusText: res.statusText, headers });
+  return new Response(body, { status: res.status, headers });
 }
 
 export function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {

@@ -1,0 +1,15 @@
+npm notice run domains-pkgforge-dev@0.0.0 npx
+npm notice run wrangler deploy --var BUILD:c0c7cd58f19e
+
+ ⛅️ wrangler 4.150.0 (update available 4.156.1)
+───────────────────────────────────────────────
+Total Upload: 95.14 KiB / gzip: 27.16 KiB
+Worker Startup Time: 1 ms
+Your Worker has access to the following bindings:
+Binding                     Resource                  
+env.BUILD ("(hidden)")      Environment Variable      
+
+Uploaded domains-pkgforge-dev (7.02 sec)
+Deployed domains-pkgforge-dev triggers (5.66 sec)
+  domains.pkgforge.dev (custom domain)
+Current Version ID: ee2d30ae-d08c-44af-a004-9a7cab4364fe

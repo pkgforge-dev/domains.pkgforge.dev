@@ -6,26 +6,28 @@
 # Deploy by hand with the operator's wrangler login (TODO/RULES.md section 5,
 # rulings 6 and 14). CI holds no Cloudflare credential and deploys nothing:
 # .github/workflows/worker.yml only runs the tests.
-#   cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
+#   cd apps/api && npx wrangler@4.156.1 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
 # BUILD is /healthz's `version`; a deploy without it answers `"version": null`.
 # Check the configuration with no deploy:
-#   cd apps/api && npx wrangler@4.150.0 deploy --dry-run --outdir ../../.tmp/api-dry
+#   cd apps/api && npx wrangler@4.156.1 deploy --dry-run --outdir ../../.tmp/api-dry
 #
 # No account_id: the operator's wrangler login holds one account, the one that
-# holds the pkgforge.dev zone, and `npx wrangler@4.150.0 whoami` names it
+# holds the pkgforge.dev zone, and `npx wrangler@4.156.1 whoami` names it
 # before every deploy. A login with a second account makes wrangler ask which,
 # so no deploy goes to another account unasked. docs/security/secrets.md allows
 # the account_id a custom domain needs here; this Worker carries none, as the
-# probe does. That wrangler finds the zone of the custom domain with no
-# account_id is not measured: the first deploy measures it (docs/worker.md).
+# probe does. With one account in the login and no account_id, wrangler finds
+# the account and the zone of the custom domain (MEASURED at the first deploy,
+# 2026-11-02T07:57:49Z, TODO/serve.md DOM-030).
 #
-# The date is the harness's (packages/testkit COMPATIBILITY_DATE): the workerd
-# that wrangler 4.150.0 pins runs no later date, so the deploy and the tests run
-# one runtime. The test "compatibility" of apps/api/test/config.test.ts holds
-# the two equal, and the flags equal to the harness's COMPATIBILITY_FLAGS.
+# The date is the harness's (packages/testkit COMPATIBILITY_DATE), so the
+# deploy and the tests run one date. The workerd that wrangler 4.156.1 pins
+# refuses a date after today (UTC) and a date after 2026-11-08. The
+# test "compatibility" of apps/api/test/config.test.ts holds the two equal, and
+# the flags equal to the harness's COMPATIBILITY_FLAGS.
 name = "domains-pkgforge-dev"
 main = "src/index.ts"
-compatibility_date = "2026-10-13"
+compatibility_date = "2026-11-02"
 # From 2026-08-04 the compatibility date turns on the Node.js APIs. This
 # Worker uses only Web APIs (fetch, Cache, Web Crypto, DecompressionStream), so
 # it opts out.
@@ -34,8 +36,9 @@ compatibility_flags = ["no_nodejs_compat", "no_nodejs_compat_v2"]
 workers_dev = false
 preview_urls = false
 
-# The custom domain is one label below the pkgforge.dev zone, so the zone's
-# Universal certificate covers it (docs/architecture.md section 7).
+# The custom domain makes its DNS record and an advanced certificate pack of
+# the pkgforge.dev zone, whose certificate the edge serves for the host
+# (docs/resources.md, Custom domains and certificates).
 routes = [
   { pattern = "domains.pkgforge.dev", custom_domain = true },
 ]

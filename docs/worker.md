@@ -139,7 +139,7 @@ The Worker calls `console.error` on each 5xx answer, on each cache failure and o
 
 | setting | value |
 | --- | --- |
-| `compatibility_date` | `2026-10-13`, the newest date the workerd of wrangler 4.150.0 runs, and the date of the test harness |
+| `compatibility_date` | `2026-11-02`, the date of the test harness, `COMPATIBILITY_DATE` of `packages/testkit/src/workerd.ts`. The workerd of wrangler 4.156.1 refuses a date after today (UTC) and a date after 2026-11-08 |
 | `compatibility_flags` | `no_nodejs_compat`, `no_nodejs_compat_v2`: the Worker uses only Web APIs |
 | `[limits] cpu_ms` | 50 |
 | `workers_dev`, `preview_urls` | `false` |
@@ -171,8 +171,8 @@ The operator's wrangler login deploys the Worker by hand, from the operator's ma
 
 To deploy, from a clean tree at the tip of `origin/main` that the gate passed:
 
-1. Run `npx wrangler@4.150.0 whoami`. It must name the account that holds the `pkgforge.dev` zone. `apps/api/wrangler.toml` names no account, so a login with a second account makes wrangler ask which. Record that `whoami` named that account. Record neither its name, which carries its workers.dev subdomain, nor its id.
-2. ⚠ Before the first deploy, list the zone's DNS records of the name, and expect none. When its output is not a terminal, as in an agent's shell, wrangler 4.150.0 replaces such a record with no question. It also takes the name from another Worker's custom domain. If the list holds a record, stop and ask the operator: ruling 14 reaches no zone setting outside this project's resources.
+1. Run `npx wrangler@4.156.1 whoami`. It must name the account that holds the `pkgforge.dev` zone. `apps/api/wrangler.toml` names no account, so a login with a second account makes wrangler ask which. Record that `whoami` named that account. Record neither its name, which carries its workers.dev subdomain, nor its id.
+2. ⚠ Before each deploy, list the zone's DNS records of the name. Before the first deploy, expect none. From the second deploy on, expect one proxied `AAAA` record, the one that the first deploy made. When its output is not a terminal, as in an agent's shell, wrangler 4.156.1 replaces such a record with no question. It also takes the name from another Worker's custom domain. If the list holds any other record, or none after the first deploy, stop and ask the operator. Ruling 14 reaches no zone setting outside this project's resources.
 
 ```bash
 cf dns records list -z pkgforge.dev --name domains.pkgforge.dev
@@ -181,22 +181,22 @@ cf dns records list -z pkgforge.dev --name domains.pkgforge.dev
 3. Deploy with the commit as the version:
 
 ```bash
-cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
+cd apps/api && npx wrangler@4.156.1 deploy --var BUILD:$(git rev-parse --short=12 HEAD)
 ```
 
 4. Check the deployed Worker with the `curl` lines of the Prove of DOM-030 (`TODO/serve.md`). `/healthz` must name the 12 hex digits of the commit.
 5. Add a row to the Deploys table of `docs/resources.md` with the version id that `wrangler deploy` printed.
 
-The first deploy creates the custom domain `domains.pkgforge.dev` and its DNS record. The hostname is one label below the zone, so the zone's Universal certificate covers it. No reading shows that wrangler finds the zone of the custom domain with no `account_id`, and the first deploy measures it. If wrangler asks for an account, set `CLOUDFLARE_ACCOUNT_ID` in the shell of the deploy and deploy again. Never write the id into a file of the tree.
+The first deploy creates the custom domain `domains.pkgforge.dev`, its proxied `AAAA` record and an advanced certificate pack of the zone for `pkgforge.dev`, `domains.pkgforge.dev` and `*.domains.pkgforge.dev`. The edge serves the certificate of that pack for the host, not the zone's Universal certificate (`docs/resources.md`, Custom domains and certificates). With one account in the login and no `account_id`, wrangler finds the account and the zone of the custom domain (MEASURED 2026-11-02T07:57:49Z, DOM-030). If wrangler asks for an account, set `CLOUDFLARE_ACCOUNT_ID` in the shell of the deploy and deploy again. Never write the id into a file of the tree.
 
 ⚠ A new version can take some seconds to reach every data centre. Run the checks again after 20 s before you roll back.
 
-To roll back to the previous version, run `cd apps/api && npx wrangler@4.150.0 rollback`. wrangler reads the Worker's name from the `wrangler.toml` of the current directory, so the command fails from the repository root. To roll back further, deploy the earlier commit of `apps/api/`. To remove the Worker, follow its rows in `docs/resources.md`.
+To roll back to the previous version, run `cd apps/api && npx wrangler@4.156.1 rollback`. wrangler reads the Worker's name from the `wrangler.toml` of the current directory, so the command fails from the repository root. To roll back further, deploy the earlier commit of `apps/api/`. To remove the Worker, follow its rows in `docs/resources.md`.
 
 Check the configuration with no deploy:
 
 ```bash
-cd apps/api && npx wrangler@4.150.0 deploy --dry-run --outdir ../../.tmp/api-dry
+cd apps/api && npx wrangler@4.156.1 deploy --dry-run --outdir ../../.tmp/api-dry
 ```
 
 ## Tests

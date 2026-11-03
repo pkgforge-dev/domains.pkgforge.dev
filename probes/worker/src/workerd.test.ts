@@ -3,9 +3,10 @@
 // whose custom metadata a listing returns, and /gaps reads them back. The
 // local-integration tier; the deployed probe is the acceptance test (DOM-061).
 //
-// The compatibility date is the harness's (2026-10-13), which wrangler.toml
-// deploys with too: the workerd that wrangler 4.150.0 pins refuses dates after
-// 2026-10-13 (packages/testkit/src/workerd.ts, MEASURED 2026-10-28T10:30Z).
+// The compatibility date is the harness's (2026-11-02), which wrangler.toml
+// deploys with too: the newest date the workerd that wrangler 4.156.1 pins ran
+// on the day of the move (packages/testkit/src/workerd.ts, MEASURED
+// 2026-11-02T08:15:56Z).
 //
 //   node scripts/test.mjs probes/worker --name workerd
 import assert from "node:assert/strict";

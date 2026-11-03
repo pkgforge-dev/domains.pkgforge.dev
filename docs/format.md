@@ -471,9 +471,10 @@ written before it readable.
 
 The reader decompresses with `DecompressionStream("deflate-raw")` and
 `DecompressionStream("gzip")`. It uses no `node:` module, so it runs in Node and
-in workerd. A test runs it in workerd through `packages/testkit`, at the
-compatibility date 2026-10-13 with the flags `no_nodejs_compat` and
-`no_nodejs_compat_v2`.
+in workerd. A test runs it in workerd through `packages/testkit`, at the harness's
+compatibility date (`COMPATIBILITY_DATE` of `packages/testkit/src/workerd.ts`)
+with the flags `no_nodejs_compat` and `no_nodejs_compat_v2`, in the workerd that
+the pinned wrangler depends on.
 
 DOM-008 found the line for the compatibility date (`TODO/storage.md`, the Found
 lines of 2026-10-28T15:54Z). In workerd 1.20261006.1, a `deflate-raw` round
@@ -482,7 +483,7 @@ the ten compatibility dates tried: 2021-01-01, 2021-11-03, 2022-01-01,
 2022-06-01, 2023-01-01, 2023-06-01, 2023-08-01, 2024-01-01, 2025-01-01 and
 2026-10-13, under the two flags `no_nodejs_compat` and `no_nodejs_compat_v2`.
 Only `deflate-raw` was tried at those dates: `gzip`, which the reader also
-decodes, was tried at 2026-10-13 alone, by the test above. Cloudflare's own
+decodes, was tried at the harness's dates alone, by the test above. Cloudflare's own
 runtime was not tried at an older date.
 
 ## 11. Versioning

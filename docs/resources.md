@@ -24,23 +24,24 @@ configuration may carry the `account_id` a custom domain needs
 
 | Worker | hostname | created | owner | delete |
 | --- | --- | --- | --- | --- |
-| `domains-probe` (`probes/worker/`) | its workers.dev URL, which `wrangler deploy` prints; `preview_urls = false`, no route. No cron: `crons = []` from the deploy of 2026-10-30T18:30:46Z (DOM-002). The crons `* * * * *` and `*/5 * * * *` ran from 2026-10-28T15:23:24Z, and the last tick was scheduled at 2026-10-30T18:34:24Z. Routes `/`, `/gaps`, `/range` and `/decode`; DOM-005 took out `/kafka` (2026-10-30T19:51:58Z). R2 binding `PROBE` to the bucket `domains-probe`. | 2026-10-28T15:13:54Z, deployed by the agent under ruling 14 with `npx wrangler@4.150.0 deploy` (DOM-061) | DOM-061; DOM-056 deletes it | `npx wrangler@4.150.0 delete --name domains-probe` |
-| `domains-pkgforge-dev` (`apps/api/`) | the custom domain `domains.pkgforge.dev` (row below); `workers_dev = false`, `preview_urls = false`, no cron, no resource binding, no secret. Its one binding is the variable `BUILD`, the commit, which each deploy sets with `--var BUILD:<12 hex>` (`docs/worker.md`) | 2026-11-02T07:57:49Z, deployed by the agent under ruling 14 with `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)` (DOM-030) | DOM-030 | remove the custom domain first (its row below), then `cd apps/api && npx wrangler@4.150.0 delete` |
+| `domains-probe` (`probes/worker/`) | its workers.dev URL, which `wrangler deploy` prints; `preview_urls = false`, no route. No cron: `crons = []` from the deploy of 2026-10-30T18:30:46Z (DOM-002). The crons `* * * * *` and `*/5 * * * *` ran from 2026-10-28T15:23:24Z, and the last tick was scheduled at 2026-10-30T18:34:24Z. Routes `/`, `/gaps`, `/range` and `/decode`; DOM-005 took out `/kafka` (2026-10-30T19:51:58Z). R2 binding `PROBE` to the bucket `domains-probe`. | 2026-10-28T15:13:54Z, deployed by the agent under ruling 14 with `npx wrangler@4.150.0 deploy` (DOM-061) | DOM-061; DOM-056 deletes it | `npx wrangler@4.156.1 delete --name domains-probe` |
+| `domains-pkgforge-dev` (`apps/api/`) | the custom domain `domains.pkgforge.dev` (row below); `workers_dev = false`, `preview_urls = false`, no cron, no resource binding, no secret. Its one binding is the variable `BUILD`, the commit, which each deploy sets with `--var BUILD:<12 hex>` (`docs/worker.md`) | 2026-11-02T07:57:49Z, deployed by the agent under ruling 14 with `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)` (DOM-030) | DOM-030 | remove the custom domain first (its row below), then `cd apps/api && npx wrangler@4.156.1 delete` |
 
 A Worker row names its hostname, its cron triggers and every binding it holds
-(R2, service, rate limit). The delete column is `npx wrangler delete --name <worker>`. It removes the Worker and its cron triggers. That it also removes the Worker's custom domain and its DNS record is assumed, not measured: the delete of wrangler 4.150.0 sends one DELETE of the Worker's service and makes no call on its domains. So a row removes the custom domain first.
+(R2, service, rate limit). The delete column is `npx wrangler delete --name <worker>`. It removes the Worker and its cron triggers. That it also removes the Worker's custom domain and its DNS record is assumed, not measured. The delete of wrangler 4.156.1 sends one DELETE of the Worker's service and makes no call on its domains. So a row removes the custom domain first.
 
 Two Workers are temporary measurement Workers: the probe `domains-probe` (DOM-061) and the drill `domains-drill` (DOM-053). Each runs on workers.dev for its life, with `preview_urls = false`, binds only a temporary bucket and holds no data of value (`SECURITY.md`). Every Worker that serves callers has `workers_dev = false`. The row of a temporary Worker names the entry that deletes it, and moves to Retired with the date when it is deleted: the probe when DOM-002, DOM-005, DOM-007 and DOM-008 have closed (DOM-056 deletes it), the drill when its entry ends.
 
 ## Custom domains and certificates
 
-A `[[routes]]` entry with `custom_domain = true` creates two things: a DNS
-record and a certificate. A four-label hostname can trigger an advanced
-certificate pack. Record the pack here when one is issued.
+A `[[routes]]` entry with `custom_domain = true` creates a DNS record and an
+advanced certificate pack of the zone. The pack covers the zone's apex, the
+hostname and a wildcard below the hostname. Record the pack here, and the
+expiry of its certificates under Expiries.
 
 | hostname | Worker | certificate pack | created | delete |
 | --- | --- | --- | --- | --- |
-| `domains.pkgforge.dev` | `domains-pkgforge-dev`, by `routes = [ { pattern = "domains.pkgforge.dev", custom_domain = true } ]` in `apps/api/wrangler.toml` | none: the name is one label below the `pkgforge.dev` zone, so the zone's Universal certificate covers it | 2026-11-02T07:57:49Z, by the first deploy of the Worker (DOM-030), with its proxied `AAAA` record | in the dashboard: Workers and Pages, `domains-pkgforge-dev`, Settings, Domains and Routes, remove `domains.pkgforge.dev`. That this removes its DNS record is assumed, not measured, and the removal reads it back with `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`. That `npx wrangler@4.150.0 delete` of the Worker removes the custom domain too is assumed, not measured (the paragraph under the Workers table) |
+| `domains.pkgforge.dev` | `domains-pkgforge-dev`, by `routes = [ { pattern = "domains.pkgforge.dev", custom_domain = true } ]` in `apps/api/wrangler.toml` | an advanced certificate pack of the `pkgforge.dev` zone for `pkgforge.dev`, `domains.pkgforge.dev` and `*.domains.pkgforge.dev`: `active`, Google Trust Services, 90 days, validation `txt`, created 2026-11-02T07:57:48Z. The edge serves its certificate for the host, not the zone's Universal certificate. READ 2026-11-03T14:52Z with `openssl s_client -connect domains.pkgforge.dev:443 -servername domains.pkgforge.dev` and `cf ssl certificate-packs list -z pkgforge.dev` (DOM-030) | 2026-11-02T07:57:49Z, by the first deploy of the Worker (DOM-030), with its proxied `AAAA` record | in the dashboard: Workers and Pages, `domains-pkgforge-dev`, Settings, Domains and Routes, remove `domains.pkgforge.dev`. That this removes its DNS record is assumed, not measured, and the removal reads it back with `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`. That it removes the certificate pack is assumed, not measured, and the removal reads it back with `cf ssl certificate-packs list -z pkgforge.dev`. That `npx wrangler@4.156.1 delete` of the Worker removes the custom domain too is assumed, not measured (the paragraph under the Workers table) |
 
 ## R2
 
@@ -53,7 +54,7 @@ with their Workers.
 
 | bucket | bound by | created | rules | delete |
 | --- | --- | --- | --- | --- |
-| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay. DOM-008's sample packs `sample/v1/per-1024.pack`, `per-4096.pack` and `per-16384.pack` (put 2026-10-28T23:41:46Z to 23:42:05Z with `r2 object put --remote`) have no rule and go with the bucket | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.150.0 r2 object delete domains-probe/<key>`), then `npx wrangler@4.150.0 r2 bucket delete domains-probe` |
+| `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay. DOM-008's sample packs `sample/v1/per-1024.pack`, `per-4096.pack` and `per-16384.pack` (put 2026-10-28T23:41:46Z to 23:42:05Z with `r2 object put --remote`) have no rule and go with the bucket | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.156.1 r2 object delete domains-probe/<key>`), then `npx wrangler@4.156.1 r2 bucket delete domains-probe` |
 
 ## GHCR packages
 
@@ -155,6 +156,7 @@ Anything that stops working on a date: tokens, certificates, plans.
 
 | what | expires | owner | renew |
 | --- | --- | --- | --- |
+| the two certificates of the pack of `domains.pkgforge.dev` (Custom domains and certificates) | 2027-01-31T07:57:49Z and 2027-01-31T08:00:04Z, READ 2026-11-03T14:52Z | DOM-030 | Cloudflare renews a pack that it made for a custom domain: assumed, not measured. Before 2027-01-24, read the certificate's dates again with `openssl s_client -connect domains.pkgforge.dev:443 -servername domains.pkgforge.dev`, then `openssl x509 -noout -dates` on its output |
 
 ## Retired
 

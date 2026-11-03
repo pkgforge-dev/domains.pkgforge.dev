@@ -6,20 +6,22 @@
 # DOM-008 have closed. No route and no custom domain.
 #
 # No account_id: the operator's wrangler login holds one account, and
-# `npx wrangler@4.150.0 whoami` names it before every deploy.
+# `npx wrangler@4.156.1 whoami` names it before every deploy.
 #
 # Deploy (the operator's login, never CI):
-#   cd probes/worker && npx wrangler@4.150.0 deploy
+#   cd probes/worker && npx wrangler@4.156.1 deploy
 #
 # Each cron below has a row in the CRONS table of src/gaps.ts, and the scheduled
 # handler refuses a cron that has none; src/index.test.ts holds the two equal.
 # DOM-002 set `crons = []` after its 48 hours; the Worker stays for DOM-005,
 # DOM-007 and DOM-008.
 #
-# The date is the harness's (packages/testkit COMPATIBILITY_DATE): the workerd
-# that wrangler 4.150.0 pins runs no later date, so the deploy and the tests run
-# one runtime (DOM-061, correction of 2026-10-28). src/index.test.ts holds the two
-# equal.
+# The date is the harness's (packages/testkit COMPATIBILITY_DATE): the newest
+# date that the workerd wrangler 4.156.1 pins ran on the day of the move (DOM-030,
+# D16), so the next deploy and the tests run one date (DOM-061, correction of
+# 2026-10-28). The deployed version 529b760c keeps 2026-10-13, the date it was
+# deployed with, until the probe is deployed again. src/index.test.ts holds the
+# two equal.
 #
 # The flags are the serving Worker's (TODO/serve.md DOM-030) and the test
 # harness's (packages/testkit COMPATIBILITY_FLAGS): the probe uses only Web APIs,
@@ -27,7 +29,7 @@
 # them equal to the harness's.
 name = "domains-probe"
 main = "src/index.ts"
-compatibility_date = "2026-10-13"
+compatibility_date = "2026-11-02"
 compatibility_flags = ["no_nodejs_compat", "no_nodejs_compat_v2"]
 workers_dev = true
 preview_urls = false

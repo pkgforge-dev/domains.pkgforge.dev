@@ -82,3 +82,82 @@ test('config: the Worker program checks every Worker source against the runtime 
     assert.ok(nodeOnly.includes(`packages/${name}/src`) || worker.include.includes('packages/*/src'), name);
   }
 });
+
+// wrangler, the miniflare of the harness, the workerd that both load and the
+// Workers types move as one set (TODO/serve.md, DOM-030's D16). package.json,
+// the lock and node_modules name one version of each. miniflare and workerd are
+// the ones wrangler depends on, and the types carry the harness's date in their
+// version (5.YYYYMMDD.N). So a move of one of them alone fails here.
+test('config: wrangler, miniflare, workerd and the Workers types are one set in package.json, the lock and node_modules, and the types are of the harness date', async () => {
+  const { COMPATIBILITY_DATE } = await import('../packages/testkit/src/workerd.ts');
+  const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'));
+  const installed = (name) => JSON.parse(readFileSync(join(ROOT, 'node_modules', name, 'package.json'), 'utf8'));
+  const dev = pkg.devDependencies;
+  for (const name of ['wrangler', 'miniflare', '@cloudflare/workers-types']) {
+    assert.equal(lock.packages[''].devDependencies[name], dev[name], `the lock's root names ${name} ${dev[name]}`);
+    assert.equal(lock.packages[`node_modules/${name}`].version, dev[name], `the lock installs ${name} ${dev[name]}`);
+    assert.equal(installed(name).version, dev[name], `node_modules holds ${name} ${dev[name]}`);
+  }
+  const wrangler = installed('wrangler');
+  const locked = lock.packages['node_modules/wrangler'].dependencies;
+  assert.equal(wrangler.dependencies.miniflare, dev.miniflare, 'the harness runs the miniflare that wrangler depends on');
+  assert.equal(locked.miniflare, dev.miniflare, "the lock's wrangler depends on the harness's miniflare");
+  const workerd = wrangler.dependencies.workerd;
+  assert.equal(locked.workerd, workerd, "the lock's wrangler depends on the installed wrangler's workerd");
+  assert.equal(lock.packages['node_modules/workerd'].version, workerd, `the lock installs workerd ${workerd}`);
+  assert.equal(installed('workerd').version, workerd, `node_modules holds workerd ${workerd}`);
+  assert.equal(installed('miniflare').dependencies.workerd, workerd, 'miniflare loads the workerd that wrangler depends on');
+  const date = /^\d+\.(\d{4})(\d{2})(\d{2})\.\d+$/.exec(dev['@cloudflare/workers-types']);
+  assert.ok(date, `@cloudflare/workers-types ${dev['@cloudflare/workers-types']} carries no date`);
+  assert.equal(`${date[1]}-${date[2]}-${date[3]}`, COMPATIBILITY_DATE, 'the types are of COMPATIBILITY_DATE of packages/testkit');
+});
+
+// Every wrangler command that a procedure of the tree tells a reader to run
+// names the pinned wrangler: the comments of each wrangler.toml, the workflows,
+// HUMAN.md, docs/worker.md and the delete column of docs/resources.md. A record
+// keeps the version that ran, so the entries, CHANGELOG.md, docs/research/ and
+// the created columns of the ledger are not read. docs/worker.md names the
+// harness's date in its row of compatibility_date.
+test('config: every wrangler command of a procedure names the pinned wrangler, and docs/worker.md names the harness date', async () => {
+  const { COMPATIBILITY_DATE } = await import('../packages/testkit/src/workerd.ts');
+  const pin = pkg.devDependencies.wrangler;
+  const tomls = ['apps', 'probes'].flatMap((d) => readdirSync(join(ROOT, d)).map((n) => `${d}/${n}/wrangler.toml`)).filter((p) => existsSync(join(ROOT, p)));
+  const workflows = readdirSync(join(ROOT, '.github', 'workflows'))
+    .filter((n) => /\.ya?ml$/.test(n))
+    .map((n) => `.github/workflows/${n}`);
+  const commands = [];
+  for (const file of [...tomls, ...workflows, 'HUMAN.md', 'docs/worker.md']) {
+    for (const m of readFileSync(join(ROOT, file), 'utf8').matchAll(/wrangler@([^\s`'"]+)/g)) commands.push({ file, version: m[1] });
+  }
+  // The last cell of each row of a table whose header ends with `delete`.
+  const rows = readFileSync(join(ROOT, 'docs', 'resources.md'), 'utf8').split('\n');
+  let header = null;
+  for (const [i, line] of rows.entries()) {
+    if (!line.startsWith('|')) {
+      header = null;
+      continue;
+    }
+    const cells = line.slice(1, -1).split('|');
+    if (header === null) {
+      header = cells.map((c) => c.trim());
+      continue;
+    }
+    if (header.at(-1) !== 'delete' || /^\s*-+\s*$/.test(cells[0])) continue;
+    assert.equal(cells.length, header.length, `docs/resources.md line ${i + 1}: ${cells.length} cells, not ${header.length}`);
+    for (const m of cells.at(-1).matchAll(/wrangler@([^\s`'"]+)/g)) commands.push({ file: `docs/resources.md:${i + 1}`, version: m[1] });
+  }
+  for (const file of ['apps/api/wrangler.toml', 'probes/worker/wrangler.toml', '.github/workflows/worker.yml', 'HUMAN.md', 'docs/worker.md']) {
+    assert.ok(
+      commands.some((c) => c.file === file),
+      `${file} names no wrangler@ command`,
+    );
+  }
+  assert.ok(commands.some((c) => c.file.startsWith('docs/resources.md:')));
+  assert.deepEqual(
+    commands.filter((c) => c.version !== pin),
+    [],
+    `each names wrangler@${pin}`,
+  );
+  const row = /^\| `compatibility_date` \| `(\d{4}-\d{2}-\d{2})`/m.exec(readFileSync(join(ROOT, 'docs', 'worker.md'), 'utf8'));
+  assert.equal(row?.[1], COMPATIBILITY_DATE, 'docs/worker.md names COMPATIBILITY_DATE in its row of compatibility_date');
+});

@@ -6,13 +6,13 @@
 //   });
 //
 // withWorker bundles `scriptPath` with esbuild, with the format, target,
-// supported and conditions of wrangler 4.150.0's bundleWorker (ESM, target
+// supported and conditions of wrangler 4.156.1's bundleWorker (ESM, target
 // es2024, conditions workerd, worker and browser), so a `node:` import fails here
 // as it fails a deploy. Wrangler's loader, define and external options are not
 // copied: a read of `globalThis.process.env.NODE_ENV` stays a read at run time. It starts one
 // Miniflare instance, which runs a workerd child process, with the compatibility
-// date and flags below (mirror-archlinux worker/wrangler.toml at 669ac72), runs
-// `fn`, and disposes the instance in `finally`, whether `fn` passed or threw.
+// date below and the flags of mirror-archlinux worker/wrangler.toml at 669ac72,
+// runs `fn`, and disposes the instance in `finally`, whether `fn` passed or threw.
 //
 // ⛔ It never looks for a workerd process by name and never ends one: dispose()
 // ends the one child its instance started, and scripts/test.mjs ends a timed-out
@@ -20,21 +20,24 @@
 //
 // Offline by construction: the instance listens on 127.0.0.1 on a port the
 // system picks, fetches no `cf` object, sends no telemetry and registers in no
-// dev registry. A fetch the Worker makes goes to `outbound`; with none given,
+// dev registry (Miniflare's v4 options turn the registry on only when they name
+// its path, and these name none). A fetch the Worker makes goes to `outbound`; with none given,
 // it is refused: Miniflare turns the thrown error into a 500 whose body names
 // the URL, and `outbound` on the running Worker lists it. A test never reaches
 // the network by accident.
 //
 // The runtime refuses a compatibility date newer than its binary supports, and
-// Miniflare 5 refuses a date after today; neither falls back to another date.
-// MEASURED 2026-10-28T10:30Z: workerd 1.20261006.1 (the one wrangler 4.150.0
-// pins) runs 2026-10-13 and refuses 2026-10-27, "the newest date supported by
-// this server binary is 2026-10-13".
+// a date after today (UTC), as Miniflare 5 does; none of them falls back to
+// another date. MEASURED 2026-11-02T08:15:56Z with `workerd test`: workerd
+// 1.20261101.1 (the one wrangler 4.156.1 pins) runs 2026-11-02, refuses
+// 2026-11-08 as "in the future", and names 2026-11-08 as "the newest date
+// supported by this server binary". So the newest date it ran on the day of the
+// move is that day, 2026-11-02 (DOM-030, D16).
 
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { Miniflare } from "miniflare";
 
-export const COMPATIBILITY_DATE = "2026-10-13";
+export const COMPATIBILITY_DATE = "2026-11-02";
 export const COMPATIBILITY_FLAGS: readonly string[] = Object.freeze(["no_nodejs_compat", "no_nodejs_compat_v2"]);
 // The origin a path given to fetch() is resolved against. workerd routes every
 // request to the one Worker, whatever its host.
@@ -68,7 +71,7 @@ export interface RunningWorker {
 }
 
 // The esbuild options of every bundle: the format, target, supported and
-// conditions of wrangler 4.150.0's bundleWorker, and esbuild's default platform.
+// conditions of wrangler 4.156.1's bundleWorker, and esbuild's default platform.
 export const BUNDLE_OPTIONS = Object.freeze({
   bundle: true,
   write: false,
@@ -101,6 +104,10 @@ const refuseOutbound: Outbound = (request) => {
 
 // The options of the Miniflare instance, before convertV4MiniflareOptions: the
 // offline settings above, and the test's date, flags, bindings and buckets.
+// Miniflare names the module by its path relative to modulesRoot, which is
+// process.cwd() unless given. From a directory that does not hold the entry,
+// that name climbs out of the root, and workerd refuses the start with
+// "internal error". So modulesRoot is the entry's own directory.
 export function miniflareOptions(options: WorkerOptions, script: string, seen: string[]) {
   const outbound = options.outbound ?? refuseOutbound;
   return {
@@ -112,6 +119,7 @@ export function miniflareOptions(options: WorkerOptions, script: string, seen: s
     modules: true,
     script,
     scriptPath: resolve(options.scriptPath),
+    modulesRoot: dirname(resolve(options.scriptPath)),
     compatibilityDate: options.compatibilityDate ?? COMPATIBILITY_DATE,
     compatibilityFlags: [...(options.compatibilityFlags ?? COMPATIBILITY_FLAGS)],
     bindings: options.bindings ?? {},

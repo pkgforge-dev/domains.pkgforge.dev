@@ -1,0 +1,5 @@
+{"id":"M1 the pinned date one day in the future","status":1,"killed":true,"restored":true,"tail":"  }"}
+{"id":"M2 the refused date at the binary's bound, refused only as a future date","status":1,"killed":true,"restored":true,"tail":"  }"}
+{"id":"M3 the config at the refused date for both runs","status":1,"killed":true,"restored":true,"tail":"  }"}
+{"id":"M4 apps/api deploys a date the harness does not run","status":1,"killed":true,"restored":true,"tail":"  }"}
+{"id":"M5 the probe deploys a date the harness does not run","status":1,"killed":true,"restored":true,"tail":"  }"}

@@ -3,14 +3,14 @@
 // read from the platform's own trace of each invocation.
 //
 // The source of the CPU numbers is the tail: the script starts
-// `wrangler tail domains-probe --format json` with the wrangler 4.150.0 of
+// `wrangler tail domains-probe --format json` with the wrangler 4.156.1 of
 // node_modules, run by node from probes/worker under the operator's own local
 // login, and reads `cpuTime` of each trace event it prints: the invocation's CPU
 // time as the platform counts it, read as milliseconds. `wallTime` of the same
 // event is its wall time, and the client's own timing is wall time seen from
 // this machine. Neither wall figure is ever read as CPU: a run whose events
-// carry no cpuTime is refused. @cloudflare/workers-types 5.20261013.1 declares
-// cpuTime and wallTime on a Tail Worker's TraceItem; that wrangler tail's JSON
+// carry no cpuTime is refused. The @cloudflare/workers-types of package.json
+// declares cpuTime and wallTime on a Tail Worker's TraceItem; that wrangler tail's JSON
 // carries them too, and in milliseconds, is first seen on a live run, so the
 // result keeps each event's raw value. Workers Logs shows each invocation's CPU
 // time as $workers.cpuTimeMs in the dashboard; this script does not read it
@@ -70,7 +70,7 @@ import { redactHost } from './range-load.mjs';
 
 export const RUN_FORMAT = 'domains.measure.decode-cpu-run.v1';
 export const RESULT_FORMAT = 'domains.measure.decode-cpu.v1';
-export const WRANGLER_VERSION = '4.150.0';
+export const WRANGLER_VERSION = '4.156.1';
 export const COVERAGE = 0.9;
 export const QUANTILE = 'the value at index floor(n * q) of the ascending list, as probes/worker/src/gaps.ts quantile()';
 const USAGE = 'usage: node scripts/measure/decode-cpu.mjs (--url <probe>/decode --requests N [--concurrency C] [--interval-ms MS] | --input <run.json>) [--manifest FILE] [--out FILE]';
@@ -165,7 +165,7 @@ export function keptText(text) {
 
 // The tail's stderr as a message prints it; it is never written. wrangler names
 // each account of a login that holds more than one, one `name`: `id` line each,
-// when it cannot ask which (wrangler 4.150.0, getOrSelectAccountId). Those lines
+// when it cannot ask which (wrangler 4.156.1, getOrSelectAccountId). Those lines
 // are left out, a 32-hex-digit id reads ACCOUNT_ID, and a host is keptText's.
 export function tailText(text) {
   return keptText(text)

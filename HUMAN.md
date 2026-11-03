@@ -91,16 +91,18 @@ rule stays yours (ruling 15, DOM-062). CI never deploys. You deploy from your ma
 document, docs/worker.md in that repository). From a
 clean tree at the tip of `origin/main` that the gate passed:
 
-1. `npx wrangler@4.150.0 whoami` names the account that holds the
+1. `npx wrangler@4.156.1 whoami` names the account that holds the
    `pkgforge.dev` zone. No rate-limit rule of the zone may cover
    `domains.pkgforge.dev`, because no consumer is gated (`TODO/RULES.md` §5,
    ruling 12). The one rule that covered the host now leaves it out (DOM-062,
    and the Zone rules table of `docs/resources.md`).
-2. Before the first deploy, `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`
-   lists no record. If it lists one, the agent stops and asks you: when its
-   output is not a terminal, wrangler replaces such a record with no question
-   (`docs/worker.md`, Deploy).
-3. `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`.
+2. Before each deploy, `cf dns records list -z pkgforge.dev --name domains.pkgforge.dev`
+   lists the records of the name. Before the first deploy it lists none. From
+   the second deploy on it lists one proxied `AAAA` record, the one that the
+   first deploy made. If it lists any other record, or none after the first
+   deploy, the agent stops and asks you: when its output is not a terminal,
+   wrangler replaces such a record with no question (`docs/worker.md`, Deploy).
+3. `cd apps/api && npx wrangler@4.156.1 deploy --var BUILD:$(git rev-parse --short=12 HEAD)`.
    Its `wrangler.toml` binds the custom domain `domains.pkgforge.dev`, and
    `BUILD` is the version that `/healthz` names.
 4. `curl -sS https://domains.pkgforge.dev/healthz` answers `"ok":true` and the
@@ -109,7 +111,7 @@ clean tree at the tip of `origin/main` that the gate passed:
    to the Deploys table in `docs/resources.md`.
 
 The Worker is `apps/api/`. `docs/worker.md` gives its deploy, its rollback
-(`cd apps/api && npx wrangler@4.150.0 rollback`) and its checks.
+(`cd apps/api && npx wrangler@4.156.1 rollback`) and its checks.
 
 ## 5. Receiving a handoff
 

@@ -1,10 +1,10 @@
 // scripts/measure/decode-cpu.test.mjs — DOM-008's reading of the probe's CPU
 // time, offline. Every input is synthetic: scripts/measure/fixtures/decode/
 // tail.synthetic.txt was written by hand in the shape `wrangler tail --format
-// json` prints (JSON.stringify(event, null, 4), wrangler 4.150.0's jsonPrintLogs)
-// with the trace fields of @cloudflare/workers-types 5.20261013.1 (cpuTime,
-// wallTime, outcome, event.request.url, event.response.status); its numbers are
-// invented and no tail printed it. The runs below are generated here, and the
+// json` prints (JSON.stringify(event, null, 4), wrangler 4.150.0's jsonPrintLogs,
+// as 4.156.1's) with the trace fields of @cloudflare/workers-types 5.20261013.1,
+// which 5.20261102.1 keeps (cpuTime, wallTime, outcome, event.request.url,
+// event.response.status); its numbers are invented and no tail printed it. The runs below are generated here, and the
 // live path runs against a local HTTP server standing in for the probe, with a
 // tail fed in process. Each refusal plants the one fault its guard catches.
 //
@@ -469,7 +469,7 @@ test('decode cpu: keptText and tailText leave out the account subdomain, and tai
   assert.equal(keptText(`a ${host} b ${host.toUpperCase()}:8443 c ${host}.`), 'a domains-probe.ACCOUNT.workers.dev b domains-probe.ACCOUNT.workers.dev:8443 c domains-probe.ACCOUNT.workers.dev.');
   assert.equal(keptText('domains.pkgforge.dev and 127.0.0.1:8787'), 'domains.pkgforge.dev and 127.0.0.1:8787');
   const id = '0123456789abcdef0123456789abcdef';
-  // The shape of wrangler 4.150.0's message for a login that holds more than one account.
+  // The shape of wrangler 4.156.1's message for a login that holds more than one account.
   const stderr = [
     'More than one account available but unable to select one in non-interactive mode.',
     'Available accounts are (`<name>`: `<account_id>`):',
@@ -641,7 +641,7 @@ test('decode cpu: a live run whose tail never shows the marker, or traces no cpu
   assert.equal(JSON.parse(readFileSync(runPathFor(out), 'utf8')).requests.length, 2 * PLAN.length, 'the run is kept');
 });
 
-test('decode cpu: the default tail is the wrangler 4.150.0 of node_modules, run by node from probes/worker', () => {
+test('decode cpu: the default tail is the wrangler 4.156.1 of node_modules, run by node from probes/worker', () => {
   const { command, args, cwd } = wranglerTailCommand();
   assert.equal(command, process.execPath);
   assert.equal(args[0], join(ROOT, 'node_modules', 'wrangler', 'bin', 'wrangler.js'));
@@ -651,7 +651,7 @@ test('decode cpu: the default tail is the wrangler 4.150.0 of node_modules, run 
   const fake = join(dir, 'root');
   mkdirSync(join(fake, 'node_modules', 'wrangler'), { recursive: true });
   writeFileSync(join(fake, 'node_modules', 'wrangler', 'package.json'), JSON.stringify({ version: '4.149.0', bin: { wrangler: './bin/wrangler.js' } }));
-  assert.throws(() => wranglerTailCommand(fake), /node_modules holds wrangler 4\.149\.0, not 4\.150\.0/);
+  assert.throws(() => wranglerTailCommand(fake), /node_modules holds wrangler 4\.149\.0, not 4\.156\.1/);
 });
 
 test('decode cpu: spawnTail reads the events a child prints, and stop() ends the child by its PID', async () => {

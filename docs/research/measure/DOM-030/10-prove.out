@@ -1,0 +1,36 @@
+start 2026-11-02T07:58:41Z
+1 curl healthz exit 0
+{
+  "ok": true,
+  "version": "c0c7cd58f19e",
+  "root_age_s": 1593
+}
+1 jq exit 0
+2 curl index exit 0
+Access-Control-Allow-Origin: *
+x-domains-root: sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae
+2 grep exit 0
+2 all x-domains headers:
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Cache-Control: public, max-age=30
+x-domains-as-of: 2026-11-02T07:30:00Z
+x-domains-body: derived
+x-domains-cache: ghcr
+x-domains-root: sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae
+x-domains-sources-used: 
+x-domains-tiers-read: 0
+3 curl ghcr manifest exit 0
+"application/vnd.pkgforge.domains.root.v1"
+3 jq exit 0
+4 at 2026-11-02T07:58:48Z ghcr exit 0 worker exit 0
+docker-content-digest: sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae
+4 grep exit 0
+sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae
+4 jq exit 0
+sha256:90e691d497b3496628f256e7093c6a5ff9929dc97b7edeb6b8dfd0ee6054a9ae
+3 the route's data.root, read in step 2
+5 POST healthz: 405
+extra GET / : 200 text/plain; charset=utf-8
+extra GET /nothing : 404
+end 2026-11-02T07:58:50Z

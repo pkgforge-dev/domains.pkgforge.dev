@@ -1,0 +1,66 @@
+[
+  {
+    "step": "baseline",
+    "dir": "packages/testkit",
+    "name": null,
+    "status": 0,
+    "ms": 17801,
+    "pass": "ℹ pass 23",
+    "fail": "ℹ fail 0"
+  },
+  {
+    "step": "baseline",
+    "dir": "apps/api",
+    "name": "compatibility",
+    "status": 0,
+    "ms": 3363,
+    "pass": "ℹ pass 7",
+    "fail": "ℹ fail 0"
+  },
+  {
+    "step": "baseline",
+    "dir": "probes/worker",
+    "name": "probe config",
+    "status": 0,
+    "ms": 3338,
+    "pass": "ℹ pass 10",
+    "fail": "ℹ fail 0"
+  },
+  {
+    "step": "baseline",
+    "dir": "scripts",
+    "name": "config:",
+    "status": 0,
+    "ms": 26694,
+    "pass": "ℹ pass 99",
+    "fail": "ℹ fail 0"
+  },
+  {
+    "step": "canary-testkit-from-apps-api",
+    "status": 1,
+    "sawCanary": true,
+    "failed": [
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\apps\\api\\test\\config.test.ts",
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\apps\\api\\test\\ghcr.test.ts",
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\apps\\api\\test\\healthz.test.ts"
+    ],
+    "restored": true
+  },
+  {
+    "step": "canary-testkit-from-probe",
+    "status": 1,
+    "sawCanary": true,
+    "failed": [
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\probes\\worker\\src\\index.test.ts",
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\probes\\worker\\src\\range.test.ts",
+      "D:\\_WORK_\\domains-serve\\.tmp\\dom030\\review-d16\\mutation\\copy\\probes\\worker\\src\\workerd.test.ts"
+    ],
+    "restored": true
+  },
+  {
+    "step": "real-tree-unchanged",
+    "before": "d43d96a771ffc8ea9ec5d3e5734668aa313dd226b95c9f3a090d38c59ed7c542",
+    "after": "d43d96a771ffc8ea9ec5d3e5734668aa313dd226b95c9f3a090d38c59ed7c542",
+    "same": true
+  }
+]

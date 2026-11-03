@@ -272,7 +272,7 @@ export function manifestOf(input, records, packs) {
 }
 
 export const uploadCommand = (dir, per) =>
-  `npx wrangler@4.150.0 r2 object put domains-probe/${samplePackKey(per)} --file ${join(dir, packFile(per)).split('\\').join('/')} --content-type application/octet-stream --remote`;
+  `npx wrangler@4.156.1 r2 object put domains-probe/${samplePackKey(per)} --file ${join(dir, packFile(per)).split('\\').join('/')} --content-type application/octet-stream --remote`;
 
 export async function main(argv, { stdin = process.stdin, stdout = process.stdout, stderr = process.stderr } = {}) {
   let flags;

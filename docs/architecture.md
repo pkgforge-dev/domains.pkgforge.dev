@@ -672,7 +672,7 @@ A job builds the `rev` packs from it (DOM-043): the keys are the address bytes, 
 
 ## 7. The API
 
-One Worker serves `domains.pkgforge.dev`. The hostname is one level below the `pkgforge.dev` zone, so the zone's Universal certificate covers it.
+One Worker serves `domains.pkgforge.dev`, its custom domain. The edge serves the certificate of an advanced certificate pack of the `pkgforge.dev` zone for the host, which the custom domain made (`docs/resources.md`).
 The Worker reads and never writes GHCR. Its name is `domains-pkgforge-dev`. Its code is `apps/api/` (DOM-030), and `docs/worker.md` is its operator's document: its paths, caching, limits, deploy and rollback.
 
 ### 7.1 Common rules

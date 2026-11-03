@@ -287,11 +287,11 @@ test('workflow policy: rule 9 refuses a Cloudflare name, a deploy, the wrangler 
   refusedBy(plant('        run: gh workflow run clean.yml', '        run: echo "$CF_API_TOKEN" && gh workflow run clean.yml'), '9');
   refusedBy(plant('          GH_TOKEN: ${{ github.token }}\n        run: gh workflow', '          GH_TOKEN: ${{ SECRETS.X }}\n        run: gh workflow'), '9');
   for (const cmd of ['deploy', 'publish', 'rollback', 'versions upload', 'versions deploy']) {
-    refusedBy(plant('        run: gh workflow run clean.yml', `        run: npx wrangler@4.150.0 ${cmd} && gh workflow run clean.yml`), '9');
+    refusedBy(plant('        run: gh workflow run clean.yml', `        run: npx wrangler@4.156.1 ${cmd} && gh workflow run clean.yml`), '9');
   }
   const API = 'gh api "orgs/pkgforge-dev/packages/container/domains.pkgforge.dev%2Fprobe" --jq .visibility';
-  refusedBy(plant(API, 'npx wrangler@4.150.0 \\\n            deploy'), '9');
-  refusedBy(plant(API, 'npx wrangler@4.150.0 \\\n            --config x.toml \\\n            deploy'), '9');
+  refusedBy(plant(API, 'npx wrangler@4.156.1 \\\n            deploy'), '9');
+  refusedBy(plant(API, 'npx wrangler@4.156.1 \\\n            --config x.toml \\\n            deploy'), '9');
   refusedByAll(plant(`uses: actions/upload-artifact@${PIN} # v7.0.2`, `uses: cloudflare/wrangler-action@${PIN} # v3.14.1`), ['6', '9']);
   refusedBy(CLEAN.concat('\n  call:\n    permissions:\n      contents: read\n    secrets: inherit\n    uses: ./.github/workflows/other.yml\n'), '9');
   // On measure-chain, which holds no packages: write, so rule 3 stays quiet.
