@@ -1,0 +1,76 @@
+== conditions
+start      2026-11-03T16:06:29Z
+place      the operator's workstation (Windows 11), on its own network
+os         MINGW64_NT-10.0-26300 3.6.9-b4195d69.x86_64
+node       v26.7.0
+curl       curl 8.21.0
+tree       4fcdb48a9da1, with the uncommitted scripts/measure/edge-load.mjs of this change
+resolver   DoH https://cloudflare-dns.com/dns-query (curl -4 --doh-url, and edge-load.mjs --doh --family 4)
+doh A     exit 0: 104.21.77.88 172.67.205.195
+doh AAAA     exit 0: 2606:4700:3031::ac43:cdc3 2606:4700:3032::6815:4d58
+system     2606:4700:3032::6815:4d58 2606:4700:3031::ac43:cdc3 172.67.205.195 104.21.77.88
+healthz    2026-11-03T16:06:34Z curl exit 0 http 200 colo KTM body {"ok":true,"version":"9f4da663dc5a","root_age_s":206}
+
+== 0: the caller's IPv4 source addresses, over 20 new connections
+curl -4 https://domains.pkgforge.dev/cdn-cgi/trace, 20 times; each ip= line is read, and only the count of distinct values and their order as labels A, B, ... are printed
+failed     0 of 20
+labels     AABCAAACADBACABCDBCB (20 read, 4 distinct)
+
+== 1: 100 requests a second for 60 s, warm, IPv4, one HTTP/2 connection (the Prove)
+node scripts/measure/edge-load.mjs --url https://domains.pkgforge.dev/healthz --rps 100 --seconds 60 --expect 200 --prefill 5 --doh https://cloudflare-dns.com/dns-query --family 4 --h2 --place operator --out docs/research/measure/DOM-062/05-healthz-100rps-h2.json
+at         2026-11-03T16:06:49Z
+edge-load place=operator rps=100 seconds=60 expect=200 prefill=5 family=4 h2=true timeout_ms=30000
+target       domains.pkgforge.dev/healthz
+resolver     doh https://cloudflare-dns.com/dns-query: 172.67.205.195 104.21.77.88
+transport    h2, 1 connection(s) opened
+prefill      5 of 5 expected  worker-200:5
+requests     6000  200 6000  429 0  403 0  503 0  challenge 0  5xx 0  other 0
+by_status    worker-200:6000
+writers      worker:6000
+latency_ms   p50 17  p95 28  max 827  (client: request start to last byte)
+client_lag   p95 12 ms  max 20 ms
+colos        KTM:6000
+remotes      172.67.205.195:6000
+cache        hit:5965 ghcr:35  (x-domains-cache of the Worker's answers)
+versions     9f4da663dc5a:6000
+PASS requests  6000 requests answered or failed
+PASS no-429  0 of 6000
+PASS no-gate  403 0 · 503 0 · challenge 0 of 6000
+PASS 5xx-at-most-1pct  0 of 6000
+PASS other-at-most-1pct  0 of 6000
+PASS prefill-expected  5 of 5
+PASS
+edge-load: wrote docs/research/measure/DOM-062/05-healthz-100rps-h2.json
+exit       0
+end        2026-11-03T16:07:51Z
+
+== 2: 300 requests a second for 30 s, warm, IPv4, one HTTP/2 connection: 3,000 in each 10 s, above the rule's 2,000
+node scripts/measure/edge-load.mjs --url https://domains.pkgforge.dev/healthz --rps 300 --seconds 30 --expect 200 --prefill 5 --doh https://cloudflare-dns.com/dns-query --family 4 --h2 --place operator --out docs/research/measure/DOM-062/05-healthz-300rps-h2.json
+at         2026-11-03T16:07:51Z
+edge-load place=operator rps=300 seconds=30 expect=200 prefill=5 family=4 h2=true timeout_ms=30000
+target       domains.pkgforge.dev/healthz
+resolver     doh https://cloudflare-dns.com/dns-query: 104.21.77.88 172.67.205.195
+transport    h2, 1 connection(s) opened
+prefill      5 of 5 expected  worker-200:5
+requests     9000  200 9000  429 0  403 0  503 0  challenge 0  5xx 0  other 0
+by_status    worker-200:9000
+writers      worker:9000
+latency_ms   p50 19  p95 31  max 882  (client: request start to last byte)
+client_lag   p95 11 ms  max 17 ms
+colos        KTM:9000
+remotes      104.21.77.88:9000
+cache        hit:8999 ghcr:1  (x-domains-cache of the Worker's answers)
+versions     9f4da663dc5a:9000
+PASS requests  9000 requests answered or failed
+PASS no-429  0 of 9000
+PASS no-gate  403 0 · 503 0 · challenge 0 of 9000
+PASS 5xx-at-most-1pct  0 of 9000
+PASS other-at-most-1pct  0 of 9000
+PASS prefill-expected  5 of 5
+PASS
+edge-load: wrote docs/research/measure/DOM-062/05-healthz-300rps-h2.json
+exit       0
+end        2026-11-03T16:08:24Z
+
+healthz    2026-11-03T16:08:25Z curl exit 0 http 200 colo KTM body {"ok":true,"version":"9f4da663dc5a","root_age_s":316}
+end        2026-11-03T16:08:25Z

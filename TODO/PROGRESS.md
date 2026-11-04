@@ -6,7 +6,7 @@ is the only one.
 
 ## State
 
-- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), follows them, then the ingest skeleton (DOM-024) and the clocks (DOM-001 to DOM-003). The first adapter (DOM-026), the chain's step `due` (DOM-023) and its fix follow them, then the chain at 30 minutes (rulings 26 and 27). The closes of DOM-026 and DOM-024 on their live readings follow them (9b142c6). DOM-063's walk of the chain follows them (137a220), then its close on the live reading (d9c6d56). The Worker of DOM-030, partial, is the commit that carries this record.
+- **Tree:** committed on `main` and pushed. The skeleton is commit 4e1db17; the first wave of builds (the workspace, CI, the probe Worker and the measurement workflows) follows it, then waves 2 and 3. Wave 4, the root and the feed (DOM-020, DOM-022), follows them, then the Renovate moves and DOM-011's close. Wave 5, the compaction (DOM-023), follows them, then the ingest skeleton (DOM-024) and the clocks (DOM-001 to DOM-003). The first adapter (DOM-026), the chain's step `due` (DOM-023) and its fix follow them, then the chain at 30 minutes (rulings 26 and 27). The closes of DOM-026 and DOM-024 on their live readings follow them (9b142c6). DOM-063's walk of the chain follows them (137a220), then its close on the live reading (d9c6d56). The Worker of DOM-030 follows them (c0c7cd5 to 9f4da66), then its close (4fcdb48). DOM-062's drive of the deployed Worker and its new reading of the zone are the commit that carries this record.
 - **Last session:** started 2026-10-28T10:11:54Z: asked the operator what was unsettled (rulings 14 to 17 of `TODO/RULES.md` section 5, 18 to 25 on 2026-10-29, and 26 and 27 on 2026-11-01), then works the order unattended.
 - **Deployed:** the probe Worker `domains-probe` on workers.dev and its bucket `domains-probe` (DOM-061, deployed 2026-10-28T15:13:54Z, first tick 15:23:24Z). It holds `crons = []` from the deploy of 2026-10-30T18:30:46Z, and its last tick was scheduled at 18:34:24Z (DOM-002). Its version 529b760c, deployed 2026-10-30T19:51:58Z, serves `/`, `/gaps`, `/range` and `/decode` without `/kafka` (DOM-005). The bucket holds DOM-008's sample packs under `sample/v1/`. DOM-056 deletes both. The public GHCR packages `probe` (DOM-006) and `ref` (DOM-019, refreshed daily by its cron `13 5 * * *`, which GitHub started hours late, or by the chain's step `due` at about 06:00 UTC on the chain at 30 minutes, DOM-023; on 2026-11-01 the chain at 10 minutes dispatched run 41277834331 at 05:40:23Z) stay (ruling 5). The data packages `root`, `obs`, `state`, `names` and `feed` are public and read with no credential; `ingest-live.yml` run 41257033038 created `obs` and `state`, and `compact-daily.yml` run 41266798719 created `names` and `feed` (`docs/resources.md`). The serving Worker `domains-pkgforge-dev` of `apps/api/` answers on its custom domain `domains.pkgforge.dev`: version `c8a325ab` of 9f4da66, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1 (DOM-030, done). No cache bucket yet.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Its first run is the one of the commit that adds it.
@@ -110,6 +110,7 @@ is the only one.
 - Built D16 of DOM-030 on 2026-11-02, not deployed: wrangler 4.156.1 with its workerd 1.20261101.1, the compatibility date 2026-11-02 and `@cloudflare/workers-types` 5.20261102.1 move as one set. The test `pinned runtime refuses` runs the workerd binary itself.
 - Ran gate part (c) on D16 on 2026-11-03. The door sweep found 3 findings and the claim audit 10, and the guard mutation left 24 of 52 mutants alive. The fix pass changed the Worker for the one finding of the new runtime. workerd 1.20261101.1 gives a Response made with no statusText the statusText "", and a copy of it sent no reason phrase. The pass also made the harness start from any working directory, and the deploy expect the name's one record from the second deploy on. The ledger records the certificate pack. Two config tests hold the runtime set and every wrangler command of a procedure to the pins. DOM-030's line Gate part (c) of 2026-11-03 has each resolution.
 - Closed DOM-030 on 2026-11-03 (done, proven): the second deploy, version `c8a325ab` of 9f4da66 with wrangler 4.156.1, answers on `domains.pkgforge.dev` from 15:22:17Z. Every `curl` line of the Prove and its four test lines passed again, and `/healthz` now reads `HTTP/1.1 200 OK`.
+- Drove DOM-062 on 2026-11-03, still open until its gate part (c). Decided under ruling 20 (its Decision of 15:45Z): `scripts/measure/edge-load.mjs`, a command of its own, over a mode of `range-load.mjs`. The operator's network gives each new connection one of 4 public addresses, so the script gained `--family` and `--h2` to hold a run to one (the Found of 16:00Z). Over one HTTP/2 connection the Prove's 100 requests a second for 60 s got 6,000 of 6,000 answers from the Worker, and 300 a second for 30 s got 9,000 of 9,000, above the 2,000 in 10 s of the rule `200req/Second`. No answer was a 429, a 403, a 503 or a challenge. The zone read again with the `cf` CLI before and after: that rule is at version 24 and still leaves the host out, and no other rule or setting of the zone refuses or challenges a caller of the host. The outputs are under `docs/research/measure/DOM-062/`. `docs/resources.md` says that version 24 keeps the clause.
 
 ## What is in progress
 
@@ -124,16 +125,17 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
 ## Start here next session
 
-1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
+1. DOM-062: run gate part (c) on its drive and its reading of the zone (the lines of 2026-11-03), then close it with `node scripts/todo/count.mjs --set DOM-062 done --proven`.
+2. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
    - DOM-012 closes after its 7 days.
-2. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill (the feed's other adapters, below). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
-3. The feed's other adapters: DOM-029 first, since it can start now and DOM-023's live Prove waits on its backfill. Then DOM-027 and DOM-028, once DOM-012 closes.
-4. The first routes on the Worker (DOM-030, done): DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
-5. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
-6. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
-7. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
-8. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
-9. The root documents and the consumer contract: DOM-059, DOM-060. They stay last (ruling 26).
+3. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill (the feed's other adapters, below). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
+4. The feed's other adapters: DOM-029 first, since it can start now and DOM-023's live Prove waits on its backfill. Then DOM-027 and DOM-028, once DOM-012 closes.
+5. The first routes on the Worker (DOM-030, done): DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+6. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
+7. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
+8. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.
+9. Hardening: DOM-053, DOM-054, DOM-055, DOM-056, DOM-057, DOM-058. Then DOM-046, the CNAME source, from what DOM-047 and DOM-058 found (ruling 10).
+10. The root documents and the consumer contract: DOM-059, DOM-060. They stay last (ruling 26).
 
 `node scripts/todo/next.mjs` derives the same waves from the `Depends on` lines.
 
@@ -148,7 +150,7 @@ Known limits, each from a measurement of 2026-10-27:
 
 None. The question on Renovate's pull requests was settled by ruling 20 on 2026-10-29: the agent decides such matters itself.
 
-DOM-062's zone rule is settled: the operator applied the exclusion of `domains.pkgforge.dev` from the rate-limit rule `200req/Second` at 2026-10-28T15:53:56Z, and the agent read version 22 back with the `cf` CLI. DOM-062 closes with its load test once DOM-030 is live.
+DOM-062's zone rule is settled: the operator applied the exclusion of `domains.pkgforge.dev` from the rate-limit rule `200req/Second` at 2026-10-28T15:53:56Z, and the agent read version 22 back with the `cf` CLI. On 2026-11-03 the rule read at version 24, a change this project did not make, with the exclusion kept, and the load test passed against the deployed Worker. DOM-062 closes after its gate part (c).
 
 Former Operator actions 1 (a wrangler login: present, on the operator's account (its name is not recorded: it carries the workers.dev subdomain), R2 enabled, MEASURED 2026-10-28T10:19:05Z) and 3 (the default workflow permission: `read` since 2026-10-28T10:18:52Z) are settled. The deletion of the probe Worker and its bucket is the agent's under ruling 14 (DOM-056).
 

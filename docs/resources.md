@@ -140,7 +140,7 @@ Rules this project changes on the `pkgforge.dev` zone, which other sites share.
 
 | zone ruleset | change | created | owner | undo |
 | --- | --- | --- | --- | --- |
-| `http_ratelimit` of `pkgforge.dev`, its one rule `200req/Second` | its expression ends with `and not (http.host eq "domains.pkgforge.dev")`, so the rule covers no request to the host (ruling 12); nothing else in the rule changed | 2026-10-28T15:53:56Z by the operator, the ruleset's version 22, read back at 15:55:16Z (DOM-062) | the operator (ruling 15) | the operator runs `cf rulesets rules update <rule> -z pkgforge.dev --ruleset-id <ruleset> --body <the rule without that clause>`, the command that DOM-062 validated with `--validate-only` at 2026-10-28T15:36Z for the change; the undo itself is not validated |
+| `http_ratelimit` of `pkgforge.dev`, its one rule `200req/Second` | the change appends `and not (http.host eq "domains.pkgforge.dev")` to its expression, so the rule covers no request to the host (ruling 12); nothing else in the rule changed. Version 24 of 2026-10-30T22:21:53Z, not this project's change, keeps the clause as a term of the whole expression and adds one of its own after it (READ 2026-11-03T15:51:39Z, DOM-062) | 2026-10-28T15:53:56Z by the operator, the ruleset's version 22, read back at 15:55:16Z (DOM-062) | the operator (ruling 15) | the operator runs `cf rulesets rules update <rule> -z pkgforge.dev --ruleset-id <ruleset> --body <the rule without that clause>`, the command that DOM-062 validated with `--validate-only` at 2026-10-28T15:36Z for the change; the undo itself is not validated |
 
 ## Secrets (names only)
 

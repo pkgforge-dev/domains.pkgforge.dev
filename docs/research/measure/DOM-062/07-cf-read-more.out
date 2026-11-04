@@ -1,0 +1,138 @@
+== 2026-11-03T16:13:47Z cf rulesets entrypoint get http_config_settings -z pkgforge.dev exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the http_config_settings phase
+│ 404 Not Found · HTTP /zones/<id>/rulesets/phases/http_config_settings/entrypoint
+└
+== 2026-11-03T16:13:51Z cf rulesets entrypoint get http_request_dynamic_redirect -z pkgforge.dev exit 0
+{
+  "description": "",
+  "id": "<dropped>",
+  "kind": "zone",
+  "last_updated": "2026-10-30T16:57:43.216302Z",
+  "name": "default",
+  "phase": "http_request_dynamic_redirect",
+  "rules": [
+    {
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "preserve_query_string": true,
+          "status_code": 301,
+          "target_url": {
+            "expression": "concat(\"https://<other-host>\", http.request.uri.path)"
+          }
+        }
+      },
+      "description": "Redirect Wiki to Docs (pkgforge)",
+      "enabled": true,
+      "expression": "(http.host eq \"<other-host>\")",
+      "id": "<dropped>",
+      "last_updated": "2025-01-07T18:12:20.466222Z",
+      "ref": "<dropped>",
+      "version": "1"
+    },
+    {
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "preserve_query_string": true,
+          "status_code": 308,
+          "target_url": {
+            "expression": "concat(\"https://<other-host>\", http.request.uri.path)"
+          }
+        }
+      },
+      "description": "<other-host>: the dashboard over HTTPS only (WEB-173)",
+      "enabled": true,
+      "expression": "(http.host eq \"<other-host>\" and not ssl)",
+      "id": "<dropped>",
+      "last_updated": "2026-10-30T16:57:43.216302Z",
+      "ref": "<dropped>",
+      "version": "1"
+    }
+  ],
+  "version": "9"
+}
+== 2026-11-03T16:13:55Z cf rulesets entrypoint get http_request_sbfm -z pkgforge.dev exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [error] unknown phase "http_request_sbfm"
+│ 400 Bad Request · HTTP /zones/<id>/rulesets/phases/http_request_sbfm/entrypoint
+└
+== 2026-11-03T16:13:57Z cf page-rules list -z pkgforge.dev exit 0
+[
+  {
+    "targets": [
+      {
+        "target": "url",
+        "constraint": {
+          "operator": "matches",
+          "value": "https://pkgforge.dev/*"
+        }
+      }
+    ],
+    "actions": [
+      {
+        "action": "forwarding_url",
+        "value": {
+          "url": "https://github.com/pkgforge",
+          "status_code": 301
+        }
+      }
+    ],
+    "priority": 3,
+    "status": "active",
+    "modified_on": "2024-11-05T07:57:08.000000Z"
+  },
+  {
+    "targets": [
+      {
+        "target": "url",
+        "constraint": {
+          "operator": "matches",
+          "value": "http://pkgforge.dev/*"
+        }
+      }
+    ],
+    "actions": [
+      {
+        "action": "forwarding_url",
+        "value": {
+          "url": "https://github.com/pkgforge",
+          "status_code": 301
+        }
+      }
+    ],
+    "priority": 2,
+    "status": "active",
+    "modified_on": "2024-11-05T07:56:18.000000Z"
+  },
+  {
+    "targets": [
+      {
+        "target": "url",
+        "constraint": {
+          "operator": "matches",
+          "value": "<other-host>/*"
+        }
+      }
+    ],
+    "actions": [
+      {
+        "action": "forwarding_url",
+        "value": {
+          "url": "https://github.com/pkgforge",
+          "status_code": 301
+        }
+      }
+    ],
+    "priority": 1,
+    "status": "active",
+    "modified_on": "2024-11-05T07:51:16.000000Z"
+  }
+]

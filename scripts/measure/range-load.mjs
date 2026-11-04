@@ -282,7 +282,7 @@ function recordOf(i, offset, lag, a, expect) {
 
 const r0 = (v) => (v === null ? null : Math.round(v));
 
-function spread(values) {
+export function spread(values) {
   const max = values.length === 0 ? null : Math.max(...values);
   return { n: values.length, p50: r0(quantile(values, 0.5)), p95: r0(quantile(values, 0.95)), max: r0(max) };
 }
@@ -614,7 +614,7 @@ function mergeMain(flags, stdout, stderr) {
 }
 
 // Writes through a temporary file in the same directory, so a killed process leaves the old file whole.
-function writeAtomic(path, text) {
+export function writeAtomic(path, text) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, text);

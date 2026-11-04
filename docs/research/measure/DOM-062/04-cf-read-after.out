@@ -1,0 +1,175 @@
+== 2026-11-03T15:58:47Z cf auth scopes exit 0
+stdout (not JSON, 488 B):
+Account & Billing            14/15
+AI & Machine Learning        26/26
+Analytics & Logs             11/11
+App Security                 63/63
+Cache & Performance          11/11
+Cloudflare One / Zero Trust  74/74
+Developer Platform           69/69
+DNS & Zones                  22/22
+Email & Messaging            13/13
+Media                        10/10
+Network Services             35/35
+Rules & Configuration        34/34
+Other                        3/3
+Uncategorized                88/88
+stderr:
+●  Run cf auth scopes <product> to see a product's permissions, or cf auth scopes --all for every granted product.
+== 2026-11-03T15:58:48Z cf zones get -z pkgforge.dev exit 0
+{
+  "name": "pkgforge.dev",
+  "status": "active",
+  "paused": false,
+  "type": "full",
+  "plan": "Free Website"
+}
+== 2026-11-03T15:58:53Z cf rulesets entrypoint get http_ratelimit -z pkgforge.dev exit 0
+{
+  "description": "",
+  "id": "<dropped>",
+  "kind": "zone",
+  "last_updated": "2026-10-30T22:21:53.508018Z",
+  "name": "default",
+  "phase": "http_ratelimit",
+  "rules": [
+    {
+      "action": "block",
+      "description": "200req/Second",
+      "enabled": true,
+      "expression": "(http.request.uri.path wildcard \"/\" and not starts_with(http.request.uri.path, \"/bincache\") and not starts_with(http.request.uri.path, \"/pkgcache\") and not http.request.uri.path contains \"pkgforge\" and not starts_with(http.request.uri.path, \"/v2\")) and not (http.host eq \"domains.pkgforge.dev\") and not (http.host eq \"<other-host>\" or http.host wildcard \"<other-host>\" or http.host eq \"<other-host>\")",
+      "id": "<dropped>",
+      "last_updated": "2026-10-30T22:21:53.508018Z",
+      "ratelimit": {
+        "characteristics": [
+          "ip.src",
+          "cf.colo.id"
+        ],
+        "mitigation_timeout": 10,
+        "period": 10,
+        "requests_per_period": 2000
+      },
+      "ref": "<dropped>",
+      "version": "24"
+    }
+  ],
+  "source": "rate_limit",
+  "version": "24"
+}
+== 2026-11-03T15:58:57Z cf rulesets entrypoint get http_request_firewall_custom -z pkgforge.dev exit 0
+{
+  "description": "",
+  "id": "<dropped>",
+  "kind": "zone",
+  "last_updated": "2026-10-30T22:20:41.964087Z",
+  "name": "zone custom rules",
+  "phase": "http_request_firewall_custom",
+  "rules": [
+    {
+      "action": "block",
+      "description": "web-pkgforge-dev-hard-off: the <other-host> spend breaker hard-off blocks its public hosts (docs/resources.md)",
+      "enabled": false,
+      "expression": "(ends_with(lower(http.host), \"<other-host>\") or ends_with(lower(http.host), \"<other-host>.\") or lower(http.host) contains \"<other-host>:\" or lower(http.host) contains \"<other-host>.:\" or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\") or lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\")) and not (lower(http.host) in {\"<other-host>\" \"<other-host>.\"} or starts_with(lower(http.host), \"<other-host>:\") or starts_with(lower(http.host), \"<other-host>.:\"))",
+      "id": "<dropped>",
+      "last_updated": "2026-10-30T22:20:41.964087Z",
+      "ref": "<dropped>",
+      "version": "4"
+    }
+  ],
+  "source": "firewall_custom",
+  "version": "4"
+}
+== 2026-11-03T15:59:01Z cf rulesets entrypoint get http_request_firewall_managed -z pkgforge.dev exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the http_request_firewall_managed phase
+│ 404 Not Found · HTTP /zones/<id>/rulesets/phases/http_request_firewall_managed/entrypoint
+└
+== 2026-11-03T15:59:05Z cf rulesets entrypoint get ddos_l7 -z pkgforge.dev exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the ddos_l7 phase
+│ 404 Not Found · HTTP /zones/<id>/rulesets/phases/ddos_l7/entrypoint
+└
+== 2026-11-03T15:59:08Z cf rulesets entrypoint get http_ratelimit exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the http_ratelimit phase
+│ 404 Not Found · HTTP /accounts/<id>/rulesets/phases/http_ratelimit/entrypoint
+└
+== 2026-11-03T15:59:10Z cf rulesets entrypoint get http_request_firewall_custom exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the http_request_firewall_custom phase
+│ 404 Not Found · HTTP /accounts/<id>/rulesets/phases/http_request_firewall_custom/entrypoint
+└
+== 2026-11-03T15:59:13Z cf rulesets entrypoint get http_request_firewall_managed exit 1
+stdout (not JSON, 0 B):
+
+stderr:
+┌ APIError
+│ [10003] could not find entrypoint ruleset in the http_request_firewall_managed phase
+│ 404 Not Found · HTTP /accounts/<id>/rulesets/phases/http_request_firewall_managed/entrypoint
+└
+== 2026-11-03T15:59:16Z cf bot-management get -z pkgforge.dev exit 0
+{
+  "enable_js": false,
+  "fight_mode": false,
+  "ai_bots_protection": "disabled",
+  "content_bots_protection": "disabled",
+  "crawler_protection": "disabled",
+  "ai_training": "disabled",
+  "ai_search": "disabled",
+  "ai_user": "disabled",
+  "ai_agents": {
+    "anthropic_agent": "disabled",
+    "google_agent": "disabled",
+    "instinct": "disabled",
+    "muse": "disabled",
+    "openai_agent": "disabled"
+  },
+  "is_robots_txt_managed": false,
+  "bot_preference_sync_enabled": false,
+  "cf_robots_variant": "policy_only",
+  "ai_bots_migration_opt_out": false,
+  "using_latest_model": true
+}
+== 2026-11-03T15:59:19Z cf zones settings get security_level -z pkgforge.dev exit 0
+{
+  "id": "<dropped>",
+  "value": "essentially_off",
+  "modified_on": "2024-11-05T07:13:12.091356Z",
+  "editable": true
+}
+== 2026-11-03T15:59:22Z cf zones settings get browser_check -z pkgforge.dev exit 0
+{
+  "id": "<dropped>",
+  "value": "off",
+  "modified_on": "2024-11-05T07:13:25.530617Z",
+  "editable": true
+}
+== 2026-11-03T15:59:25Z cf zones settings get challenge_ttl -z pkgforge.dev exit 0
+{
+  "id": "<dropped>",
+  "value": 1800,
+  "modified_on": null,
+  "editable": true
+}
+== 2026-11-03T15:59:27Z cf firewall access-rules list -z pkgforge.dev exit 0
+[]
+== 2026-11-03T15:59:30Z cf firewall access-rules list exit 0
+[]
+== 2026-11-03T15:59:32Z cf user firewall access-rules list exit 0
+[]
+== 2026-11-03T15:59:35Z cf firewall lockdowns list -z pkgforge.dev exit 0
+[]
+== 2026-11-03T15:59:38Z cf firewall ua-rules list -z pkgforge.dev exit 0
+[]

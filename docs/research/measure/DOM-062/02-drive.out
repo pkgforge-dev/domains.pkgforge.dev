@@ -1,0 +1,69 @@
+== conditions
+start      2026-11-03T15:52:40Z
+place      the operator's workstation (Windows 11), on its own network
+os         MINGW64_NT-10.0-26300 3.6.9-b4195d69.x86_64
+node       v26.7.0
+curl       curl 8.21.0
+tree       4fcdb48a9da1, with the uncommitted scripts/measure/edge-load.mjs of this change
+resolver   DoH https://cloudflare-dns.com/dns-query (curl --doh-url, and edge-load.mjs --doh)
+doh A     exit 0: 104.21.77.88 172.67.205.195
+doh AAAA     exit 0: 2606:4700:3032::6815:4d58 2606:4700:3031::ac43:cdc3
+system     2606:4700:3031::ac43:cdc3 2606:4700:3032::6815:4d58 172.67.205.195 104.21.77.88
+healthz    2026-11-03T15:52:47Z curl exit 0 http 200 colo KTM body {"ok":true,"version":"9f4da663dc5a","root_age_s":1213}
+
+== 1: 100 requests a second for 60 s, warm (the Prove)
+node scripts/measure/edge-load.mjs --url https://domains.pkgforge.dev/healthz --rps 100 --seconds 60 --expect 200 --prefill 5 --doh https://cloudflare-dns.com/dns-query --place operator --out docs/research/measure/DOM-062/02-healthz-100rps.json
+at         2026-11-03T15:52:48Z
+edge-load place=operator rps=100 seconds=60 expect=200 prefill=5 timeout_ms=30000
+target       domains.pkgforge.dev/healthz
+resolver     doh https://cloudflare-dns.com/dns-query: 104.21.77.88 172.67.205.195 2606:4700:3031::ac43:cdc3 2606:4700:3032::6815:4d58
+prefill      5 of 5 expected  worker-200:5
+requests     6000  200 6000  429 0  403 0  503 0  challenge 0  5xx 0  other 0
+by_status    worker-200:6000
+writers      worker:6000
+latency_ms   p50 20  p95 31  max 1216  (client: request start to last byte)
+client_lag   p95 11 ms  max 34 ms
+colos        KTM:6000
+remotes      104.21.77.88:6000
+cache        hit:5983 ghcr:17  (x-domains-cache of the Worker's answers)
+versions     9f4da663dc5a:6000
+PASS requests  6000 requests answered or failed
+PASS no-429  0 of 6000
+PASS no-gate  403 0 · 503 0 · challenge 0 of 6000
+PASS 5xx-at-most-1pct  0 of 6000
+PASS other-at-most-1pct  0 of 6000
+PASS prefill-expected  5 of 5
+PASS
+edge-load: wrote docs/research/measure/DOM-062/02-healthz-100rps.json
+exit       0
+end        2026-11-03T15:53:50Z
+
+== 2: 250 requests a second for 20 s, warm, above the rule's 2,000 requests in 10 s
+node scripts/measure/edge-load.mjs --url https://domains.pkgforge.dev/healthz --rps 250 --seconds 20 --expect 200 --prefill 5 --doh https://cloudflare-dns.com/dns-query --place operator --out docs/research/measure/DOM-062/02-healthz-250rps.json
+at         2026-11-03T15:53:50Z
+edge-load place=operator rps=250 seconds=20 expect=200 prefill=5 timeout_ms=30000
+target       domains.pkgforge.dev/healthz
+resolver     doh https://cloudflare-dns.com/dns-query: 104.21.77.88 172.67.205.195 2606:4700:3031::ac43:cdc3 2606:4700:3032::6815:4d58
+prefill      5 of 5 expected  worker-200:5
+requests     5000  200 5000  429 0  403 0  503 0  challenge 0  5xx 0  other 0
+by_status    worker-200:5000
+writers      worker:5000
+latency_ms   p50 17  p95 165  max 1182  (client: request start to last byte)
+client_lag   p95 15 ms  max 146 ms
+colos        KTM:5000
+remotes      2606:4700:3031::ac43:cdc3:2923 104.21.77.88:2077
+cache        hit:4935 ghcr:63 mixed:2  (x-domains-cache of the Worker's answers)
+versions     9f4da663dc5a:5000
+PASS requests  5000 requests answered or failed
+PASS no-429  0 of 5000
+PASS no-gate  403 0 · 503 0 · challenge 0 of 5000
+PASS 5xx-at-most-1pct  0 of 5000
+PASS other-at-most-1pct  0 of 5000
+PASS prefill-expected  5 of 5
+PASS
+edge-load: wrote docs/research/measure/DOM-062/02-healthz-250rps.json
+exit       0
+end        2026-11-03T15:54:11Z
+
+healthz    2026-11-03T15:54:13Z curl exit 0 http 200 colo KTM body {"ok":true,"version":"9f4da663dc5a","root_age_s":1299}
+end        2026-11-03T15:54:14Z

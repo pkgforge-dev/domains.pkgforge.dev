@@ -1,0 +1,137 @@
+{
+  "schema": "domains.measure.edge-load.v1",
+  "entry": "DOM-062",
+  "started_at": "2026-11-03T16:07:52.391Z",
+  "ended_at": "2026-11-03T16:08:24.006Z",
+  "target": {
+    "host": "domains.pkgforge.dev",
+    "path": "/healthz"
+  },
+  "run": {
+    "place": "operator",
+    "rps": 300,
+    "seconds": 30,
+    "expect": 200,
+    "prefill": 5,
+    "family": 4,
+    "h2": true,
+    "timeout_ms": 30000,
+    "user_agent": "domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)"
+  },
+  "conditions": {
+    "node": "v26.7.0",
+    "os": "Windows_NT 10.0.26300",
+    "platform": "win32"
+  },
+  "resolver": {
+    "kind": "doh",
+    "doh": "https://cloudflare-dns.com/dns-query",
+    "family": 4,
+    "addresses": [
+      {
+        "address": "104.21.77.88",
+        "family": 4
+      },
+      {
+        "address": "172.67.205.195",
+        "family": 4
+      }
+    ]
+  },
+  "transport": {
+    "protocol": "h2",
+    "connections": 1
+  },
+  "prefill": {
+    "requests": 5,
+    "expected": 5,
+    "by_status": {
+      "worker-200": 5
+    }
+  },
+  "summary": {
+    "counts": {
+      "403": 0,
+      "429": 0,
+      "503": 0,
+      "requests": 9000,
+      "expected": 9000,
+      "challenge": 0,
+      "5xx": 0,
+      "other": 0
+    },
+    "by_status": {
+      "worker-200": 9000
+    },
+    "writers": {
+      "worker": 9000
+    },
+    "latency_ms": {
+      "n": 9000,
+      "p50": 19,
+      "p95": 31,
+      "max": 882
+    },
+    "client_lag_ms": {
+      "n": 9000,
+      "p50": 3,
+      "p95": 11,
+      "max": 17
+    },
+    "colos": {
+      "KTM": 9000
+    },
+    "remotes": {
+      "104.21.77.88": 9000
+    },
+    "cache": {
+      "hit": 8999,
+      "ghcr": 1
+    },
+    "versions": {
+      "9f4da663dc5a": 9000
+    },
+    "samples": []
+  },
+  "criteria": [
+    {
+      "name": "requests",
+      "pass": true,
+      "detail": "9000 requests answered or failed"
+    },
+    {
+      "name": "no-429",
+      "pass": true,
+      "detail": "0 of 9000"
+    },
+    {
+      "name": "no-gate",
+      "pass": true,
+      "detail": "403 0 · 503 0 · challenge 0 of 9000"
+    },
+    {
+      "name": "5xx-at-most-1pct",
+      "pass": true,
+      "detail": "0 of 9000"
+    },
+    {
+      "name": "other-at-most-1pct",
+      "pass": true,
+      "detail": "0 of 9000"
+    },
+    {
+      "name": "prefill-expected",
+      "pass": true,
+      "detail": "5 of 5"
+    }
+  ],
+  "definitions": {
+    "writer": "worker: the answer carries access-control-expose-headers, which the Worker sets on every answer (apps/api/src/answer.ts); edge: it does not, so Cloudflare answered in the Worker's place",
+    "classes": "challenge: the answer carries cf-mitigated; 429, 403 and 503: that status; expected: --expect from the Worker; 5xx: any other 5xx; other: anything else, an edge answer of --expect, a redirect (never followed), a client timeout or a failed connection",
+    "latency_ms": "the client: from the start of a request to the last byte of its answer, over every request of the run, failed ones included",
+    "quantiles": "the value at index floor(n * q) of the ascending list (probes/worker/src/gaps.ts quantile)",
+    "open_loop": "request i starts at t0 + i * 1000 / rps ms, whatever the earlier ones are doing; client_lag_ms is how late the client started it",
+    "warm": "--prefill requests one at a time before the clock starts, not counted in the run"
+  },
+  "verdict": "PASS"
+}
