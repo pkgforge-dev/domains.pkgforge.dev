@@ -32,15 +32,23 @@
 # `promote` of ingest-live.yml passes true, since the packs state owes may
 # leave a hole until a later pack covers it. false keeps the promotion whole:
 # a root the rule refuses is exit 1, nothing written. Only the rule's refusal
-# of an addition waits; a replacement, a missing or quarantined pack and
-# every other fault are refused as with false. rollback_to takes no partial.
+# of an addition waits; a replacement, a missing pack and every other fault
+# are refused as with false. rollback_to takes no partial.
+#
+# gap passes --gap SOURCE=YYYY-MM-DD to promote.mjs for each word: the days a
+# source lacks (ruling 24), which name the holes the live-set rule takes. Each
+# word is checked here and by the script; rollback_to takes no gap. The job
+# promote of ingest-thc.yml and of ingest-live.yml passes the gap days state
+# holds pending (D9 of DOM-029), and a promotion drops a day an added segment
+# of its source spans (D31).
 #
 # The first run creates the root package with this job's own GITHUB_TOKEN (ruling
 # 6): no root exists, so it writes root_seq 1 with no previous and no pack, and
 # names the pinned PSL given as `psl`. Verifying the packs a caller adds is the
 # duty of the job that wrote them (scripts/verify-pack.mjs, section 5.8), and
 # nothing here checks that it ran: this job holds each pack's manifest and
-# index head to each other, and refuses a quarantined one.
+# index head to each other, and marks a quarantined segment in its entry
+# (ruling 23).
 #
 #   gh workflow run root-promote.yml --ref main -f psl=psl-1f96bae40adf
 #   node scripts/root/show.mjs --ref latest
@@ -65,7 +73,12 @@ on:
         required: false
         default: ""
       rollback_to:
-        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it, and partial false
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace, psl and gap stay empty with it, and partial false
+        type: string
+        required: false
+        default: ""
+      gap:
+        description: The days a source lacks, SOURCE=YYYY-MM-DD separated by spaces or newlines
         type: string
         required: false
         default: ""
@@ -92,7 +105,12 @@ on:
         required: false
         default: ""
       rollback_to:
-        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace and psl stay empty with it, and partial false
+        description: A dated root r-YYYYMMDDtHHMMSSz to roll back to; add, replace, psl and gap stay empty with it, and partial false
+        type: string
+        required: false
+        default: ""
+      gap:
+        description: The days a source lacks, SOURCE=YYYY-MM-DD separated by spaces or newlines
         type: string
         required: false
         default: ""
@@ -172,6 +190,7 @@ jobs:
           REPLACE: ${{ inputs.replace }}
           PSL: ${{ inputs.psl }}
           ROLLBACK_TO: ${{ inputs.rollback_to }}
+          GAP: ${{ inputs.gap }}
           PARTIAL: ${{ inputs.partial }}
         run: |
           set -uo pipefail
@@ -179,14 +198,23 @@ jobs:
           # output of several lines. read -d '' reads to the end and exits 1 there.
           read -r -d '' -a adds <<< "$ADD" || true
           read -r -d '' -a replaces <<< "$REPLACE" || true
+          read -r -d '' -a gaps <<< "$GAP" || true
           rc=0
+          # Each gap word is SOURCE=YYYY-MM-DD; promote.mjs checks it again.
+          badgap=""
+          for g in "${gaps[@]}"; do
+            if ! [[ "$g" =~ ^[a-z0-9-]+=[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then badgap="$g"; break; fi
+          done
           # A boolean input reaches env as true or false; anything else runs nothing.
           if [ "$PARTIAL" != true ] && [ "$PARTIAL" != false ]; then
             echo "::error::partial is not true or false"
             rc=2
+          elif [ -n "$badgap" ]; then
+            echo "::error::gap holds $badgap, which is not SOURCE=YYYY-MM-DD"
+            rc=2
           elif [ -n "$ROLLBACK_TO" ]; then
-            if [ "${#adds[@]}" -gt 0 ] || [ "${#replaces[@]}" -gt 0 ] || [ -n "$PSL" ] || [ "$PARTIAL" = true ]; then
-              echo "::error::rollback_to takes no add, replace, psl or partial"
+            if [ "${#adds[@]}" -gt 0 ] || [ "${#replaces[@]}" -gt 0 ] || [ -n "$PSL" ] || [ "${#gaps[@]}" -gt 0 ] || [ "$PARTIAL" = true ]; then
+              echo "::error::rollback_to takes no add, replace, psl, gap or partial"
               rc=2
             else
               node scripts/root/rollback.mjs --to "$ROLLBACK_TO" || rc=$?
@@ -195,6 +223,7 @@ jobs:
             args=()
             for a in "${adds[@]}"; do args+=(--add "$a"); done
             for r in "${replaces[@]}"; do args+=(--replace "$r"); done
+            for g in "${gaps[@]}"; do args+=(--gap "$g"); done
             if [ -n "$PSL" ]; then args+=(--psl "$PSL"); fi
             if [ "$PARTIAL" = true ]; then args+=(--partial); fi
             node scripts/root/promote.mjs "${args[@]}" || rc=$?

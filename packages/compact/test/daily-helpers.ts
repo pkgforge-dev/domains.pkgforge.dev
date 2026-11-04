@@ -153,6 +153,9 @@ export interface TierOptions {
   readonly recordsPerBlock?: number;
   // Layers after the pack's own (packManifest's extra), such as summary.json.
   readonly extra?: readonly ExtraLayer[];
+  // Annotations besides packManifest's own (its annotations), such as
+  // dev.pkgforge.domains.quarantined-inputs of a day pack (DOM-029).
+  readonly annotations?: Readonly<Record<string, string>>;
 }
 
 // A compacted pack of `dataset` (domains, or feed with its time copy) of tier
@@ -205,6 +208,7 @@ export async function tierPack(
     idx: { digest: sha(summary.idx), size: summary.idx.length },
     time: time === null ? null : { idxBytes: time.idx, parts: time.parts.map((p) => ({ digest: sha(p), size: p.length })), idx: { digest: sha(time.idx), size: time.idx.length } },
     ...(o.extra === undefined ? {} : { extra: o.extra }),
+    ...(o.annotations === undefined ? {} : { annotations: o.annotations }),
   });
   const reader = await PackReader.open(summary.idx, partsSource(parts), codec, { partSizes: parts.map((p) => p.length) });
   const extra = (o.extra ?? []).flatMap((x) => (x.bytes === undefined ? [] : [{ title: x.title, bytes: x.bytes }]));

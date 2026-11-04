@@ -115,7 +115,7 @@ test("proposal: propose sorts segments and raw by ref and history by source and 
 test("proposal: propose refuses each rule of a proposal with the code proposal", () => {
   const seg0 = input().segments[0]!;
   const cases: [string, (p: ProposeInput) => unknown, RegExp][] = [
-    ["an empty proposal", (p) => ({ ...p, segments: [], raw: [], after: p.before }), /oi-cs names no segment and keeps its cursor \{"offset":100\}: an empty proposal moves nothing/],
+    ["an empty proposal", (p) => ({ ...p, segments: [], raw: [], after: p.before }), /oi-cs names no segment and no gap and keeps its cursor \{"offset":100\}: an empty proposal moves nothing/],
     ["an empty first proposal", (p) => ({ ...p, segments: [], raw: [], before: null, after: null }), /an empty proposal moves nothing/],
     ["an adapter off the id grammar", (p) => ({ ...p, adapter: "OI-cs" }), /adapter "OI-cs" is not an adapter id/],
     ["a lane of no lane", (p) => ({ ...p, lane: "stream" }), /lane "stream" is not one of kafka, tiles, feeds, nor null/],
@@ -310,4 +310,75 @@ test("proposal: proposalFile names proposal.<adapter>.json, and proposedRefs lis
     { ref: "obs:raw-oi-cs.20261030t080000z.20261030t081000z", digest: D("4") },
     { ref: "obs:raw-oi-cs.20261030t081000z.20261030t082000z", digest: D("5") },
   ]);
+});
+
+test("proposal: a gap-only proposal of a backfill window keeps its cursor and is no empty proposal; propose sorts its gaps and drops an empty list", () => {
+  const backfill: ProposeInput = {
+    adapter: "thc-ct",
+    lane: null,
+    run: "40000000002",
+    attempt: 1,
+    at: "2026-11-02T04:00:00Z",
+    before: { next: "2026-11-02", open: [] },
+    after: { next: "2026-11-02", open: [] },
+    segments: [],
+    raw: [],
+    history: [],
+    gaps: [
+      { source: "thc-ct", day: "2026-10-09" },
+      { source: "thc-ct", day: "2026-10-04" },
+    ],
+  };
+  const p = propose(backfill);
+  assert.deepEqual(p.gaps, [
+    { source: "thc-ct", day: "2026-10-04" },
+    { source: "thc-ct", day: "2026-10-09" },
+  ]);
+  assert.deepEqual(parseProposal(encodeProposal(p)), p);
+  // No gap: the key is left out, and the proposal moves nothing, so it is refused.
+  refuses(() => propose({ ...backfill, gaps: [] }), "proposal", /names no segment and no gap and keeps its cursor/);
+  const day = propose({ ...dayInput(), gaps: [] });
+  assert.equal(Object.hasOwn(day, "gaps"), false);
+  assert.equal(Object.hasOwn(JSON.parse(new TextDecoder().decode(encodeProposal(day))), "gaps"), false);
+  // A reader refuses an empty list, a day twice, a day after the day of at, and a bad shape.
+  const json = JSON.parse(new TextDecoder().decode(encodeProposal(p))) as Record<string, unknown>;
+  refuses(() => validateProposal({ ...json, gaps: [] }), "proposal", /gaps is empty; a proposal with no gap has no key gaps/);
+  refuses(
+    () =>
+      validateProposal({
+        ...json,
+        gaps: [
+          { source: "thc-ct", day: "2026-10-09" },
+          { source: "thc-ct", day: "2026-10-04" },
+        ],
+      }),
+    "proposal",
+    /does not sort after/,
+  );
+  refuses(
+    () =>
+      validateProposal({
+        ...json,
+        gaps: [
+          { source: "thc-ct", day: "2026-10-04" },
+          { source: "thc-ct", day: "2026-10-04" },
+        ],
+      }),
+    "proposal",
+    /does not sort after/,
+  );
+  refuses(() => validateProposal({ ...json, gaps: [{ source: "thc-ct", day: "2026-11-03" }] }), "proposal", /gaps names thc-ct on 2026-11-03, after the day of at 2026-11-02T04:00:00Z/);
+  validateProposal({ ...json, gaps: [{ source: "thc-ct", day: "2026-11-02" }] });
+  refuses(() => validateProposal({ ...json, gaps: [{ source: "thc-ct" }] }), "proposal", /gaps\[0\] is not \{ source, day \}/);
+  refuses(() => validateProposal({ ...json, gaps: [{ source: "THC", day: "2026-10-04" }] }), "proposal", /is not a source id/);
+  refuses(() => validateProposal({ ...json, gaps: "2026-10-04" }), "proposal", /gaps is not a list/);
+  refuses(() => validateProposal({ ...json, gap: [] }), "proposal", /unknown field gap/);
+});
+
+test("proposal: proposalFile names a backfill window's file by its start, the day alone at midnight", () => {
+  assert.equal(proposalFile("thc-ct", "2026-10-31T00:00:00Z"), "proposal.thc-ct.20261031.json");
+  assert.equal(proposalFile("oi-cs", "2026-10-31T08:10:00Z"), "proposal.oi-cs.20261031t081000z.json");
+  assert.equal(proposalFile("thc-ct"), "proposal.thc-ct.json");
+  refuses(() => proposalFile("thc-ct", "2026-10-31"), "usage", /is not an ISO 8601 UTC time to the second/);
+  refuses(() => proposalFile("thc-ct", "2026-10-31T00:00:00.000Z"), "usage");
 });

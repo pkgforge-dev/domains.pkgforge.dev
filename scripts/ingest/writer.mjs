@@ -24,15 +24,19 @@
 //      window crosses no hour edge, else `straddle` (D19 of DOM-024: planHour
 //      refuses such a segment in every hour pack);
 //   3. the raw bytes, streamed to disk and hashed as they arrive, never whole in
-//      memory: a `day` source's file into the segment's own layer `raw`, at most
-//      RAW_PART_BYTES (else `raw-size`); any other source's into the raw lane
-//      object raw-<source>.<start>.<end> (D10 of DOM-024), raw.000 and up of at
-//      most RAW_PART_BYTES each and members.json, once per source and window.
-//      Its one member is { offset: 0, length, sha256 } and the draft's
-//      rawMember fields (a Kafka topic, partition and offsets; DOM-026). A
-//      second raw input of one window must be the same bytes with the same
-//      rawMember, else `raw`. A raw input of no byte writes no layer and no
-//      object, so a rawMember on it is refused (checkRawMemberBytes);
+//      memory: a `day` source's file into the segment's own layer `raw`, one
+//      layer of at most FILE_RAW_BYTES (else `raw-size`; D27 of DOM-029); any
+//      other source's into the raw lane object raw-<source>.<start>.<end> (D10
+//      of DOM-024), raw.000 and up of at most RAW_PART_BYTES each and
+//      members.json, once per source and window. Its one member is
+//      { offset: 0, length, sha256 } and the draft's rawMember fields (a Kafka
+//      topic, partition and offsets; DOM-026). A second raw input of one window
+//      must be the same bytes with the same rawMember and url, else `raw`. A
+//      raw input of no byte writes no layer and no object, so a rawMember on it
+//      is refused (checkRawMemberBytes). A day source's two segments of one
+//      file (names and domains) each take the file as their layer `raw`: the
+//      same blob twice, and two tags, fileTag with and without the variant d
+//      (D5 of DOM-029);
 //   4. the tag (D11 of DOM-024): fileTag for a `day` segment with raw bytes,
 //      segTag for any other, with the variant `d` for domains and none for
 //      names. A second segment of one source, one window and one dataset in
@@ -53,7 +57,11 @@
 //   7. the manifest (packManifest, tier seg, D12 of DOM-024), manifest.json and
 //      blobs.json beside the files, as scripts/compact/hour.mjs writes them:
 //      blobs.json names every layer, facts.json among them, so pushPlanOf of
-//      scripts/ingest/pack.mjs pushes it.
+//      scripts/ingest/pack.mjs pushes it. Its annotation
+//      dev.pkgforge.domains.url is the draft's url, the URL the raw bytes came
+//      from (checkDraftUrl of @domains/adapter: one of the row's urls or under
+//      one, AGENTS.md absolute 11), else the row's urls joined by a space; the
+//      raw lane object's alike.
 // The directory is DIR/<tag>/ for a segment and DIR/<raw tag>/ for a raw lane
 // object; DIR must hold none of them (a file is written once, flag wx).
 import { createHash } from 'node:crypto';
@@ -64,6 +72,7 @@ import {
   canonicalJson,
   ContractError,
   checkCursor,
+  checkDraftUrl,
   checkRawMember,
   checkRawMemberBytes,
   checkWindow,
@@ -85,10 +94,19 @@ import { writePackFiles, writerId } from '@domains/pack/node';
 import { isSecond } from '@domains/state';
 import { writeOut } from '../compact/plan.mjs';
 
-// The most bytes of one raw layer (D10 of DOM-024), as GHCR's 10-minute upload
-// of one attempt at 2 MiB/s bounds it (scripts/ghcr/rate.mjs,
-// docs/architecture.md section 4.3).
+// The most bytes of one part of a raw lane object (D10 of DOM-024), as GHCR's
+// 10-minute upload of one attempt at 2 MiB/s bounds it (ATTEMPT_S of
+// scripts/ghcr/rate.mjs, docs/architecture.md section 4.3): 512 s.
 export const RAW_PART_BYTES = 1024 * 1024 * 1024;
+// The most bytes of a day source's file, the one layer `raw` of its segments
+// (D27 of DOM-029). GHCR takes 10 GB a layer and 10 minutes an upload, and
+// DOM-006 measured 63.5 to 121.4 MB/s from a runner, so 2 GiB takes 18 to 34 s
+// of the 600 s an attempt has. THC's largest file so far is 985,750,694 B,
+// 8.2% under 1 GiB (MEASURED 2026-11-01T07:45:37Z, DOM-029's design M2), and
+// its volume moved 12x without notice: a file past 1 GiB would otherwise be a
+// fault every hour until the day became a gap. The parts of a raw lane object
+// stay at RAW_PART_BYTES, the bound of a slow upload.
+export const FILE_RAW_BYTES = 2 * 1024 ** 3;
 export const RAW_TYPE = artifactType('raw');
 export const RAW_MEDIA_TYPE = 'application/octet-stream';
 export const RAW_TITLE = 'raw';
@@ -179,9 +197,10 @@ export async function writeRaw(raw, dir, { maxParts, what, partBytes = RAW_PART_
 // The disk writer of one adapter run. `sources` are the adapter's registry
 // rows (with `parser` and `urls`); `psl` the hex sha256 of the list the
 // segments are written under (D23 of DOM-024); `run` the workflow run id;
-// `fetched` the run's ctx.now; `partBytes` the most bytes of one raw layer
-// (RAW_PART_BYTES; a test names a smaller one).
-export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes = RAW_PART_BYTES }) {
+// `fetched` the run's ctx.now; `partBytes` the most bytes of one part of a raw
+// lane object (RAW_PART_BYTES) and `fileBytes` of a day source's file
+// (FILE_RAW_BYTES); a test names smaller ones.
+export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes = RAW_PART_BYTES, fileBytes = FILE_RAW_BYTES }) {
   const byId = new Map(sources.map((s) => [s.id, s]));
   const segments = [];
   const raws = [];
@@ -214,10 +233,12 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
       }
     }
     checkRawMember(draft.rawMember, draft.precision, what);
+    checkDraftUrl(draft.url, row.urls, what);
     const factsFault = factsProblem(draft.facts);
     if (factsFault !== null) throw new WriteFault('facts', `${what}: ${factsFault}`);
     // Copied once checked, before the first await: what is written is what was checked.
     const rawMember = draft.rawMember === undefined ? undefined : JSON.parse(canonicalJson(draft.rawMember));
+    const url = draft.url ?? row.urls.join(' ');
     const facts = draft.facts === undefined || draft.facts.length === 0 ? null : JSON.parse(canonicalJson(draft.facts));
     let factsBytes = null;
     if (facts !== null) {
@@ -252,7 +273,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
     let got = null;
     const temp = join(dir, `.raw-${++temps}`);
     try {
-      if (raw !== undefined) got = await writeRaw(raw, temp, { maxParts: fileSource ? 1 : Number.MAX_SAFE_INTEGER, what: label, partBytes });
+      if (raw !== undefined) got = await writeRaw(raw, temp, { maxParts: fileSource ? 1 : Number.MAX_SAFE_INTEGER, what: label, partBytes: fileSource ? fileBytes : partBytes });
       checkRawMemberBytes(rawMember, got === null ? null : got.bytes, label);
       let tag;
       try {
@@ -276,7 +297,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         if (fileSource) {
           renameSync(got.files[0], join(at, RAW_TITLE));
           rawLayer = { path: join(at, RAW_TITLE), digest: `sha256:${got.sha256}`, size: got.bytes };
-        } else rawObject = keepRaw(draft, row, got, temp, label, rawMember);
+        } else rawObject = keepRaw(draft, row, got, temp, label, rawMember, url);
       }
 
       // 5. The records.
@@ -304,7 +325,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         [`${P}parser`]: row.parser,
         [`${P}cursor.before`]: canonicalJson(draft.cursorBefore),
         [`${P}cursor.after`]: canonicalJson(draft.cursorAfter),
-        [`${P}url`]: row.urls.join(' '),
+        [`${P}url`]: url,
         [`${P}fetched`]: fetched,
         ...(rawObject === null ? {} : { [`${P}raw`]: rawObject.tag }),
       };
@@ -368,9 +389,9 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
   }
 
   // The raw lane object of the draft's source and window: kept from the temp
-  // directory the first time, held to the same bytes and the same member
-  // fields after.
-  function keepRaw(draft, row, got, temp, label, rawMember) {
+  // directory the first time, held to the same bytes, the same member fields
+  // and the same url after.
+  function keepRaw(draft, row, got, temp, label, rawMember, url) {
     const key = `${draft.source} ${draft.window.start} ${draft.window.end}`;
     const fields = canonicalJson(rawMember ?? {});
     const was = rawByWindow.get(key);
@@ -379,6 +400,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
       if (kept.sha256 !== got.sha256 || kept.bytes !== got.bytes)
         throw new WriteFault('raw', `${label}: a second raw input of the window, ${got.bytes} B hashing to ${got.sha256}; the first was ${kept.bytes} B hashing to ${kept.sha256}`);
       if (was.fields !== fields) throw new WriteFault('raw', `${label}: a second raw input of the window with the member fields ${fields}; the first gave ${was.fields}`);
+      if (kept.annotations[`${P}url`] !== url) throw new WriteFault('raw', `${label}: a second raw input of the window from ${url}; the first came from ${kept.annotations[`${P}url`]}`);
       return kept;
     }
     const tag = rawTag(draft.source, draft.window.start, draft.window.end);
@@ -408,7 +430,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         [`${P}members`]: String(members.members.length),
         [`${P}adapter`]: adapter,
         [`${P}parser`]: row.parser,
-        [`${P}url`]: row.urls.join(' '),
+        [`${P}url`]: url,
         [`${P}fetched`]: fetched,
         [`${P}run`]: run,
       },

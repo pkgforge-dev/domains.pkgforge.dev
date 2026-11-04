@@ -1,0 +1,6 @@
+"a.example.com\r"                  {"refused":"charset"}
+"a.example.com,2026-10-31"         {"refused":"charset"}
+"﻿a.example.com"                   {"name":"a.example.com","wild":false}
+"\"a.example.com\""                {"refused":"charset"}
+"a.example.com "                   {"refused":"charset"}
+"a.example.com"                    {"name":"a.example.com","wild":false}

@@ -21,9 +21,19 @@
 //            (checkHistory of @domains/adapter), the newest HISTORY_DAYS kept;
 //            a source with no day has no key
 //   owed     the packs a moved state is past and the live root does not name
-//            yet (D4 of DOM-024): every segment that is not quarantined, and
-//            every hour pack of `feed`, until settle drops it; sorted by start,
-//            then ref
+//            yet (D4 of DOM-024): every segment, quarantined or not (ruling
+//            23 serves a quarantined one, D7 of DOM-029), and every hour pack
+//            of `feed`, until settle drops it; sorted by start, then ref
+//   gaps     optional (D9 of DOM-029): the days each day source lacks that the
+//            root does not list yet, { "<source>": ["YYYY-MM-DD", ...] },
+//            sorted, distinct, at most GAP_DAYS a source, no empty list. A run
+//            declares a day (RunResult.gaps), the job push passes it to the
+//            promotion as --gap, and settle drops it once the live root lists
+//            it or a live segment of its source covers the day. The key is
+//            written only when a gap is pending: a reader of an earlier
+//            commit refuses a field it does not know (docs/architecture.md
+//            section 4.6), so a state with no pending gap holds the fields of
+//            commit 137a220 alone
 //
 // Canonical JSON (canonicalJson of @domains/adapter, keys sorted) and one
 // newline, at most STATE_MAX_BYTES. A reader refuses a format it does not
@@ -52,6 +62,10 @@ export const HISTORY_DAYS = 90;
 // (`expired`), so a pack that waits on a hole (scripts/root/promote.mjs
 // --partial) or that every promotion refuses is not added again for good.
 export const OWED_DAYS = 7;
+// The most pending gap days of one source: a year. A pending day waits for
+// one promotion, so more means the promotions failed for a year; advance keeps
+// the newest GAP_DAYS, as history keeps the newest HISTORY_DAYS.
+export const GAP_DAYS = 366;
 
 export type HistoryItem = BandDay;
 
@@ -70,6 +84,8 @@ export interface OwedItem {
   readonly since: string;
 }
 
+export type Gaps = Readonly<Record<string, readonly string[]>>;
+
 export interface State {
   readonly format: typeof STATE_FORMAT;
   readonly updated: string;
@@ -77,9 +93,13 @@ export interface State {
   readonly moved: Readonly<Record<string, Moved>>;
   readonly history: Readonly<Record<string, readonly HistoryItem[]>>;
   readonly owed: readonly OwedItem[];
+  // Absent when no gap is pending, never empty.
+  readonly gaps?: Gaps;
 }
 
 const STATE_FIELDS = Object.freeze(["cursors", "format", "history", "moved", "owed", "updated"]);
+// The fields a state carries only when they hold something (the header's gaps).
+export const STATE_OPTIONAL_FIELDS = Object.freeze(["gaps"]);
 const MOVED_FIELDS = Object.freeze(["at", "run"]);
 const HISTORY_FIELDS = Object.freeze(["count", "day", "quarantined"]);
 const OWED_FIELDS = Object.freeze(["dataset", "digest", "end", "ref", "since", "start", "tier"]);
@@ -108,13 +128,20 @@ export function isId(v: unknown): v is string {
   return typeof v === "string" && ID_GRAMMAR.test(v) && v.length <= MAX_ID;
 }
 
-// Why the keys of `o` are not exactly `fields`, or null.
-export function keysProblem(o: Obj, fields: readonly string[]): string | null {
+// Why the keys of `o` are not exactly `fields` and any of `optional`, or null.
+export function keysProblem(o: Obj, fields: readonly string[], optional: readonly string[] = []): string | null {
   const missing = fields.filter((f) => !Object.hasOwn(o, f));
   if (missing.length > 0) return `${missing.join(", ")} missing`;
-  const unknown = Object.keys(o).filter((k) => !fields.includes(k));
+  const unknown = Object.keys(o).filter((k) => !fields.includes(k) && !optional.includes(k));
   if (unknown.length > 0) return `unknown field${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}`;
   return null;
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// True for a calendar day YYYY-MM-DD.
+export function isDay(v: unknown): v is string {
+  return typeof v === "string" && ISO_DAY.test(v) && isSecond(`${v}T00:00:00Z`);
 }
 
 // A ref `PACKAGE:TAG` read into its parts, or a problem.
@@ -206,6 +233,37 @@ function historyList(v: unknown, at: string): HistoryItem[] {
   return days.map((d) => ({ day: d.day, count: d.count, quarantined: d.quarantined }));
 }
 
+// The pending gaps of the header, checked whole, as fresh lists. An empty
+// object is refused: a state with no pending gap has no key.
+function gapsOf(v: unknown): Record<string, string[]> {
+  if (!isObject(v)) throw schema("gaps is not an object");
+  const entries = Object.entries(v);
+  if (entries.length === 0) throw schema("gaps is empty; a state with no pending gap has no key gaps");
+  const out: Record<string, string[]> = {};
+  for (const [source, days] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!isId(source)) throw schema(`gaps names ${JSON.stringify(source)}, which is not a source id (at most ${MAX_ID} characters)`);
+    if (!Array.isArray(days) || days.length === 0) throw schema(`gaps.${source} is not a list of days; a source with no pending gap has no key`);
+    if (days.length > GAP_DAYS) throw schema(`gaps.${source} holds ${days.length} days, over ${GAP_DAYS}`);
+    days.forEach((d: unknown, i: number) => {
+      if (!isDay(d)) throw schema(`gaps.${source}[${i}] ${show(d)} is not a calendar day YYYY-MM-DD`);
+      if (i > 0 && !(d > (days[i - 1] as string))) throw schema(`gaps.${source} is not sorted and distinct: ${d} is at ${i}`);
+    });
+    out[source] = [...(days as string[])];
+  }
+  return out;
+}
+
+// `state` with `gaps` as its pending gaps: the key is left out when none is
+// pending (the header's gaps), and each list is sorted, distinct.
+export function withGaps(state: State, gaps: Readonly<Record<string, readonly string[]>>): State {
+  const { gaps: _was, ...rest } = state;
+  const kept = Object.entries(gaps)
+    .filter(([, days]) => days.length > 0)
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([source, days]) => [source, [...new Set(days)].sort()] as const);
+  return kept.length === 0 ? rest : { ...rest, gaps: Object.fromEntries(kept) };
+}
+
 // `value` as a State, or StateError: `format` for another format, `schema`
 // for every other rule of the header. The result is a fresh object; the
 // cursors are kept as given.
@@ -213,7 +271,7 @@ export function validateState(value: unknown): State {
   if (!isObject(value)) throw schema("not an object");
   // The format first: a reader refuses a state it does not know.
   if (value.format !== STATE_FORMAT) throw new StateError("format", `state.json: the format is ${show(value.format)}; this reader knows ${STATE_FORMAT}`);
-  const keys = keysProblem(value, STATE_FIELDS);
+  const keys = keysProblem(value, STATE_FIELDS, STATE_OPTIONAL_FIELDS);
   if (keys !== null) throw schema(keys);
   if (!isSecond(value.updated)) throw schema(`updated ${show(value.updated)} is not an ISO 8601 UTC time to the second`);
   const { cursors, moved, history, owed } = value;
@@ -256,7 +314,8 @@ export function validateState(value: unknown): State {
     if (i > 0 && byStartRef(nextOwed[i - 1]!, item) >= 0)
       throw schema(`owed is not sorted by start, then ref: ${item.ref} from ${item.start} is after ${nextOwed[i - 1]!.ref} from ${nextOwed[i - 1]!.start}`);
   });
-  return { format: STATE_FORMAT, updated: value.updated, cursors: nextCursors, moved: nextMoved, history: nextHistory, owed: nextOwed };
+  const state: State = { format: STATE_FORMAT, updated: value.updated, cursors: nextCursors, moved: nextMoved, history: nextHistory, owed: nextOwed };
+  return Object.hasOwn(value, "gaps") ? { ...state, gaps: gapsOf(value.gaps) } : state;
 }
 
 const encoder = new TextEncoder();
@@ -314,11 +373,14 @@ export function encodeState(state: State): Uint8Array {
   return writeJson(validateState(state), STATE_MAX_BYTES, "state.json");
 }
 
-// What a move changes: everything but `updated` and `format`. null is the
-// state no run has pushed, which holds nothing.
-const body = (s: State | null): unknown => (s === null ? { cursors: {}, history: {}, moved: {}, owed: [] } : { cursors: s.cursors, history: s.history, moved: s.moved, owed: s.owed });
+// What a move changes: everything but `updated` and `format`, the pending
+// gaps among it (absent is none). null is the state no run has pushed, which
+// holds nothing.
+const body = (s: State | null): unknown =>
+  s === null ? { cursors: {}, gaps: {}, history: {}, moved: {}, owed: [] } : { cursors: s.cursors, gaps: s.gaps ?? {}, history: s.history, moved: s.moved, owed: s.owed };
 
-// Equal but for `updated`; null equals a state with no cursor, history or owed item.
+// Equal but for `updated`; null equals a state with no cursor, history, owed
+// item or pending gap.
 export function sameState(a: State | null, b: State | null): boolean {
   return jsonEqual(body(a), body(b));
 }

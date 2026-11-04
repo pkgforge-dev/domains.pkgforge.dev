@@ -75,9 +75,11 @@ function rootFiles(dir, packs, { gaps } = {}) {
 // packs end at 07:00, and its lane is behind its clock. `oiPsl` is the PSL
 // hash the first oi-nrd window was built under. `oiFacts` gives the facts of
 // the windows of 05:00 (a) and 06:00 (b), as the draft's rows or as the
-// layer's bytes (SegmentOptions.facts).
-async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL, oiFacts = {} } = {}) {
-  const facts = (k) => (oiFacts[k] === undefined ? {} : { facts: oiFacts[k] });
+// layer's bytes (SegmentOptions.facts). `quarantined` names the segments
+// pushed quarantined (ruling 23), so the root file marks them: `isc` (ISC's
+// day segment) and `b` (oi-nrd's window of 06:00).
+async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL, oiFacts = {}, quarantined = [] } = {}) {
+  const facts = (k) => ({ ...(oiFacts[k] === undefined ? {} : { facts: oiFacts[k] }), ...(quarantined.includes(k) ? { quarantine: true } : {}) });
   const packs = [
     await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] }),
     await segment('thc-ct', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [
@@ -96,7 +98,9 @@ async function dayRoot(dir, { behind = false, hour5Rows = null, oiPsl = PSL, oiF
           await segment('oi-nrd', '2026-10-27T07:00:00Z', '2026-10-28T00:00:00Z', []),
           await segment('oi-nrd', '2026-10-28T00:00:00Z', '2026-10-28T00:10:00Z', [domain('org.after-midnight-synthetic', 'oi-nrd', secs('2026-10-28T00:05:00Z'))]),
         ]),
-    await segment('isc-new', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [domain('com.early-synthetic', 'isc-new', 290), domain('com.isc-synthetic', 'isc-new', 299)]),
+    await segment('isc-new', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [domain('com.early-synthetic', 'isc-new', 290), domain('com.isc-synthetic', 'isc-new', 299)], {
+      quarantine: quarantined.includes('isc'),
+    }),
     await tierPack(
       'feed',
       'h',
@@ -250,7 +254,8 @@ test('day cli: the domains day pack, the exact feed with its time copy and summa
     assert.match(x.text, /^exact day 7 new 5 early 1 blocks \d+$/m);
     assert.match(x.text, /^carry hour rows 3 matched 2 carried 1 retracted 1$/m);
     assert.match(x.text, /^wrote feed:feed-d-20261027 sha256:[0-9a-f]{64} records 5 parts 1 time 1$/m);
-    assert.match(x.text, /^wrote state:ledger-filter-20261027 \S+filter\.dlbf sha256:[0-9a-f]{64} keys 7 bytes \d+$/m);
+    // D28 of DOM-029: 7 keys fold the filter to partitions of 64 bits, 7 x 8 B of bits and the 36 B header.
+    assert.match(x.text, /^wrote state:ledger-filter-20261027 \S+filter\.dlbf sha256:[0-9a-f]{64} keys 7 partition_bits 64 bytes 92 bits_per_key 64\.00$/m);
     assert.match(x.text, /^wrote state:ledger-delta \S+delta\.dlbd sha256:[0-9a-f]{64} hashes 0 to 0$/m);
     // The replacements the promotion takes: the day's domains inputs, and the two hour packs.
     const report = JSON.parse(readFileSync(join(out, 'day.json'), 'utf8'));
@@ -527,39 +532,27 @@ test('day cli: a time copy that does not bind to its key copy is exit 1, FAIL ti
     assert.equal(existsSync(join(out, 'day.json')), false);
   }));
 
-// ⚠ No root file reaches ruling 23's wiring in day.mjs today: the root's
-// schema holds no field `quarantine`, and validateRoot refuses an entry that
-// carries one. DOM-029 adds the field. This test then fails, and the next one
-// reads the root file in place of its double.
-test('day cli: a root entry marked quarantined is refused by the root schema until DOM-029 adds the field, exit 1', () =>
+// Ruling 23 through day.mjs: ISC's day segment is pushed quarantined, so the
+// root file marks it (quarantine: true, DOM-029). The domains day pack still
+// holds its records, since they are served, and names isc-new in its
+// quarantined-inputs; the exact join reads the other inputs only, so
+// com.isc-synthetic is no row, and the feed pack does not name isc-new
+// (AGENTS.md absolute 11).
+test('day cli: a quarantined input stays in domains-d and is left out of the exact join: it gives the feed no row, the feed does not name its source, and domains-d names it in quarantined-inputs', () =>
   inTmp(async (dir) => {
-    const r = await dayRoot(dir);
+    const r = await dayRoot(dir, { quarantined: ['isc'] });
     const isc = r.root.datasets.domains.find((p) => p.tag.startsWith('isc-new.'));
-    isc.quarantine = 1;
-    writeFileSync(r.rootPath, `${JSON.stringify(r.root)}\n`);
-    const x = await call(main, args(r, join(dir, 'out'), ['--no-ledger']));
-    assert.equal(x.code, EXIT.fault, x.text);
-    assert.match(x.text, /day: FAIL fault --root .*root\.json: .*holds the unknown field\(s\) quarantine/);
-  }));
-
-// Ruling 23 through day.mjs: the root double marks ISC's day segment
-// quarantined. The domains day pack still holds its records, since they are
-// served; the exact join reads the other inputs only, so com.isc-synthetic is
-// no row, and the feed pack does not name isc-new (AGENTS.md absolute 11).
-test('day cli: a day input the root marks quarantined stays in the domains pack, gives the feed no row, and the feed does not name its source', () =>
-  inTmp(async (dir) => {
-    const r = await dayRoot(dir);
-    const isc = r.root.datasets.domains.find((p) => p.tag.startsWith('isc-new.'));
-    isc.quarantine = 1;
-    const readRoot = async () => ({ root: r.root, ref: 'sha256:'.padEnd(71, '0') });
+    assert.equal(isc.quarantine, true, 'the root file carries the mark');
     const out = join(dir, 'out');
-    const x = await call(main, args(r, out, ['--no-ledger']), { readRoot });
+    const x = await call(main, args(r, out, ['--no-ledger']));
     assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^quarantined-inputs names:domains-d-20261027 isc-new$/m);
     assert.match(x.text, new RegExp(`^input domains obs:${isc.tag.replaceAll('.', '\\.')} seg 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z 2 quarantined$`, 'm'));
     assert.match(x.text, new RegExp(`^exact domains: 1 quarantined input\\(s\\) left out of the join \\(ruling 23\\): obs:${isc.tag.replaceAll('.', '\\.')}$`, 'm'));
     assert.match(x.text, /^wrote names:domains-d-20261027 sha256:[0-9a-f]{64} records 7 parts 1$/m);
     const domains = JSON.parse(readFileSync(join(out, 'domains', 'manifest.json'), 'utf8'));
     assert.equal(domains.annotations['dev.pkgforge.domains.source'], 'isc-new,oi-nrd,thc-ct');
+    assert.equal(domains.annotations['dev.pkgforge.domains.quarantined-inputs'], 'isc-new');
     assert.match(x.text, /^exact day 5 new 4 early 0 blocks \d+$/m);
     assert.deepEqual(await rowsOf(join(out, 'feed')), [
       ['com.fresh-synthetic', 5 * 3600 + 600, 0],
@@ -967,13 +960,12 @@ test('day cli: a facts.json or a manifest that --inputs lacks is exit 2; a facts
 // that np.com.nepal-synthetic's record, THC's alone, does not hold.
 test("day cli: a quarantined segment's facts go into the domains day pack's facts.json and not to the feed", () =>
   inTmp(async (dir) => {
-    const r = await dayRoot(dir, { oiFacts: { a: OI_FACTS.a, b: [{ key: 'np.com.nepal-synthetic', cert_age: 2_592_000 }] } });
+    const r = await dayRoot(dir, { oiFacts: { a: OI_FACTS.a, b: [{ key: 'np.com.nepal-synthetic', cert_age: 2_592_000 }] }, quarantined: ['b'] });
     const windowB = r.root.datasets.domains.find((p) => p.tag === r.packs[3].tag);
     assert.match(windowB.tag, /^oi-nrd\.20261027t060000z\./);
-    windowB.quarantine = 1;
-    const readRoot = async () => ({ root: r.root, ref: 'sha256:'.padEnd(71, '0') });
+    assert.equal(windowB.quarantine, true, 'the root file carries the mark');
     const out = join(dir, 'out');
-    const x = await call(main, args(r, out, ['--no-ledger']), { readRoot });
+    const x = await call(main, args(r, out, ['--no-ledger']));
     assert.equal(x.code, EXIT.ok, x.text);
     assert.match(x.text, /^facts 2 3$/m);
     assert.match(x.text, /^exact domains: 1 quarantined input\(s\) left out of the join \(ruling 23\): obs:oi-nrd\.20261027t060000z\./m);
@@ -1073,3 +1065,210 @@ test('day cli: the domains day facts.json is null for no fact, the merge encoded
     (e) => e instanceof Fault && e.message.startsWith('the facts.json of names:domains-d-20261027: size: the layer is ') && e.message.endsWith(` bytes, over ${FACTS_MAX_BYTES}`),
   );
 });
+
+// ---- DOM-029: a feed plan of skip (F7), the absorb of a late segment (D17),
+// the annotation quarantined-inputs (L8) and the ledger's cap (D28).
+
+const QUARANTINED_INPUTS = 'dev.pkgforge.domains.quarantined-inputs';
+
+// The feed's corpus starts at 2026-10-28 (its first pack, a day pack), after
+// the day of 2026-10-27 that domains builds: no feed pack of 2026-10-27 is
+// written, as a backfilled day before feed's corpus_since gets none (D16).
+test('day cli: a feed plan of skip writes no feed pack and prints skip feed DAY: REASON; the domains day pack and the ledger are written', () =>
+  inTmp(async (dir) => {
+    const packs = [
+      await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] }),
+      await segment('thc-ct', '2026-10-27T00:00:00Z', '2026-10-28T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', 299), domain('com.thc-synthetic', 'thc-ct', 299)]),
+      await tierPack('feed', 'd', '2026-10-28T00:00:00Z', [{ ...feedRow('com.later-synthetic', '05:10:00', 0), firstSeen: secs('2026-10-28T05:10:00Z') }], { sources: ['oi-nrd'] }),
+    ];
+    const r = rootFiles(dir, packs);
+    assert.equal(r.root.corpus_since.feed, '2026-10-28T00:00:00Z');
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--first-ledger']));
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^verdict feed skip feed:feed-d-20261027$/m);
+    assert.match(
+      x.text,
+      /^skip feed 2026-10-27: the unit ends at 2026-10-28T00:00:00Z, at or before the corpus of feed starts at 2026-10-28T00:00:00Z \(corpus_since\): no source covers it, and no pack is written$/m,
+    );
+    assert.doesNotMatch(x.text, /^(wrote|exact|carry|summary) feed/m);
+    assert.match(x.text, /^wrote names:domains-d-20261027 sha256:[0-9a-f]{64} records 2 parts 1$/m);
+    assert.match(x.text, /^wrote state:ledger-filter-20261027 /m);
+    assert.equal(existsSync(join(out, 'feed')), false);
+    const report = JSON.parse(readFileSync(join(out, 'day.json'), 'utf8'));
+    assert.deepEqual(report.feed, { action: 'skip', tag: 'feed-d-20261027', manifest: null, replaces: [] });
+    assert.deepEqual([report.exact, report.carry, report.summary], [null, null, null]);
+  }));
+
+// The live set of 2026-10-27 after its day packs were built without THC, and
+// THC's late day segment beside them (D17 of DOM-029): domains-d-20261026,
+// the base; the live domains-d-20261027 of oi-nrd's records; THC's day
+// segment of 2026-10-27; and the live feed-d-20261027, whose row of
+// net.cert-synthetic is suspect. `facts` gives the day pack a facts.json of
+// oi-nrd, `annotations` its own annotations, `quarantine` pushes THC's
+// segment quarantined. The tags hold both day packs, so a rebuild reads
+// their manifests (buildsReader) and takes -r2.
+async function absorbRoot(dir, { facts = null, annotations, quarantine = false } = {}) {
+  const day = await tierPack('domains', 'd', '2026-10-27T00:00:00Z', [domain('com.fresh-synthetic', 'oi-nrd', T('05:10:00')), domain('net.cert-synthetic', 'oi-nrd', T('05:20:00'))], {
+    sources: ['oi-nrd'],
+    ...(facts === null ? {} : { extra: [factsExtra(facts)] }),
+    ...(annotations === undefined ? {} : { annotations }),
+  });
+  const feed = await tierPack('feed', 'd', '2026-10-27T00:00:00Z', [feedRow('com.fresh-synthetic', '05:10:00', 0), feedRow('net.cert-synthetic', '05:20:00', FEED_SUSPECT | FEED_SUSPECT_CERT)], {
+    sources: ['oi-nrd'],
+  });
+  const packs = [
+    await tierPack('domains', 'd', '2026-10-26T00:00:00Z', [domain('com.old-synthetic', 'thc-ct', dayNo('2026-10-26'))], { sources: ['thc-ct'] }),
+    day,
+    await segment(
+      'thc-ct',
+      '2026-10-27T00:00:00Z',
+      '2026-10-28T00:00:00Z',
+      [domain('com.fresh-synthetic', 'thc-ct', 299), domain('com.old-synthetic', 'thc-ct', 299), domain('com.thc-synthetic', 'thc-ct', 299)],
+      {
+        quarantine,
+      },
+    ),
+    feed,
+  ];
+  const r = rootFiles(dir, packs);
+  writeFileSync(r.tags, JSON.stringify({ names: ['domains-d-20261026', 'domains-d-20261027'], feed: ['feed-d-20261027'] }));
+  const reader = buildsReader({ names: { 'domains-d-20261027': day.json }, feed: { 'feed-d-20261027': feed.json } });
+  return { ...r, day, feed, seg: packs[2], reader };
+}
+
+test('day cli: an absorb takes the late THC segment and the live feed day as carry: -r2 of each replaces them; without --rebuild both stay present', () =>
+  inTmp(async (dir) => {
+    const r = await absorbRoot(dir);
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--no-ledger', '--rebuild', 'domains,feed']), { reader: r.reader });
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^verdict domains ready names:domains-d-20261027$/m);
+    assert.ok(x.out.includes(`reason domains absorb: names:domains-d-20261027 takes in 1 segment(s) that came after it: obs:${r.seg.tag}`), x.text);
+    assert.match(x.text, /^input domains names:domains-d-20261027 d 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z 2$/m);
+    assert.match(x.text, /^verdict feed ready feed:feed-d-20261027$/m);
+    assert.match(
+      x.text,
+      /^reason feed absorb: the day of domains takes in 1 segment\(s\) that are not quarantined \(obs:thc-ct\..*\), so feed:feed-d-20261027 is built again from its exact join, its rows carried$/m,
+    );
+    assert.match(x.text, /^check domains: 4 records, the inputs' 4 distinct keys of 5 records$/m);
+    assert.match(x.text, /^wrote names:domains-d-20261027-r2 sha256:[0-9a-f]{64} records 4 parts 1$/m);
+    assert.ok(x.out.includes(`replace names:domains-d-20261027-r2 ${r.day.digest} ${r.seg.digest}`), x.text);
+    assert.doesNotMatch(x.text, /^quarantined-inputs /m);
+    // The live feed day is the carry, as hour packs are: its suspect row keeps its bits.
+    assert.match(x.text, /^exact day 4 new 3 early 0 blocks \d+$/m);
+    assert.match(x.text, /^carry hour rows 2 matched 2 carried 1 retracted 0$/m);
+    assert.match(x.text, /^wrote feed:feed-d-20261027-r2 sha256:[0-9a-f]{64} records 3 parts 1 time 1$/m);
+    assert.ok(x.out.includes(`replace feed:feed-d-20261027-r2 ${r.feed.digest}`), x.text);
+    assert.deepEqual(await rowsOf(join(out, 'feed')), [
+      ['com.fresh-synthetic', 0, 0],
+      ['com.thc-synthetic', 0, 0],
+      ['net.cert-synthetic', 5 * 3600 + 1200, FEED_SUSPECT | FEED_SUSPECT_CERT],
+    ]);
+    const domains = JSON.parse(readFileSync(join(out, 'domains', 'manifest.json'), 'utf8'));
+    assert.equal(domains.annotations['dev.pkgforge.domains.source'], 'oi-nrd,thc-ct');
+    assert.equal(Object.hasOwn(domains.annotations, QUARANTINED_INPUTS), false);
+    const feed = JSON.parse(readFileSync(join(out, 'feed', 'manifest.json'), 'utf8'));
+    assert.equal(feed.annotations['dev.pkgforge.domains.source'], 'oi-nrd,thc-ct');
+    const report = JSON.parse(readFileSync(join(out, 'day.json'), 'utf8'));
+    assert.deepEqual(
+      [report.domains.tag, report.domains.replaces, report.feed.tag, report.feed.replaces],
+      ['domains-d-20261027-r2', [r.day.digest, r.seg.digest], 'feed-d-20261027-r2', [r.feed.digest]],
+    );
+    assert.deepEqual(report.facts, { from: 'inputs', layers: 0, keys: 0 });
+    const vd = await verifyDir(join(out, 'domains'), 'dataset,length,count,sha256');
+    assert.equal(vd.code, 0, vd.text);
+    const vf = await verifyDir(join(out, 'feed'), 'dataset,length,count,sha256,time');
+    assert.equal(vf.code, 0, vf.text);
+    // --rebuild domains alone: the feed day's tag is in the package, and no -r2 of it is asked.
+    const d = await call(main, args(r, join(dir, 'domains-only'), ['--no-ledger', '--rebuild', 'domains']), { reader: r.reader });
+    assert.equal(d.code, EXIT.ok, d.text);
+    assert.match(d.text, /^wrote names:domains-d-20261027-r2 /m);
+    assert.match(d.text, /^present feed:feed-d-20261027 \(feed-d-20261027\): nothing is written$/m);
+    // No --rebuild: no absorb, both day packs are live, and nothing is written.
+    const plain = await call(main, args(r, join(dir, 'plain'), ['--no-ledger']), { reader: r.reader });
+    assert.equal(plain.code, EXIT.ok, plain.text);
+    assert.match(plain.text, /^verdict domains present names:domains-d-20261027$/m);
+    assert.match(plain.text, /^present feed:feed-d-20261027: the day's feed is live$/m);
+    assert.doesNotMatch(plain.text, /^wrote /m);
+  }));
+
+test("day cli: the facts of a live day pack reach its absorb: the -r2 pack carries them in its facts.json, and the rebuilt feed's row is suspect", () =>
+  inTmp(async (dir) => {
+    const r = await absorbRoot(dir, { facts: segmentFacts('oi-nrd', [{ key: 'com.fresh-synthetic', cert_age: 2_592_000 }]) });
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--no-ledger', '--rebuild', 'domains,feed']), { reader: r.reader });
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^facts 1 1$/m);
+    assert.deepEqual(JSON.parse(readFileSync(join(out, 'day.json'), 'utf8')).facts, { from: 'inputs', layers: 1, keys: 1 });
+    const manifest = JSON.parse(readFileSync(join(out, 'domains', 'manifest.json'), 'utf8'));
+    assert.ok(manifest.layers.some((l) => l.annotations['org.opencontainers.image.title'] === 'facts.json'));
+    const facts = parseFacts(new Uint8Array(readFileSync(join(out, 'domains', 'facts.json'))));
+    assert.deepEqual([...facts.keys()], ['com.fresh-synthetic']);
+    assert.deepEqual(await rowsOf(join(out, 'feed')), [
+      ['com.fresh-synthetic', 0, FEED_SUSPECT | FEED_SUSPECT_CERT],
+      ['com.thc-synthetic', 0, 0],
+      ['net.cert-synthetic', 5 * 3600 + 1200, FEED_SUSPECT | FEED_SUSPECT_CERT],
+    ]);
+  }));
+
+test('day cli: a day pack built with a quarantined input carries quarantined-inputs, a rebuild carries it forward, and its absorb keeps the feed; a quarantined late segment leaves the feed day present', () =>
+  inTmp(async (dir) => {
+    // The day pack of 2026-10-27 names isc-new in quarantined-inputs: its records hold ISC's, which the join cannot tell apart.
+    const r = await absorbRoot(join(dir, 'held'), { annotations: { [QUARANTINED_INPUTS]: 'isc-new' } });
+    const out = join(dir, 'out');
+    const x = await call(main, args(r, out, ['--no-ledger', '--rebuild', 'domains,feed']), { reader: r.reader });
+    assert.equal(x.code, EXIT.ok, x.text);
+    assert.match(x.text, /^wrote names:domains-d-20261027-r2 sha256:[0-9a-f]{64} records 4 parts 1$/m);
+    assert.match(x.text, /^quarantined-inputs names:domains-d-20261027-r2 isc-new$/m);
+    assert.equal(JSON.parse(readFileSync(join(out, 'domains', 'manifest.json'), 'utf8')).annotations[QUARANTINED_INPUTS], 'isc-new');
+    assert.ok(
+      x.out.includes(
+        `keep feed:feed-d-20261027: the day's records are names:domains-d-20261027, which carries ${QUARANTINED_INPUTS} isc-new, and an exact join over it would take those records as new (ruling 23); no feed pack is written, and the live feed day stays`,
+      ),
+      x.text,
+    );
+    assert.doesNotMatch(x.text, /^(wrote|exact|carry) feed/m);
+    assert.equal(existsSync(join(out, 'feed')), false);
+    assert.deepEqual(JSON.parse(readFileSync(join(out, 'day.json'), 'utf8')).feed, { action: 'keep', tag: 'feed-d-20261027', manifest: r.feed.digest, replaces: [] });
+    // A quarantined late segment: the -r2 pack names thc-ct, and the feed day stays present (planTier: nothing for it to absorb).
+    const q = await absorbRoot(join(dir, 'q'), { quarantine: true });
+    const y = await call(main, args(q, join(dir, 'q-out'), ['--no-ledger', '--rebuild', 'domains']), { reader: q.reader });
+    assert.equal(y.code, EXIT.ok, y.text);
+    assert.match(y.text, /^input domains obs:thc-ct\.\S+ seg 2026-10-27T00:00:00Z 2026-10-28T00:00:00Z 3 quarantined$/m);
+    assert.match(y.text, /^quarantined-inputs names:domains-d-20261027-r2 thc-ct$/m);
+    assert.match(y.text, /^verdict feed present feed:feed-d-20261027$/m);
+    assert.match(y.text, /^present feed:feed-d-20261027: the day's feed is live$/m);
+    const manifest = JSON.parse(readFileSync(join(dir, 'q-out', 'domains', 'manifest.json'), 'utf8'));
+    assert.deepEqual([manifest.annotations['dev.pkgforge.domains.source'], manifest.annotations[QUARANTINED_INPUTS]], ['oi-nrd,thc-ct', 'thc-ct']);
+    // A day pack whose quarantined-inputs is not source ids sorted and distinct is a fault of the pack, exit 1.
+    const bad = await absorbRoot(join(dir, 'bad'), { annotations: { [QUARANTINED_INPUTS]: 'isc-new' } });
+    const path = join(bad.inputs, 'domains-d-20261027', 'manifest.json');
+    const text = readFileSync(path, 'utf8').replace('"isc-new"', '"thc-ct isc-new"');
+    writeFileSync(path, text);
+    const root = { ...bad.root, datasets: { ...bad.root.datasets, domains: bad.root.datasets.domains.map((p) => (p.tag === 'domains-d-20261027' ? { ...p, manifest: sha(text) } : p)) } };
+    writeFileSync(bad.rootPath, `${JSON.stringify(root)}\n`);
+    const z = await call(main, args(bad, join(dir, 'bad-out'), ['--no-ledger', '--rebuild', 'domains,feed']), { reader: bad.reader });
+    assert.equal(z.code, EXIT.fault, z.text);
+    assert.match(z.text, /day: FAIL fault names:domains-d-20261027 carries dev\.pkgforge\.domains\.quarantined-inputs="thc-ct isc-new", not source ids sorted and distinct, one space apart/);
+  }));
+
+test('day cli: a filter over the cap a reader of state takes is refused, exit 1, after its fold; no filter, delta or day.json is written', () =>
+  inTmp(async (dir) => {
+    const r = await dayRoot(dir);
+    const out = join(dir, 'out');
+    // 7 keys fold to 7 partitions of 64 bits, 92 B with the header, the smallest a fold reaches.
+    const x = await call(main, args(r, out, ['--first-ledger']), { ledgerMaxBytes: 91 });
+    assert.equal(x.code, EXIT.fault, x.text);
+    assert.match(
+      x.text,
+      /day: FAIL fault the filter of ledger-filter-20261027 is 92 B \(7 keys, 7 partitions of 64 bits\), over the 91 B a reader of state takes \(LEDGER_MAX_BYTES\), and it does not fold further: no filter and no delta is written/,
+    );
+    assert.equal(existsSync(join(out, 'ledger')), false);
+    assert.equal(existsSync(join(out, 'day.json')), false);
+    // At the cap itself the filter is written.
+    const at = await call(main, args(r, join(dir, 'at'), ['--first-ledger']), { ledgerMaxBytes: 92 });
+    assert.equal(at.code, EXIT.ok, at.text);
+    assert.match(at.text, /^wrote state:ledger-filter-20261027 \S+ sha256:[0-9a-f]{64} keys 7 partition_bits 64 bytes 92 bits_per_key 64\.00$/m);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'at', 'day.json'), 'utf8')).ledger.bytes, 92);
+  }));

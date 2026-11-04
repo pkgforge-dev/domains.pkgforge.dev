@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   buildRoot,
   canonical,
+  comparePacks,
   derive,
   PACK_FIELDS,
   PACK_OPTIONAL_FIELDS,
@@ -480,25 +481,29 @@ test("root: canonical JSON orders keys, so field order never decides equality", 
   assert.notEqual(canonical([1, 2]), canonical([2, 1]));
 });
 
-// The fields that the strict validateRoot of commit 9b142c6 knows, copied
-// from that commit's packages/root/src/root.ts. A writer of that commit reads
-// the live root with it: a run of ingest-live.yml queued on it when a later
-// commit is pushed, and a re-run of one of its runs for GitHub's 30 days. It
-// refuses a root that holds another field, exit 1 (DOM-063's Decision). A
+// The fields that the strict validateRoot of commit 137a220 knows, copied
+// from that commit's packages/root/src/root.ts (the lists of 9b142c6,
+// unchanged by DOM-063). A writer of that commit reads the live root with it:
+// a run of ingest-live.yml or compact-*.yml queued on it when a later commit
+// is pushed, and a re-run of one of its runs for GitHub's 30 days. It refuses
+// a root that holds another field, exit 1 (DOM-063's Decision of
+// 2026-11-01T15:45Z). DOM-029 adds `quarantine` to a pack entry, written only
+// on a quarantined segment: a root with none holds the fields below alone. A
 // change to root.json that adds a field fails here first; its entry then says
 // what the runs of the earlier commits do with the new root.
-const KNOWN_9B142C6 = {
+const KNOWN_137A220 = {
   root: ["format", "root_seq", "as_of", "created", "previous", "psl", "psl_live", "corpus_since", "gaps", "through", "counts", "datasets", "withdrawn"],
   pack: ["repo", "tag", "tier", "span", "manifest", "pack", "idx", "parts", "count", "key_min", "key_max", "sources", "psl", "time"],
   time: ["idx", "parts"],
   withdrawn: ["manifest", "at"],
 };
 
-test("root: a root this code builds holds only the fields a writer of commit 9b142c6 knows, and this code's writer reads a root of those fields", () => {
-  assert.deepEqual([...ROOT_FIELDS], KNOWN_9B142C6.root);
-  assert.deepEqual([...PACK_FIELDS, ...PACK_OPTIONAL_FIELDS], KNOWN_9B142C6.pack);
-  assert.deepEqual([...TIME_FIELDS], KNOWN_9B142C6.time);
-  assert.deepEqual([...WITHDRAWN_FIELDS], KNOWN_9B142C6.withdrawn);
+test("root: a root with no quarantined segment holds only the fields a writer of commit 137a220 knows, one with a quarantined segment adds quarantine on that entry alone, and this code's writer reads both", () => {
+  assert.deepEqual([...ROOT_FIELDS], KNOWN_137A220.root);
+  // The one field DOM-029 adds, optional: the pack entries of 137a220 and quarantine.
+  assert.deepEqual([...PACK_FIELDS, ...PACK_OPTIONAL_FIELDS], [...KNOWN_137A220.pack, "quarantine"]);
+  assert.deepEqual([...TIME_FIELDS], KNOWN_137A220.time);
+  assert.deepEqual([...WITHDRAWN_FIELDS], KNOWN_137A220.withdrawn);
   // A promotion's root with a time copy, and a rollback's root with withdrawn entries.
   const promoted = sample();
   const first = buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-28T00:00:00Z" });
@@ -506,13 +511,13 @@ test("root: a root this code builds holds only the fields a writer of commit 9b1
   assert.ok(rolled.withdrawn.length > 0);
   const outside = (obj: object, known: readonly string[]): string[] => Object.keys(obj).filter((k) => !known.includes(k));
   for (const r of [promoted, rolled]) {
-    assert.deepEqual(outside(r, KNOWN_9B142C6.root), []);
+    assert.deepEqual(outside(r, KNOWN_137A220.root), []);
     for (const p of Object.values(r.datasets).flat()) {
-      assert.deepEqual(outside(p, KNOWN_9B142C6.pack), [], p.tag);
-      if (p.time !== undefined) assert.deepEqual(outside(p.time, KNOWN_9B142C6.time), []);
+      assert.deepEqual(outside(p, KNOWN_137A220.pack), [], p.tag);
+      if (p.time !== undefined) assert.deepEqual(outside(p.time, KNOWN_137A220.time), []);
     }
-    for (const w of r.withdrawn) assert.deepEqual(outside(w, KNOWN_9B142C6.withdrawn), []);
-    // The other way: a root written before DOM-063 holds these fields, and this code's writer takes it.
+    for (const w of r.withdrawn) assert.deepEqual(outside(w, KNOWN_137A220.withdrawn), []);
+    // The other way: a root written before DOM-029 holds these fields, and this code's writer takes it.
     assert.equal(validateRoot(plain(r)).root_seq, r.root_seq);
   }
   assert.ok(
@@ -521,4 +526,116 @@ test("root: a root this code builds holds only the fields a writer of commit 9b1
       .some((p) => p.time !== undefined),
     "the sample holds a time copy",
   );
+  // A quarantined THC day segment beside the sample: the field is on its entry alone.
+  const marked = buildRoot({
+    live: live(promoted),
+    psl: PSL_LIVE,
+    now: "2026-10-29T10:00:00Z",
+    add: [pack("names", "seg", "2026-10-28T00:00:00Z", { sources: ["thc-ct"], end: "2026-10-29T00:00:00Z", quarantine: true })],
+  });
+  assert.deepEqual(outside(marked, KNOWN_137A220.root), []);
+  const extra = Object.values(marked.datasets)
+    .flat()
+    .map((p) => [p.tag, outside(p, KNOWN_137A220.pack)] as const)
+    .filter(([, keys]) => keys.length > 0);
+  assert.deepEqual(extra, [["thc-ct.20261028t000000z.20261029t000000z", ["quarantine"]]]);
+  assert.equal(validateRoot(plain(marked)).root_seq, marked.root_seq);
+});
+
+test('pack: quarantine is true on a segment, or absent; false, 1, "1" and a quarantined compacted pack are refused, by a writer and a reader alike', () => {
+  const j = plain(sample());
+  const seg = pack("names", "seg", "2026-10-28T00:00:00Z", { sources: ["thc-ct"], end: "2026-10-29T00:00:00Z" }).pack;
+  const withSeg = (q: unknown) => {
+    const k = plain(sample());
+    datasetsOf(k).names = [...datasetsOf(k).names, { ...seg, quarantine: q } as PackEntry].sort(comparePacks);
+    return rederive(k);
+  };
+  assert.equal(validateRoot(withSeg(true)).root_seq, 2);
+  for (const strict of [true, false]) {
+    refused(withSeg(false), "pack", /quarantine is false; a quarantined segment lists true, and any other pack leaves the field out/, strict);
+    refused(withSeg(1), "pack", /quarantine is 1;/, strict);
+    refused(withSeg("1"), "pack", /quarantine is "1";/, strict);
+    refused(withSeg(null), "pack", /quarantine is null;/, strict);
+  }
+  const day = datasetsOf(j).names[0]!;
+  datasetsOf(j).names[0] = { ...day, quarantine: true } as PackEntry;
+  refused(rederive(j), "pack", /a pack of tier d lists quarantine; only a segment is quarantined/);
+});
+
+// THC's hole of 2026-10-04 in names: a THC day segment on each side of it, and
+// the hours of another source after it.
+function thcHole(o: { gaps?: Record<string, string[]>; rightSources?: string[]; leftSources?: string[]; holeEnd?: string } = {}) {
+  const day = (start: string, end: string, sources: string[]) => pack("names", "seg", start, { sources, end });
+  const first = buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-28T00:00:00Z" });
+  const right = o.holeEnd ?? "2026-10-05T00:00:00Z";
+  return {
+    first,
+    add: [
+      day("2026-10-03T00:00:00Z", "2026-10-04T00:00:00Z", o.leftSources ?? ["thc-ct"]),
+      day(right, new Date(Date.parse(right) + 86_400_000).toISOString().replace(".000Z", "Z"), o.rightSources ?? ["thc-ct"]),
+    ],
+    gaps: o.gaps ?? {},
+  };
+}
+const holeRoot = (h: ReturnType<typeof thcHole>) => buildRoot({ live: live(h.first), psl: PSL_LIVE, now: NOW, add: h.add, gaps: h.gaps });
+
+test("root: a hole named in gaps validates: THC's 2026-10-04, listed for thc-ct, between two THC day segments (ruling 24)", () => {
+  const r = holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04"] } }));
+  assert.deepEqual(r.gaps, { "thc-ct": ["2026-10-04"] });
+  assert.equal(validateRoot(plain(r)).root_seq, 2);
+  assert.equal(validateRoot(plain(r), { strict: false }).root_seq, 2);
+  // Two days of a hole, each listed.
+  const two = holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04", "2026-10-05"] }, holeEnd: "2026-10-06T00:00:00Z" }));
+  assert.equal(two.root_seq, 2);
+});
+
+test("root: the same hole unnamed is refused, naming the day and the source carried on both sides", () => {
+  assert.throws(
+    () => holeRoot(thcHole()),
+    (e: unknown) =>
+      e instanceof RootError &&
+      e.code === "live-set" &&
+      e.message ===
+        "datasets.names: a hole from 2026-10-04T00:00:00Z to 2026-10-05T00:00:00Z: no pack covers it, and gaps lists not every day it touches for a source carried on both sides (ruling 24): thc-ct lacks 2026-10-04",
+  );
+  // A hole of two days with one listed: the other is named.
+  assert.throws(
+    () => holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04"] }, holeEnd: "2026-10-06T00:00:00Z" })),
+    (e: unknown) => e instanceof RootError && /thc-ct lacks 2026-10-05$/.test(e.message),
+  );
+  // A hole that touches part of a day the list does not hold: 2026-10-05T06 is past the listed day.
+  assert.throws(
+    () => holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04"] }, holeEnd: "2026-10-05T06:00:00Z" })),
+    (e: unknown) => e instanceof RootError && /a hole from 2026-10-04T00:00:00Z to 2026-10-05T06:00:00Z.*thc-ct lacks 2026-10-05/.test(e.message),
+  );
+});
+
+test("root: a hole named only by a source neither neighbour carries, or by one neighbour's source alone, is refused", () => {
+  // gaps lists the day for oi-nrd, which carries neither side.
+  assert.throws(
+    () => holeRoot(thcHole({ gaps: { "oi-nrd": ["2026-10-04"] } })),
+    (e: unknown) => e instanceof RootError && /gaps lists not every day it touches for a source carried on both sides \(ruling 24\): thc-ct lacks 2026-10-04$/.test(e.message),
+  );
+  // The pack after the hole is another source's: no source is carried on both sides, whatever gaps lists (L4 of DOM-029).
+  assert.throws(
+    () => holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04"] }, rightSources: ["oi-nrd"] })),
+    (e: unknown) =>
+      e instanceof RootError &&
+      e.message ===
+        "datasets.names: a hole from 2026-10-04T00:00:00Z to 2026-10-05T00:00:00Z: no pack covers it, and no source is carried by a pack on each side of it, so gaps cannot name it (ruling 24)",
+  );
+  // A source on both sides among others: listed for it, the hole passes.
+  assert.equal(holeRoot(thcHole({ gaps: { "thc-ct": ["2026-10-04"] }, leftSources: ["ct-le", "thc-ct"], rightSources: ["oi-nrd", "thc-ct"] })).root_seq, 2);
+});
+
+test("root: moving corpus_since of names and domains earlier is forward, as a backfill does (D16 of DOM-029)", () => {
+  const first = buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-28T00:00:00Z" });
+  const live1 = buildRoot({ live: live(first), psl: PSL_LIVE, now: NOW, add: [pack("names", "d", "2026-10-25T00:00:00Z"), pack("domains", "d", "2026-10-25T00:00:00Z")] });
+  const back = buildRoot({
+    live: live(live1),
+    psl: PSL_LIVE,
+    now: "2026-10-29T09:00:00Z",
+    add: [pack("names", "seg", "2026-10-24T00:00:00Z", { end: "2026-10-25T00:00:00Z" }), pack("domains", "seg", "2026-10-24T00:00:00Z", { end: "2026-10-25T00:00:00Z", salt: "d" })],
+  });
+  assert.deepEqual(back.corpus_since, { domains: "2026-10-24T00:00:00Z", names: "2026-10-24T00:00:00Z" });
 });

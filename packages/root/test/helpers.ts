@@ -29,6 +29,8 @@ export interface PackOptions {
   // pack of feed or new-name of tier d, w, m or y that holds records lists
   // one, as a writer must (TIME_COPY_TIERS); false leaves it out.
   time?: boolean;
+  // Marks the entry quarantine: true (ruling 23; a segment alone takes it).
+  quarantine?: boolean;
 }
 
 // A pack entry of `dataset` and `tier` from `start`, every digest derived from its identity.
@@ -65,6 +67,7 @@ export function pack(dataset: TierDataset, tier: RootTier, start: string, o: Pac
     key_max: count === 0 ? null : "com.example.www",
     sources,
     psl: o.psl ?? PSL_LIVE,
+    ...(o.quarantine === true ? { quarantine: true as const } : {}),
   };
   return { dataset, pack: entry };
 }

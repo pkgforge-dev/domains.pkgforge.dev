@@ -423,6 +423,20 @@ files, not packs.
 | `dev.pkgforge.domains.sha256` | the SHA-256 of the raw blocks, concatenated in order |
 | `dev.pkgforge.domains.writer` | the Node version and the zlib version of the writer |
 
+`packManifest` of `packages/compact` adds the annotations of
+`docs/architecture.md` section 4.2 to these. Two of them mark quarantine
+(ruling 23):
+
+| Annotation | On | Value |
+| --- | --- | --- |
+| `dev.pkgforge.domains.quarantine` | a segment whose volume check gave `quarantine` | `1`, added by the push of `scripts/ingest/run.mjs`, never by `packManifest`. `packFromManifest` of `packages/root` reads it as the pack entry's `quarantine: true` and refuses another value. |
+| `dev.pkgforge.domains.quarantined-inputs` | a pack of tier `d`, `w`, `m` or `y` that took in a quarantined input; `scripts/compact/day.mjs` writes it on the `domains` day pack | the source ids of the quarantined inputs, sorted and distinct, one space between them (`QUARANTINED_INPUTS_ANNOTATION` of `packages/compact/src/manifest.ts`). A rebuild of the day carries the union of the live day pack's value and its new inputs' forward. `packManifest` refuses it on a tier `seg` or `h` pack and a value of another form. |
+
+A pack above `seg` has no `quarantine` field in the root, so the annotation
+`quarantined-inputs` is what keeps its quarantined records out of a later
+exact join: `day.mjs` writes no `feed` day over a live `domains` day pack
+that carries it (`docs/architecture.md` section 5.3, "Quarantined inputs").
+
 The annotations describe the key copy alone: `idx` and the parts `part.NNN`.
 A time copy (section 14) has no manifest and no annotation of its own, and
 `packAnnotations` refuses the datasets 6 and 7. Its layers ride in the manifest
@@ -1023,11 +1037,37 @@ the bits. A key of hash `(hi, lo)` sets one bit in each partition: bit
 `(lo + i * hi) mod P` of partition `i`, for `i` from 0 to `k - 1`. The filter
 holds a key when every one of those `k` bits is set. It has no false
 negative. Its false positives are about `(1 - e^(-n/P))^k` for `n` keys. The
-writer of `packages/ledger` takes 10 bits a key and 7 hashes, so
-`P = max(64, ceil(10 * n / 7 / 64) * 64)` for `n` expected keys, and the rate
-is about 0.82%. MEASURED by DOM-021: 8,279 false positives in 1,000,000
+writer of `packages/ledger` takes 10 bits a key and 7 hashes, and
+`BloomFilter.forKeys` rounds a partition up to a multiple of `FOLD_UNIT`,
+4,096 bits (64 times 2^6), so
+`P = max(4096, ceil(10 * n / 7 / 4096) * 4096)` for `n` expected keys, and the
+rate is about 0.82%. MEASURED by DOM-021: 8,279 false positives in 1,000,000
 absent keys, and 12,500,076 B for 10,000,000 keys
-(`docs/research/measure/DOM-021/bench-10M.json`, 2026-10-29T01:01:23Z).
+(`docs/research/measure/DOM-021/bench-10M.json`, 2026-10-29T01:01:23Z, before
+the rounding to `FOLD_UNIT`). The rounding adds at most 4,095 bits a
+partition: the filter of the 1,000,000 keys of the rate test of
+`packages/ledger/test/filter.test.ts` is 1,250,816 B, and its rate stays in
+0.8% to 1.2%.
+
+**The fold.** `buildFilter` of `packages/ledger` sizes the filter for the sum
+of the `domains` packs' records, at most `MAX_BUILD_KEYS` (3,000,000,000),
+and adds each distinct key once, since the packs are merged by key. A key of
+many days is in many packs, so the sum can be about five times the distinct
+keys (THC's backfill, `docs/architecture.md` section 4.8). So once every key is
+added, it folds: `fold()` ORs the two halves of each partition into one of
+`P/2` bits. A probe sets bit `(lo + i * hi) mod P`, and
+`(x mod P) mod (P/2) = x mod (P/2)` when `P/2` divides `P`, so the folded
+filter equals, bit for bit, the filter of the same keys built at `P/2`, with
+the same `k`, `keys` and `as_of`. `buildFilter` folds while `P/2` is a
+multiple of 64 and either the halved filter still gives every key added at
+least 10 bits (`k * P/2 >= 10 * keys`) or the bits pass its `maxBytes`. The
+header and the layout above do not change: a folded filter is a filter of
+a smaller `P`. `scripts/compact/day.mjs` passes `maxBytes` as
+`LEDGER_MAX_BYTES` of `scripts/state/lib.mjs` less the 36 B header, and
+refuses an encoded filter over `LEDGER_MAX_BYTES`, exit 1. It prints
+`wrote state:ledger-filter-YYYYMMDD FILE SHA keys K partition_bits P bytes B bits_per_key X`,
+and the `ledger` object of its `day.json` carries `keys`, `partition_bits`
+and `bytes`.
 
 ### 15.3 The delta
 
@@ -1179,7 +1219,8 @@ below for reading, and with synthetic values:
 | `cursors` | One cursor for each adapter, keyed by the adapter's directory name (`ID_GRAMMAR` of `@domains/adapter`, at most 63 characters). A cursor is any JSON value of at most 4 KiB (`checkCursor` of `@domains/adapter`). Its shape belongs to the adapter. A cursor that a segment carries, in its annotations `cursor.before` and `cursor.after`, is at most 1024 characters of canonical JSON with no control character (`annotationProblem` of `@domains/ghcr`, `ANNOTATION_MAX_CHARS`): the writer of `scripts/ingest/run.mjs` refuses another, and `run.mjs` refuses such a cursor returned by a live run before it proposes it. |
 | `moved` | Exactly the keys of `cursors`, each `{ at, run }`: the time and the run of the last proposal accepted for the adapter, a backfill's among them, which keeps the cursor. `run` is a workflow run id, digits with no leading zero and at most 20 of them (`WORKFLOW_RUN_ID` of `@domains/ghcr`), or `local`. |
 | `history` | For each source id, the volume of its verified days: `{ day, count, quarantined }`, sorted by day, each day once (`checkHistory` of `@domains/adapter`), the newest 90 kept (`HISTORY_DAYS`). `count` is in the metric of the source's band. A day verified again replaces its item. A source of `day` precision writes one item for each verified day of one whole UTC day: the names segment's when the day has one, else the domains segment's, its `quarantined` that segment's verdict. A source of `second` precision writes none. `scripts/verify-pack.mjs --history` reads one source's list for the volume check (`docs/architecture.md` section 5.8 step 3). |
-| `owed` | The packs that the state is past and the root does not hold yet: `{ ref, digest, dataset, tier, start, end, since }`, sorted by `start`, then `ref`, each `ref` once. `ref` is `obs:TAG` (tier `seg`, dataset `names` or `domains`) or `feed:TAG` (tier `h`, dataset `feed`). `digest` is `sha256:` and 64 hex digits. `start` is before `end`. `since` is the time the pack became owed. A quarantined segment is never owed. Before a state moves, `settle` drops each owed pack for which `heldBy` of `scripts/state/lib.mjs` answers: one that the live root names, covers or withdrew, and an owed segment that an older root named and a compaction replaced (`held`, which the walk of the chain of `previous` finds: `docs/architecture.md` section 5.4). It also drops each owed more than 7 days (`OWED_DAYS`): `expired`. |
+| `owed` | The packs that the state is past and the root does not hold yet: `{ ref, digest, dataset, tier, start, end, since }`, sorted by `start`, then `ref`, each `ref` once. `ref` is `obs:TAG` (tier `seg`, dataset `names` or `domains`) or `feed:TAG` (tier `h`, dataset `feed`). `digest` is `sha256:` and 64 hex digits. `start` is before `end`. `since` is the time the pack became owed. A quarantined segment is owed like any other (ruling 23). Before a state moves, `settle` drops each owed pack for which `heldBy` of `scripts/state/lib.mjs` answers: one that the live root names, covers or withdrew, and an owed segment that an older root named and a compaction replaced (`held`, which the walk of the chain of `previous` finds: `docs/architecture.md` section 5.4). It also drops each owed more than 7 days (`OWED_DAYS`): `expired`. |
+| `gaps` | Optional. The days each `day` source lacks that the live root does not list yet: `{ "<source>": ["YYYY-MM-DD", ...] }`, each list sorted and distinct, at most 366 days a source (`GAP_DAYS`, the newest kept by `advance`), and no empty list. `advance` merges the gaps of the proposals it accepts. `settle` drops a day that the live root's `gaps` lists, or that a live segment of its source spans whole (`gapHeldBy` of `scripts/state/lib.mjs`). The key is written only while a gap is pending, so a state with no pending gap holds the fields of commit 137a220 alone, and a reader of that commit reads it (`docs/architecture.md` section 4.6). |
 
 `validateState` refuses a break of these rules with `StateError`: the code
 `format` for another format, and `schema` for a missing or extra key or a
@@ -1230,7 +1271,54 @@ refused state:TAG holds X, and this run read Y: another writer moved it. The liv
 ```
 
 A state that is equal to the live one in everything but `updated`
-(`sameState`) is `unchanged`, and nothing is written.
+(`sameState`) is `unchanged`, and nothing is written. `sameState` compares
+`gaps` too, so a settle that only drops a gap day writes a state.
+
+### 17.3 The cursor proposal
+
+A leg of an ingest workflow writes one cursor proposal for each adapter run,
+and the job `push` reads them (`docs/architecture.md` section 5.4). The
+reference code is `packages/state/src/proposal.ts` (`propose`,
+`validateProposal`, `parseProposal`, `encodeProposal` and `proposalFile`).
+The file is canonical JSON with one final newline, at most 1 MiB
+(`PROPOSAL_MAX_BYTES`), of format `domains.proposal.v1`. An example of a gap
+day that a backfill plan declares, with the keys in the order of the table
+below for reading:
+
+```json
+{
+  "format": "domains.proposal.v1", "adapter": "thc-ct", "lane": null,
+  "run": "40000000001", "attempt": 1, "at": "2026-11-03T04:00:00Z",
+  "before": { "next": "2026-11-02", "open": [] }, "after": { "next": "2026-11-02", "open": [] },
+  "segments": [], "raw": [], "history": [],
+  "gaps": [ { "source": "thc-ct", "day": "2026-10-04" } ]
+}
+```
+
+| Field | Value |
+| --- | --- |
+| `adapter`, `lane` | The adapter's directory name, and `kafka`, `tiles` or `feeds`, or null for a run outside `ingest-live.yml`. |
+| `run`, `attempt`, `at` | The workflow run, its attempt, and the time of the proposal. |
+| `before`, `after` | The cursor the run read (null: none) and the one it reached. A backfill keeps the live cursor: `before` equals `after`. |
+| `segments` | The segments it pushed, sorted by ref: `{ ref, digest, source, dataset, start, end, count, quarantined }`. `digest` is what the tag holds after the push. |
+| `raw` | The raw lane objects it pushed: `{ ref, digest, source, start, end }`. |
+| `history` | One `{ source, day, count, quarantined }` for each verified day of a `day` source whose window is one whole UTC day, in the band's metric. |
+| `gaps` | Optional: the days the run declared lacking, `[{ source, day }]`, sorted by source then day, one each, at most 366 (`MAX_GAPS`), none after the day of `at`, and never empty: a run that declared none has no key. This file holds each source to the id grammar; `scripts/ingest/run.mjs` holds it to the adapter's rows. |
+
+A proposal names at least one segment or one gap, or an `after` other than
+`before`: `propose` refuses an empty one, since it would move nothing. No ref
+appears twice across `segments` and `raw`, and no `(source, day)` twice in
+`history`.
+
+**The file name.** `proposalFile(adapter, from)` gives
+`proposal.<adapter>.json` for a live run. For a backfill window it adds the
+window's start: `proposal.<adapter>.<YYYYMMDD>.json` when the window starts at
+00:00:00Z, and `proposal.<adapter>.<YYYYMMDDtHHMMSSz>.json` otherwise, so two
+windows of one day of a stream source never share a name. So the proposals
+of the legs of one backfill merge into one directory, which
+`scripts/state/advance.mjs` reads. `advance` accepts several proposals of one
+adapter only when every one keeps its cursor and no ref and no history day is
+in two of them; otherwise each is dropped `duplicate`.
 
 ## 18. The raw lane object, and `members.json`
 
@@ -1373,3 +1461,42 @@ not the size). A day of `oi-nrd` is about 14.2 MB [E] at
 35.4 B a message, merged by day (MEASURED 2026-10-31 over 37,863 messages,
 DOM-026). Those messages held 22% zone rows, which carry no fact; over the
 retained span zone rows are 33.5% of the topic, so the estimate is high.
+
+## 20. The plan of a THC backfill
+
+The job `plan` of `.github/workflows/ingest-thc.yml` runs
+`scripts/ingest/thc-plan.mjs` for a dispatch with `from` and `to`, and uploads
+what it writes as two artifacts of the run, each kept 3 days. None of these
+files is pushed to GHCR. `docs/architecture.md` section 5.3 ("The THC
+ingest") gives each day's action.
+
+| File | Artifact | What it holds |
+| --- | --- | --- |
+| `plan.json` | `thc-plan` | The plan, format `domains.thc-plan.v1`, below. |
+| `matrix.json` | `thc-plan` | `{ "include": [{ "day": "YYYY-MM-DD", "psl": "<sha12>" }, ...] }`: one item a `run` day, in day order, the matrix of the job `ingest`. The step holds each item to a day and 12 hex digits, and the days to the `run` days of `plan.json`. |
+| `state.json` | `thc-plan` | A `state.json` of section 17, the one each leg reads with `--state`: the live state, or the empty one, with the history of `thc-ct` replaced by the replayed one through `to`, the newest 90 days (`HISTORY_DAYS`). |
+| `psl-<sha12>.dat` | `thc-plan` | Each list a leg builds under, its bytes held to its hash (`pslFile` of `scripts/ingest/pack.mjs`). |
+| `proposals/proposal.thc-ct.<YYYYMMDD>.json` | `proposals-thc-plan` | A proposal of section 17.3 for each `adopt` day (its two segments, from their manifests) and each `gap` day (the gap alone), each keeping the live cursor (`scripts/ingest/adopt.mjs`). |
+
+`plan.json` is JSON with one final newline:
+
+```json
+{"format":"domains.thc-plan.v1","from":"2026-09-01","to":"2026-10-31","now":"2026-11-02T07:44:00Z","state":"sha256:<64 hex>","root":"sha256:<64 hex>","days":[{"day":"2026-09-01","action":"run","bytes":915012312,"host":"hf","verdict":"ok","path":"2026/9/2026-09-01.txt.gz","psl":"<64 hex>","tags":[]}]}
+```
+
+| Field | Value |
+| --- | --- |
+| `from`, `to` | The window, days, inclusive, at most 62 days (`MAX_DAYS`). |
+| `now` | The time the plan judged the gap instants by, ISO 8601 UTC to the second. |
+| `state`, `root` | The manifest digests of `state:latest` and `root:latest` that the plan read. |
+| `days` | One item a day of the window, in day order. |
+| `action` | `run`, `present`, `adopt` or `gap`. |
+| `bytes` | The file's size as a host lists it. For an `adopt` day, and a `present` day that the live history holds, it is the count of the day's history item, the raw file's size. Null for a day with neither. |
+| `host`, `path` | The host that lists the file (`hf` or `cs2`) and its path in the bucket, or null where the plan located none. `path` is null for a file that cs2 alone lists. |
+| `verdict` | The band's verdict for the day, `ok` or `quarantine`: the stored verdict of an `adopt` day and of a `present` day that the live history holds, else the one the plan replayed. Null for a day with no `bytes`. |
+| `psl` | The sha256 of the list the day's leg builds under, or null for a day with no leg. |
+| `tags` | The `thc-ct` tags of the day in `obs`. |
+
+The example's `days` hold the first item of the plan of 2026-11-02T07:44:00Z
+over 2026-09-01 to 2026-10-31, read with no credential (DOM-029); its
+digests are cut.

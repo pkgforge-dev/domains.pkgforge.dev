@@ -3,7 +3,7 @@
 // scripts/state/).
 //   errors.ts    StateError and its codes
 //   state.ts     state.json (domains.state.v1): the cursors, the volume history and
-//                the packs owed to the root; validateState, parseState, encodeState,
+//                the packs owed to the root, the pending gaps; validateState, parseState, encodeState,
 //                emptyState, sameState, cursorOf, historyOf, owe; isSecond (a time to
 //                the second) and RUN_ID (a workflow run id or "local"), which the
 //                scripts of scripts/state/ and scripts/ingest/ hold their flags to
@@ -12,25 +12,27 @@
 //                proposalFile, proposedRefs
 //   advance.ts   advance: the proposals applied to the live state; settle: the owed
 //                packs the live root holds or a compaction replaced, or that
-//                expired, dropped
+//                expired, dropped, and the pending gap days the root lists or a
+//                live segment covers
 //   guard.ts     guard: the digest guard of every moving tag of the package state
 // The GHCR side, reading the live state and moving its tags, is scripts/state/.
 // This package reads and writes no network and imports nothing from `node:`;
 // it is type-checked as Worker code (tsconfig.worker.json), and no test runs
 // it in workerd.
 export type { Cursor } from "@domains/adapter";
-export type { Advanced, DropCode, Dropped, Held, SettleCode, Settled } from "./advance.ts";
+export type { Advanced, DropCode, Dropped, GapHeld, Held, SettleCode, Settled, SettledGap } from "./advance.ts";
 export { advance, settle } from "./advance.ts";
 export type { StateErrorCode } from "./errors.ts";
 export { StateError } from "./errors.ts";
 export { guard } from "./guard.ts";
-export type { Lane, Proposal, ProposedDay, ProposedRaw, ProposedSegment, ProposeInput } from "./proposal.ts";
+export type { Lane, Proposal, ProposedDay, ProposedGap, ProposedRaw, ProposedSegment, ProposeInput } from "./proposal.ts";
 export { encodeProposal, LANES, PROPOSAL_FORMAT, PROPOSAL_MAX_BYTES, parseProposal, propose, proposalFile, proposedRefs, validateProposal } from "./proposal.ts";
-export type { HistoryItem, Moved, OwedItem, State } from "./state.ts";
+export type { Gaps, HistoryItem, Moved, OwedItem, State } from "./state.ts";
 export {
   cursorOf,
   emptyState,
   encodeState,
+  GAP_DAYS,
   HISTORY_DAYS,
   historyOf,
   isSecond,
@@ -41,6 +43,7 @@ export {
   STATE_FORMAT,
   STATE_MAX_BYTES,
   STATE_MEDIA_TYPE,
+  STATE_OPTIONAL_FIELDS,
   STATE_TITLE,
   sameState,
   validateState,

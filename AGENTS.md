@@ -252,8 +252,9 @@ the TCP recordings and the sandbox of the harness (`packages/adapter/node/sandbo
 `packages/state/` with `config/lanes.json`, `scripts/ingest/`, `scripts/state/`,
 `scripts/workflows/` and `ingest-live.yml` (DOM-024), `config/clock.json`,
 `docs/clock.md` and `scripts/measure/clock-verdict.mjs` (DOM-003), the first
-adapter `adapters/oi-nrd/` (DOM-026),
-`probes/worker/` (DOM-061), the Worker `apps/api/` with `docs/worker.md` and
+adapter `adapters/oi-nrd/` (DOM-026), THC's adapter `adapters/thc-ct/` with
+`ingest-thc.yml`, `scripts/ingest/thc-plan.mjs` and `scripts/ingest/adopt.mjs`
+(DOM-029), `probes/worker/` (DOM-061), the Worker `apps/api/` with `docs/worker.md` and
 `worker.yml` (DOM-030), the measurement workflows and `ci.yml` under
 `.github/workflows/`, and `docs/research/measure/`, where each measurement
 writes its results under its entry id.

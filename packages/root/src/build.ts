@@ -58,7 +58,9 @@ import {
 // The annotation of a pack's tier (docs/architecture.md section 4.2); the
 // others are the verifier's (VERIFY_ANNOTATIONS of @domains/pack).
 export const TIER_ANNOTATION = "dev.pkgforge.domains.tier";
-// The annotation of a quarantined segment (section 5.8): packFromManifest refuses it.
+// The annotation of a quarantined segment (section 5.8), pushed with the value
+// "1" (DOM-024's Decision of 2026-10-29T06:00Z): packFromManifest marks its
+// entry `quarantine: true` (ruling 23), and refuses any other value.
 export const QUARANTINE_ANNOTATION = "dev.pkgforge.domains.quarantine";
 export const SOURCES_LAYER_FORMAT = "domains.root-sources.v1";
 // The coverage table before DOM-035 writes one: its shape, with nothing measured.
@@ -134,8 +136,10 @@ export interface ManifestFacts {
 // records are the index's, its parts are the sizes its parts table gives, and
 // the first_seen of its first and last key lie inside the pack's span: the
 // half of the bind (timeBindFault of @domains/pack) that readFeed holds before
-// it reads a block of the copy. RootError pack names the first that
-// disagrees, and a manifest that carries the quarantine annotation.
+// it reads a block of the copy. A manifest that carries the quarantine
+// annotation "1" gives an entry marked `quarantine: true` (ruling 23: served,
+// never as new); validatePack then holds it to a segment. RootError pack names
+// the first fact that disagrees, and a quarantine annotation of another value.
 export function packFromManifest(facts: ManifestFacts): NewPack {
   const at = `${facts.repo}:${facts.tag}`;
   const fail = (message: string): RootError => new RootError("pack", `${at}: ${message}`);
@@ -143,10 +147,9 @@ export function packFromManifest(facts: ManifestFacts): NewPack {
   if (j.artifactType !== PACK_TYPE && j.artifactType !== SEGMENT_TYPE) throw fail(`the artifact type is ${JSON.stringify(j.artifactType ?? null)}, not ${PACK_TYPE} or ${SEGMENT_TYPE}`);
   if (typeof facts.digest !== "string" || !DIGEST.test(facts.digest)) throw fail("the manifest digest is not a sha256: digest");
   const a = j.annotations ?? {};
-  // A quarantined segment does not feed `new` (docs/architecture.md section
-  // 5.8), and the root has no field that would say so: it joins no root.
-  if (Object.hasOwn(a, QUARANTINE_ANNOTATION))
-    throw fail(`the manifest carries ${QUARANTINE_ANNOTATION}=${JSON.stringify(a[QUARANTINE_ANNOTATION])}: a quarantined pack joins no root until the operator decides (section 5.8)`);
+  const quarantined = Object.hasOwn(a, QUARANTINE_ANNOTATION);
+  if (quarantined && a[QUARANTINE_ANNOTATION] !== "1")
+    throw fail(`the manifest carries ${QUARANTINE_ANNOTATION}=${JSON.stringify(a[QUARANTINE_ANNOTATION])}; a quarantined segment is pushed with "1", and no other value is read`);
   const A = VERIFY_ANNOTATIONS;
   const get = (key: string): string => {
     const v = a[key];
@@ -222,6 +225,7 @@ export function packFromManifest(facts: ManifestFacts): NewPack {
     key_max: h.keyMax,
     sources,
     psl,
+    ...(quarantined ? { quarantine: true as const } : {}),
   };
   return { dataset, pack: validatePack(dataset, pack, at) };
 }

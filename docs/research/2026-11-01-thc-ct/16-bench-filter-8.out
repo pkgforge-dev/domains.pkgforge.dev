@@ -1,0 +1,7 @@
+node v26.7.0; one pack: 1333201 records, 326 blocks; K=8 readers, sum of records 10665608
+buildFilter over 8 packs: 55.63 s for 10665608 input records = 5.216 us per input record; filter keys added 1333201; bits 13332032 bytes
+forKeys(5334782) [today (5.33M domains records, root of 2026-11-01)]: 6668480 bytes = 6 MiB = 0.006 GiB; limits: LEDGER_MAX_BYTES 1 GiB (scripts/state/lib.mjs:57) ok; fs.readFileSync 2 GiB ok
+forKeys(288022432) [design Q1 estimate (288M distinct)]: 360028088 bytes = 343 MiB = 0.335 GiB; limits: LEDGER_MAX_BYTES 1 GiB (scripts/state/lib.mjs:57) ok; fs.readFileSync 2 GiB ok
+forKeys(1446980665) [sum of records, 54 days (M15) + oi-nrd]: 1808725856 bytes = 1725 MiB = 1.685 GiB; limits: LEDGER_MAX_BYTES 1 GiB (scripts/state/lib.mjs:57) EXCEEDED; fs.readFileSync 2 GiB ok
+forKeys(1504980665) [sum of records, 59 days (54 + 5 October days at 11.6M)]: 1881225864 bytes = 1794 MiB = 1.752 GiB; limits: LEDGER_MAX_BYTES 1 GiB (scripts/state/lib.mjs:57) EXCEEDED; fs.readFileSync 2 GiB ok
+1 GiB is crossed at a sum of 858993459 records (about 859M); 2 GiB at 1717986918; MAX_PARTITION_BITS cap at 3006477062

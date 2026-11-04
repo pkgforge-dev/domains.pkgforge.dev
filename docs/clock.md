@@ -63,9 +63,9 @@ rule is judged again by the one in force.
   interval (`docs/architecture.md` section 5.3).
 - **The scheduled workflows.** After the start, the job `chain` runs
   `scripts/ingest/chain.mjs due`. It dispatches each workflow of the table
-  `DUE`, the compactions and `ref-refresh.yml`, when its cron's last instant
-  and the grace of 20 minutes have passed with no run of it since that
-  instant. GitHub started the crons of `compact-daily.yml` and
+  `DUE`, the compactions, `ref-refresh.yml` and `ingest-thc.yml`, one row
+  for each cron of a file, when its cron's last instant and the grace of
+  20 minutes have passed with no run of it since that instant. GitHub started the crons of `compact-daily.yml` and
   `ref-refresh.yml` hours late, and the weekly, monthly and yearly crons have
   not fired yet (DOM-023's Found on the late crons), so under `actions-chain`
   the chain is their clock too. Their crons stay, and start them when the

@@ -28,24 +28,32 @@
 //      the list; --now or the clock to the second; the contact User-Agent; the
 //      disk writer under --out/work/<ID>/;
 //   6. run(cursor, ctx), or backfill({ start, end }, ctx): the result held to
-//      checkResult and checkSources of @domains/adapter and to the segments
-//      the writer wrote; a live run that wrote segments and returned the
-//      cursor it started from is `continuation`; a live run's cursor is held
-//      to annotationProblem of @domains/ghcr (`cursor`), since it is the next
-//      run's annotation cursor.before; a backfill's segments lie in its window;
+//      checkResult and checkSources of @domains/adapter (its gaps among it:
+//      each a day of one of the adapter's day sources) and to the segments
+//      the writer wrote; a live run that wrote segments or declared gaps and
+//      returned the cursor it started from is `continuation`; a live run's
+//      cursor is held to annotationProblem of @domains/ghcr (`cursor`), since
+//      it is the next run's annotation cursor.before; a backfill's segments
+//      lie in its window;
 //   7. every segment verified before any push (D18 of DOM-024):
 //      scripts/verify-pack.mjs in process, --json, under the list and the
 //      registry, --require dataset,length,count,sha256,psl,sources,precision,
-//      and volume with the source's history (the live state's, less the day
-//      checked) for a one-day segment of a day source (D5 of DOM-024). ok and
-//      quarantine go on; hold, fail or unverified on any segment pushes nothing
-//      and writes no proposal, exit 1;
+//      and volume with the source's history for a one-day segment of a day
+//      source (D5 of DOM-024): the days of the state's history strictly
+//      before the day checked (D14 of DOM-029), so a backfill's later days
+//      stay out of its baseline. --state carries a backfill's planned history
+//      (scripts/ingest/thc-plan.mjs). ok and quarantine go on; hold, fail or
+//      unverified on any segment pushes nothing and writes no proposal, exit 1;
 //   8. unless --no-push: each raw lane object, then each segment, with
 //      scripts/ghcr/push.mjs in process; a quarantined segment carries
-//      dev.pkgforge.domains.quarantine=1 (DOM-024's Decision of 2026-10-29T06:00Z);
+//      dev.pkgforge.domains.quarantine=1 (DOM-024's Decision of 2026-10-29T06:00Z),
+//      and the root takes it marked (ruling 23);
 //   9. unless --no-push, --out/proposals/proposal.<ID>.json (propose of
-//      @domains/state) when a segment was written or the cursor moved; a
-//      backfill's before and after are both the live cursor (D17 of DOM-024);
+//      @domains/state), or proposal.<ID>.<from>.json for a backfill window
+//      (proposalFile, D13 of DOM-029), when a segment was written, a gap was
+//      declared or the cursor moved; the run's gaps go into its gaps, so a
+//      backfill's gap day writes a proposal of no segment; a backfill's before
+//      and after are both the live cursor (D17 of DOM-024);
 //  10. the adapter's own faults (result.errors), printed, make the exit 1
 //      after the proposal: the progress the run returned is real. The
 //      result's stats are printed after the faults, one line (D18 of
@@ -60,8 +68,8 @@
 //                               [--from ISO --to ISO] [--now ISO] [--run ID] [--no-push]
 // --psl is required; --lanes is read with --lane alone; a flag is given once.
 // --out may hold other adapters' runs: --out/work/<ID>/ is new or empty, and
-// --out/proposals/proposal.<ID>.json is written once: one already there is
-// exit 2 before the adapter runs.
+// the proposal file is written once: one already there is exit 2 before the
+// adapter runs.
 // Environment: REGISTRY_TOKEN and GITHUB_ACTOR (the job's token, for a push
 // and for the token read, D21 of DOM-024), GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT,
 // ORAS, RUNNER_TEMP. REGISTRY_TOKEN leaves process.env before the adapter
@@ -72,11 +80,12 @@
 //   psl <64 hex> (root:latest sha256:... | FILE)
 //   segment obs:TAG SOURCE DATASET START END records N verdict ok|quarantine|hold|fail|unverified
 //   raw obs:TAG SOURCE START END bytes N members N
+//   gap SOURCE DAY                     (each day the run declared lacking, D9 of DOM-029)
 //   push.mjs's own line for each push: pushed REF DIGEST, present REF DIGEST (WHY), replaced ..., PRIVATE PACKAGE
 //   fault SOURCE CODE DETAIL           (one line: a control character is written as an escape)
 //   stats ID <canonical stats JSON>    (one line, as a fault's; once a run whose result held)
 //   proposal FILE segments N raw N history N cursor moved|kept
-//   no proposal: no segment was written and the cursor did not move
+//   no proposal: no segment was written and the cursor did not move   (and the run declared no gap)
 //   no push: --no-push; N segment(s) and N raw object(s) verified
 // Exit codes: 0 ran (a proposal or none) · 1 a fault (a contract fault, a
 // verdict other than ok or quarantine, a push that failed or found another
@@ -278,7 +287,7 @@ async function runModule(args, mod, cursor, ctx, rows, writer) {
     throw new ContractError('threw', `${args.adapter}: ${args.window !== null ? 'backfill' : 'run'}() threw: ${e?.message ?? String(e)}`, { cause: e });
   }
   const checked = checkResult(result, args.adapter);
-  checkSources(checked.segments, rows, args.adapter);
+  checkSources(checked.segments, rows, args.adapter, checked.gaps ?? []);
   // The cursor a live run returns is the next run's cursorBefore, an
   // annotation of each segment it writes: held to the push tool's rule now,
   // so a cursor no later run could write is refused here, never proposed.
@@ -296,6 +305,9 @@ async function runModule(args, mod, cursor, ctx, rows, writer) {
     throw new ContractError('reported', `${args.adapter}: the module returned ${checked.segments.length} segments and wrote ${wrote.length}, or not the same ones`);
   if (args.window === null && checked.segments.length > 0 && jsonEqual(checked.cursor, cursor))
     throw new ContractError('continuation', `${args.adapter} wrote segments and returned the cursor it started from`);
+  // A declared day leaves a live cursor, or every later run declares it again (runAdapter's rule).
+  if (args.window === null && (checked.gaps ?? []).length > 0 && jsonEqual(checked.cursor, cursor))
+    throw new ContractError('continuation', `${args.adapter} declared gaps and returned the cursor it started from`);
   if (args.window !== null)
     for (const s of checked.segments)
       if (Date.parse(s.window.start) < Date.parse(args.window.start) || Date.parse(s.window.end) > Date.parse(args.window.end))
@@ -316,7 +328,8 @@ async function verifyAll(args, writer, rows, state, list, work, d) {
     let value = null;
     const day = seg.window.start.slice(0, 10);
     if (oneDay) {
-      history = historyOf(state, seg.source).filter((h) => h.day !== day);
+      // D14 of DOM-029: the days before the one checked, so a backfill's later days stay out of its baseline.
+      history = historyOf(state, seg.source).filter((h) => h.day < day);
       if (row.band.metric === 'bytes') {
         if (seg.raw === undefined) throw new ContractError('segment', `obs:${w.tag}: the band of ${seg.source} measures the raw file's bytes, and the segment carries no raw bytes`);
         rawBytes = seg.raw.bytes;
@@ -419,8 +432,10 @@ async function runJob(argv, deps) {
     if (args.push && (!d.env.REGISTRY_TOKEN || !d.env.GITHUB_ACTOR)) throw new UsageError("a push needs REGISTRY_TOKEN (the job's own GITHUB_TOKEN) and GITHUB_ACTOR; give --no-push to verify alone");
     const work = join(args.out, 'work', args.adapter);
     freshDir(work, 'run');
-    // The proposal is written once: one already there stops the run before anything is pushed.
-    const proposalPath = join(args.out, 'proposals', proposalFile(args.adapter));
+    // The proposal is written once: one already there stops the run before
+    // anything is pushed. A backfill's file names its window's start (D13 of
+    // DOM-029), so the legs of one backfill merge into one directory.
+    const proposalPath = join(args.out, 'proposals', proposalFile(args.adapter, args.window?.start));
     if (args.push && existsSync(proposalPath)) throw new UsageError(`${proposalPath} exists: run writes into a new directory`);
     if (args.recordings !== undefined && (!existsSync(args.recordings) || !statSync(args.recordings).isDirectory())) throw new UsageError(`--recordings ${args.recordings} is not a directory`);
     // The pushes' registry configs live here, and go with it.
@@ -492,6 +507,8 @@ async function runJob(argv, deps) {
     // 7. Every segment verified before any push.
     const verified = await verifyAll(args, writer, rows, state, list, work, d);
     for (const r of writer.raws) d.out(`raw obs:${r.tag} ${r.source} ${r.start} ${r.end} bytes ${r.bytes} members ${r.members}`);
+    const gaps = result.gaps ?? [];
+    for (const g of gaps) d.out(`gap ${g.source} ${g.day}`);
     // An adapter's fault quotes remote text: one line each, whatever it holds.
     for (const f of result.errors) d.out(oneLine(`fault ${f.source} ${f.code} ${f.detail}`));
     // The stats' names are the adapter's text: canonical JSON keeps DEL and the
@@ -516,7 +533,7 @@ async function runJob(argv, deps) {
     const before = cursor;
     const after = args.window !== null ? cursor : result.cursor;
     const moved = !jsonEqual(before, after);
-    if (verified.length === 0 && !moved) {
+    if (verified.length === 0 && !moved && gaps.length === 0) {
       d.out('no proposal: no segment was written and the cursor did not move');
       return faults;
     }
@@ -540,6 +557,7 @@ async function runJob(argv, deps) {
       })),
       raw: writer.raws.map((r) => ({ ref: `obs:${r.tag}`, digest: pushed.digests.get(r.tag), source: r.source, start: r.start, end: r.end })),
       history: historyItems(verified),
+      gaps,
     });
     mkdirSync(join(args.out, 'proposals'), { recursive: true });
     const file = proposalPath;

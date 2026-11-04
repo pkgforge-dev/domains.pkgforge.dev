@@ -18,11 +18,15 @@
 //      CHAIN_SECONDS otherwise, its pauses for a 429 among them, root.json
 //      alone of each); then settle: the
 //      owed packs the root holds, withdrew or covers, the segments the walk
-//      found replaced, and those owed more than OWED_DAYS, leave `owed`;
+//      found replaced, and those owed more than OWED_DAYS, leave `owed`, and
+//      the pending gap days the root lists, or a live segment of their source
+//      spans, leave `gaps` (gapHeldBy of lib.mjs, D9 of DOM-029);
 //   4. an anonymous HEAD of every ref the proposals name, HEAD_CONCURRENCY at
 //      once (a tag that reads as absent answers null);
 //   5. advance of @domains/state: the accepted proposals move their cursors,
-//      merge their history and owe their segments; the others are dropped.
+//      merge their history, owe their segments and add their gaps to the
+//      pending ones; the others are dropped. The job push passes each pending
+//      gap to the promotion as --gap (its output gap).
 // Writes OUT/next.json (domains.state.v1) and OUT/advance.json
 // (domains.advance.v1: live, changed, accepted, dropped, settled).
 //
@@ -36,10 +40,12 @@
 //   chain read N root(s), root_seq A to B, for M owed segment(s) ...: H held, U named by no root while owed, O undecided[; the walk stopped: WHY]
 //                                        (only when an owed segment is a candidate of the walk)
 //   settled REF CODE DETAIL
+//   settled gap SOURCE DAY DETAIL
 //   accepted ADAPTER segments N raw N history N cursor moved|kept
 //   dropped ADAPTER|- CODE DETAIL
+//   gap SOURCE DAY pending               (each pending gap day of the next state)
 //   next changed|unchanged owed N
-// The settled, accepted and dropped lines follow the encoding of the next
+// The settled, accepted, dropped and gap lines follow the encoding of the next
 // state: a next state over STATE_MAX_BYTES prints none of them.
 // Exit codes: 0 written, changed or not · 1 a live state or root that does
 // not validate, or a next state over STATE_MAX_BYTES (the packs owed, and the
@@ -61,7 +67,7 @@ import { isoSecond, nowIso } from '../ingest/plan.mjs';
 import { parseArgs, repeatedFlag } from '../lib/args.mjs';
 import { Fault, HEAD_CONCURRENCY, parsePackRef, PrivateRoot, readRootJson, tempDir, UsageError } from '../root/lib.mjs';
 import { oneLine } from '../lib/line.mjs';
-import { chainLine, heldBy, liveRootOf, liveState, PrivateState, replacedOnChain, tokenFrom } from './lib.mjs';
+import { chainLine, gapHeldBy, heldBy, liveRootOf, liveState, PrivateState, replacedOnChain, tokenFrom } from './lib.mjs';
 
 export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, private: 4, internal: 70 });
 export const ADVANCE_FORMAT = 'domains.advance.v1';
@@ -163,15 +169,17 @@ async function advanceJob(argv, deps) {
     const root = await liveRootOf(d.reader, withToken, d);
     let base = live?.state ?? null;
     let settled = [];
+    let settledGaps = [];
     let chain = null;
     if (base !== null) {
       // Each read pauses for a 429 with the walk's sleep, which ends the walk at CHAIN_SECONDS.
       const readOlder = async (digest, sleep) => (await readRootJson(d.reader, digest, { ...d, sleep })).root;
       const walk = root === null ? null : await replacedOnChain(root.root, base.owed, readOlder, { clock: d.now, sleep: d.sleep, now: args.now });
       if (walk !== null) chain = chainLine(root.root, walk);
-      const s = settle(base, heldBy(root?.root ?? null, walk?.replaced ?? null), args.now);
+      const s = settle(base, heldBy(root?.root ?? null, walk?.replaced ?? null), args.now, gapHeldBy(root?.root ?? null));
       base = s.state;
       settled = s.settled;
+      settledGaps = s.settledGaps;
     }
     const refs = [...new Set(proposals.flatMap((p) => proposedRefs(p).map((r) => r.ref)))];
     const found = await headAll(d.reader, refs, d);
@@ -193,8 +201,10 @@ async function advanceJob(argv, deps) {
     }
     if (chain !== null) d.out(oneLine(chain));
     for (const x of settled) d.out(oneLine(`settled ${x.item.ref} ${x.code} ${x.detail}`));
+    for (const g of settledGaps) d.out(oneLine(`settled gap ${g.source} ${g.day} ${g.detail}`));
     for (const p of result.accepted) d.out(`accepted ${p.adapter} segments ${p.segments.length} raw ${p.raw.length} history ${p.history.length} cursor ${cursorWord(p)}`);
     for (const x of dropped) d.out(oneLine(`dropped ${x.adapter ?? '-'} ${x.code} ${x.detail}`));
+    for (const [source, days] of Object.entries(next.gaps ?? {})) for (const day of days) d.out(`gap ${source} ${day} pending`);
     writeOut(join(args.out, 'next.json'), bytes, 'advance');
     const file = {
       format: ADVANCE_FORMAT,

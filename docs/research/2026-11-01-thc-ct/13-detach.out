@@ -1,0 +1,16 @@
+before 123b07549f31 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1703/1703
+writer.write      -> 7000000 bytes out; after 123b07549f31 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1703/1703
+ReadableStream    -> 7000000 bytes out; after 123b07549f31 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1704/1704 1703/1703
+byte ReadableStream -> 7000000 bytes out; after e3b0c44298fc 0/0 0/0 0/0 0/0 0/0 0/0 0/0 0/0
+node:internal/blob:133
+  const slice = buffer.slice(byteOffset, byteOffset + byteLength);
+                       ^
+
+TypeError: Cannot perform ArrayBuffer.prototype.slice on a detached ArrayBuffer
+    at ArrayBuffer.slice (<anonymous>)
+    at getSource (node:internal/blob:133:24)
+    at new Blob (node:internal/blob:174:34)
+    at file:///D:/_WORK_/domains.pkgforge.dev/.tmp/dom029/challenge/detach.mjs:60:51
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v26.7.0

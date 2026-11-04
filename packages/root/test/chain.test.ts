@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { repoOf } from "@domains/ghcr";
-import { buildRoot, packNamed, packSpanning, type RootJson } from "../src/index.ts";
+import { buildRoot, packNamed, packSpanning, type RootJson, segmentOfDay, spansDay } from "../src/index.ts";
 import { live, PSL_LIVE, pack } from "./helpers.ts";
 
 const seg = (start: string, source = "oi-cs") => pack("names", "seg", start, { sources: [source] });
@@ -51,4 +51,19 @@ test("chain: packSpanning finds the pack of a tier above seg that spans the span
   assert.equal(packSpanning(two, "names", { start: "2026-10-28T23:50:00Z", end: "2026-10-29T00:10:00Z" }, "oi-cs"), null);
   // The older day pack carries both sources.
   assert.equal(packSpanning(two, "names", { start: "2026-10-28T13:00:00Z", end: "2026-10-28T14:00:00Z" }, "thc-ct")?.tag, "names-d-20261028");
+});
+
+test("chain: spansDay holds a span over the whole UTC day, and segmentOfDay finds a live segment of the source that spans it, never a compacted pack (DOM-029)", () => {
+  const thc = pack("names", "seg", "2026-10-27T00:00:00Z", { sources: ["thc-ct"], end: "2026-10-28T00:00:00Z" });
+  const root = buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-30T06:00:00Z", add: [thc, d28, y, x] });
+  assert.equal(spansDay(thc.pack, "2026-10-27"), true);
+  assert.equal(spansDay(thc.pack, "2026-10-28"), false);
+  assert.equal(spansDay(d28.pack, "2026-10-28"), true);
+  // Ten minutes of a day are not the day.
+  assert.equal(spansDay(y.pack, "2026-10-29"), false);
+  assert.deepEqual(segmentOfDay(root, "thc-ct", "2026-10-27"), { dataset: "names", pack: thc.pack });
+  // d28 carries thc-ct and spans 10-28, and is no segment: a compacted pack ends no gap day.
+  assert.equal(segmentOfDay(root, "thc-ct", "2026-10-28"), null);
+  assert.equal(segmentOfDay(root, "oi-cs", "2026-10-29"), null);
+  assert.equal(segmentOfDay(root, "oi-nrd", "2026-10-27"), null);
 });

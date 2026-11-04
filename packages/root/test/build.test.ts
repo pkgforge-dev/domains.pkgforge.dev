@@ -568,9 +568,31 @@ test("pack from manifest: each fact that disagrees with another is refused by na
     "pack",
     /the manifest holds two idx layers/,
   );
-  // A quarantined segment (section 5.8) joins no root.
-  refusal(() => packFromManifest(facts({ "dev.pkgforge.domains.quarantine": "1" })), "pack", /carries dev\.pkgforge\.domains\.quarantine="1": a quarantined pack joins no root/);
+  // Only a segment is quarantined (ruling 23): a day pack that carries the annotation is refused.
+  refusal(() => packFromManifest(facts({ "dev.pkgforge.domains.quarantine": "1" })), "pack", /a pack of tier d lists quarantine; only a segment is quarantined/);
   refusal(() => packFromManifest({ ...facts(), json: { ...facts().json, artifactType: artifactType("ref") } }), "pack", /the artifact type is "application\/vnd\.pkgforge\.domains\.ref\.v1"/);
+});
+
+// The facts of a THC day segment of names, with `change` planted over its annotations.
+function segmentFacts(change: Record<string, string | undefined> = {}): ManifestFacts {
+  const base = facts({
+    "dev.pkgforge.domains.tier": "seg",
+    "dev.pkgforge.domains.source": "thc-ct",
+    ...change,
+  });
+  return { ...base, repo: repoOf("obs"), tag: "thc-ct.20261026.0232f4df0831", json: { ...base.json, artifactType: artifactType("segment") } };
+}
+
+test("pack from manifest: a segment pushed with the quarantine annotation 1 gives an entry marked quarantine: true; another value is refused (ruling 23, D7 of DOM-029)", () => {
+  const plainSeg = packFromManifest(segmentFacts()).pack;
+  assert.equal(Object.hasOwn(plainSeg, "quarantine"), false);
+  const { dataset, pack: q } = packFromManifest(segmentFacts({ "dev.pkgforge.domains.quarantine": "1" }));
+  assert.equal(dataset, "names");
+  assert.equal(q.quarantine, true);
+  assert.deepEqual({ ...q, quarantine: undefined }, { ...plainSeg, quarantine: undefined });
+  for (const v of ["yes", "true", "0", ""]) {
+    refusal(() => packFromManifest(segmentFacts({ "dev.pkgforge.domains.quarantine": v })), "pack", /a quarantined segment is pushed with "1", and no other value is read/);
+  }
 });
 
 // The facts of a synthetic feed day pack that carries a time copy: the key

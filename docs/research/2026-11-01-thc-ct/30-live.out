@@ -1,0 +1,6 @@
+cursor thc-ct none (state:latest sha256:7714b2683248499c8bd475ece6ebd395b5853c1ed0c8ddcd86fb2ccd5209a100)
+psl 1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9 (root:latest sha256:9bb1fc4124fe9b86e615d6c0961b689d07c078243e7fc495fba3f47768ee648f)
+segment obs:thc-ct.20261101.6730c381df4e thc-ct names 2026-11-01T00:00:00Z 2026-11-02T00:00:00Z records 36004233 verdict ok
+segment obs:thc-ct.20261101.6730c381df4e-d thc-ct domains 2026-11-01T00:00:00Z 2026-11-02T00:00:00Z records 11769212 verdict ok
+stats thc-ct {"bytes":342987129,"crlf_lines":0,"domains":11769212,"empty_lines":0,"files":1,"from_cs2":1,"from_hf":0,"gets":1,"host_faults":0,"lag_s":30749,"late":0,"lines":42101150,"names":36004233,"open":0,"refused_numeric-tld":1100,"refused_public-suffix":4,"refused_share":0.00002622256161648791,"run_keys":500000,"runs":73,"upper_lines":224686,"wild_lines":9483968}
+no push: --no-push; 2 segment(s) and 0 raw object(s) verified

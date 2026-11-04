@@ -155,9 +155,15 @@ function liveRun(w, now, label, sources = '') {
   const hours = w.step(LIVE, 'hours', { REGISTRY_TOKEN: TOKEN }, { temp: push, now });
   const move = w.step(LIVE, 'move', { REGISTRY_TOKEN: TOKEN }, { temp: push, now });
   let promote = null;
-  if (move.status === 0 && move.outputs.add !== '')
-    // The inputs the job promote of ingest-live.yml gives root-promote.yml: add, and partial true.
-    promote = w.step(PROMOTE, 'move', { REGISTRY_TOKEN: TOKEN, ADD: move.outputs.add, REPLACE: '', PSL: '', ROLLBACK_TO: '', PARTIAL: 'true' }, { temp: w.job(`${label}-promote`), now });
+  // The job promote of ingest-live.yml runs when add or gap holds a word, and gives root-promote.yml add, gap and
+  // partial true (D9 of DOM-029). gap is empty here: no fixture adapter declares a gap.
+  if (move.status === 0 && (move.outputs.add !== '' || move.outputs.gap !== ''))
+    promote = w.step(
+      PROMOTE,
+      'move',
+      { REGISTRY_TOKEN: TOKEN, ADD: move.outputs.add, REPLACE: '', PSL: '', ROLLBACK_TO: '', GAP: move.outputs.gap, PARTIAL: 'true' },
+      { temp: w.job(`${label}-promote`), now },
+    );
   return { plan, legs, ran, advance, hours, move, promote, next: join(push, 'state', 'next.json') };
 }
 
@@ -323,7 +329,10 @@ test('ingest-live scripts: after a compaction moves ledger-delta onto its filter
     assert.equal(p.status, 0, p.text);
     assert.deepEqual(
       p.lines.filter((l) => l.startsWith('waiting ')),
-      owed.map((ref) => `waiting ${ref}: datasets.domains: a hole from ${ref.includes('.20261028.') ? '2026-10-29' : '2026-10-30'}T00:00:00Z to 2026-10-30T08:00:00Z: no pack covers it`),
+      owed.map(
+        (ref) =>
+          `waiting ${ref}: datasets.domains: a hole from ${ref.includes('.20261028.') ? '2026-10-29' : '2026-10-30'}T00:00:00Z to 2026-10-30T08:00:00Z: no pack covers it, and no source is carried by a pack on each side of it, so gaps cannot name it (ruling 24)`,
+      ),
     );
     assert.match(p.lines.at(-1), /^unchanged root:latest sha256:[0-9a-f]{64} root_seq 2: nothing to promote, nothing written$/);
     assert.doesNotMatch(p.text, /::error::/);

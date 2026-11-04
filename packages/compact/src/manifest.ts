@@ -23,7 +23,12 @@
 // (scripts/ghcr/push.mjs). `annotations` adds more, each under
 // dev.pkgforge.domains. and none of those above; never
 // dev.pkgforge.domains.quarantine, which the push of a quarantined segment
-// adds and the promotion refuses (DOM-024's Decision of 2026-10-29T06:00Z).
+// adds (DOM-024's Decision of 2026-10-29T06:00Z) and packFromManifest reads
+// as the segment's quarantine field (ruling 23, DOM-029). A pack of tier d or
+// above may carry dev.pkgforge.domains.quarantined-inputs
+// (QUARANTINED_INPUTS_ANNOTATION): the sources of the quarantined inputs it
+// took in, sorted, one space between them, carried forward by a rebuild of
+// its day (D17 of DOM-029), since a pack above seg holds no quarantine field.
 //
 // Before it returns, the manifest is read back through packFromManifest of
 // @domains/root with the two index heads, so a manifest the promotion would
@@ -32,7 +37,20 @@
 //
 // It imports nothing from `node:` and is type-checked as Worker code
 // (tsconfig.worker.json); no test runs it in workerd.
-import { ANNOTATION_MAX_CHARS, annotationProblem, artifactType, repoOf, SOURCE_URL, segmentTagProblem, type Tier, type TierDataset, packageOfDataset, WORKFLOW_RUN_ID } from "@domains/ghcr";
+import {
+  ANNOTATION_MAX_CHARS,
+  annotationProblem,
+  artifactType,
+  MAX_SOURCE_ID,
+  packageOfDataset,
+  repoOf,
+  SOURCE_ID,
+  SOURCE_URL,
+  segmentTagProblem,
+  type Tier,
+  type TierDataset,
+  WORKFLOW_RUN_ID,
+} from "@domains/ghcr";
 import { IDX_TITLE, type PackSummary, packAnnotations, parseHead, partTitle, sha256Hex, TIME_IDX_TITLE, timePartTitle, VERIFY_ANNOTATIONS } from "@domains/pack";
 import { packFromManifest, QUARANTINE_ANNOTATION, RootError, TIER_ANNOTATION, TIME_COPY_TIERS, TIME_DATASETS } from "@domains/root";
 import { CompactError } from "./errors.ts";
@@ -67,6 +85,10 @@ const ANNOTATION_KEY = /^dev\.pkgforge\.domains\.[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 // file and the disk writer of scripts/ingest/ apply it, so a value the push
 // would refuse is refused here, before any push.
 export { ANNOTATION_MAX_CHARS };
+// The sources of the quarantined inputs of a pack of tier d or above (L8 of
+// DOM-029's design): an absorb over such a day pack keeps the live feed day.
+export const QUARANTINED_INPUTS_ANNOTATION = "dev.pkgforge.domains.quarantined-inputs";
+const QUARANTINED_INPUTS_TIERS: readonly string[] = ["d", "w", "m", "y"];
 // The datasets a segment holds (docs/architecture.md section 3.3).
 const SEGMENT_DATASETS: readonly TierDataset[] = ["names", "domains"];
 
@@ -133,6 +155,16 @@ const headFacts = (bytes: Uint8Array) => {
   const head = parseHead(bytes, bytes.length);
   return { dataset: head.header.dataset, records: head.header.records, keyMin: head.keyMin, keyMax: head.keyMax, parts: head.parts.map((p) => p.bytes) };
 };
+
+// The value of QUARANTINED_INPUTS_ANNOTATION: source ids, sorted and
+// distinct, one space between them, on a pack of tier d or above.
+function quarantinedInputsCheck(v: unknown, tier: string): void {
+  if (!QUARANTINED_INPUTS_TIERS.includes(tier))
+    throw new CompactError("usage", `${QUARANTINED_INPUTS_ANNOTATION} belongs to a pack of tier d, w, m or y, not ${tier}: a segment carries its own quarantine mark`);
+  const ids = typeof v === "string" ? v.split(" ") : [];
+  const ok = ids.length > 0 && ids.every((id, i) => SOURCE_ID.test(id) && id.length <= MAX_SOURCE_ID && (i === 0 || id > ids[i - 1]));
+  if (!ok) throw new CompactError("usage", `${QUARANTINED_INPUTS_ANNOTATION} is ${JSON.stringify(v)}, not source ids sorted and distinct, one space between them`);
+}
 
 export function packManifest(input: ManifestInput): BuiltManifest {
   const s = input.summary;
@@ -217,6 +249,7 @@ export function packManifest(input: ManifestInput): BuiltManifest {
     if (!ANNOTATION_KEY.test(k)) throw new CompactError("usage", `the annotation ${JSON.stringify(k)} is not dev.pkgforge.domains. and lowercase words joined by . _ or -`);
     if (k === QUARANTINE_ANNOTATION) throw new CompactError("usage", `${QUARANTINE_ANNOTATION} is added at the push of a quarantined segment, never to a manifest the promotion reads`);
     if (own.has(k)) throw new CompactError("usage", `the annotation ${k} is one packManifest sets`);
+    if (k === QUARANTINED_INPUTS_ANNOTATION) quarantinedInputsCheck(v, input.tier);
     const problem = annotationProblem(v);
     if (problem !== null) throw new CompactError("usage", `the annotation ${k} ${problem}: scripts/ghcr/push.mjs takes a string of 1 to ${ANNOTATION_MAX_CHARS} characters with no control character`);
     annotations[k] = v as string;

@@ -1,0 +1,55 @@
+{
+  "recorded_at": "2026-11-02T04:29:18Z",
+  "command": "node adapters/thc-ct/record.mjs --out adapters/thc-ct/fixtures",
+  "user_agent": "domains.pkgforge.dev/1.0 (+https://github.com/pkgforge-dev/domains.pkgforge.dev; contact: domains@pkgforge.dev)",
+  "psl_sha256": "0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca",
+  "day": "2026-10-31",
+  "absent": "2026-11-02",
+  "file": {
+    "url": "https://cs2.ip.thc.org/2026-10-31.txt.gz",
+    "bytes": 324537041,
+    "last_modified": "Sun, 01 Nov 2026 00:05:02 GMT",
+    "etag": "\"6ae6822e-13580ad1\"",
+    "listing_path": "2026/11/2026-10-31.txt.gz",
+    "listing_mtime": "2026-11-01T00:05:02Z"
+  },
+  "slice": {
+    "from_line": 327501,
+    "lines": 2000,
+    "bytes_from": 16835364,
+    "bytes_to": 16906335,
+    "head_bytes": 8388608,
+    "real_sha256": "a0a762af7ddf6294a50e52ae05889e7cc9a9a394024d03e35a25f4702b060f9e",
+    "synthetic_lines": [
+      "*.103b264f-98a1-4173-b988-d1ce6f0348df.southindia.waconazure.com",
+      "co.uk",
+      "bücher.example"
+    ],
+    "trailing_blank_line": true,
+    "gzip_bytes": 22571,
+    "gzip_sha256": "8a960c4f290faad49bad1c91230a1c352274dcec9a0506f5881b51a5cb5531a5"
+  },
+  "listing": {
+    "days": 60,
+    "bytes": 37815817542,
+    "first": "2026-09-01",
+    "last": "2026-11-01"
+  },
+  "index": {
+    "days": 30,
+    "first": "2026-10-01",
+    "last": "2026-11-01"
+  },
+  "files": {
+    "recorded/cs2-index.http.json": "c9b631a35f2ece729620eb0d2c15fd1315d603ea96b6cdce66612df74dd2a768",
+    "recorded/cs2-head-20261031.http.json": "ac952fd3d005bfe51e1e21a604f4ab13b5c2d9ae24bdf69ddc400c4f5aa9b254",
+    "recorded/cs2-head-20261102.http.json": "d330c812a19015ec227e8d41c1ecf5652c722f5a5011d5edba4cd432dd2bed72",
+    "recorded/hf-listing.http.json": "77b72392e464ce4ffbb5cb8a8af91e32e2c136cd87ace900cd1250343614afdd",
+    "cs2-head-20261031.http.json": "6ba9f0e17a15e35700343875e69a080da5cd4f30e6862cc5689fdb57e1c2994f",
+    "cs2-get-20261031.http.json": "4ff56d3abf77d7de536102bbc6425d52d24f9828cc10e40230a02b47ecdc9a03",
+    "hf-listing.http.json": "fd992532fcc3650c1b2b42f8714e144f8c92cfed999e36f4189b1c297004e8bd",
+    "hf-resolve-20261031.http.json": "0a608d6b27ddb705cc77c60ce90b9e31efb03fd844c53b1f366e5eeb6410ff02",
+    "hf-cdn-20261031.http.json": "6a38f16d673b52551a9199a95ef1d37dd9dee347b366cdc47372454017e80661",
+    "slice-2026-10-31.txt": "b5b8a0a068776e0f22860527b1c1853964ae21344d661223b8aa3fae39b95723"
+  }
+}

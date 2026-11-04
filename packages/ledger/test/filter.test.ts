@@ -1,12 +1,26 @@
 // packages/ledger/src/filter.ts: the Bloom filter's rate on 1,000,000 absent
 // keys, no false negative, its bytes and every refusal of them, the delta that
 // carries the domains of the hours between two builds, and the pairing of the
-// two. The keys are synthetic: `syn<n>` under a few suffixes (helpers.ts).
+// two, and the fold of D28 of DOM-029. The keys are synthetic: `syn<n>` under a
+// few suffixes (helpers.ts), and seeded hashes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crc32 } from "@domains/pack";
-import { BloomFilter, buildFilter, DELTA_HEADER_BYTES, FILTER_HEADER_BYTES, HashDelta, hashKey, LedgerError, ProvisionalFilter, provisionalNew } from "../src/index.ts";
-import { DOMAINS_CODEC, domainKey, domainRecord, readerOf, seen, writeMem } from "./helpers.ts";
+import {
+  BloomFilter,
+  buildFilter,
+  DELTA_HEADER_BYTES,
+  FILTER_HEADER_BYTES,
+  FOLD_UNIT,
+  type Hash64,
+  HashDelta,
+  hashKey,
+  LedgerError,
+  MAX_BUILD_KEYS,
+  ProvisionalFilter,
+  provisionalNew,
+} from "../src/index.ts";
+import { DOMAINS_CODEC, domainKey, domainRecord, readerOf, rng, seen, writeMem } from "./helpers.ts";
 
 const isLedger = (code: string, pattern?: RegExp) => (e: unknown) => e instanceof LedgerError && e.code === code && (pattern === undefined || pattern.test(e.message));
 const AS_OF = 298 * 86_400;
@@ -33,8 +47,8 @@ test("filter: the false-positive rate on 1,000,000 absent keys is 0.8% to 1.2% a
   const expected = (1 - Math.exp(-n / f.partitionBits)) ** f.hashes;
   const sigma = Math.sqrt((expected * (1 - expected)) / n);
   t.diagnostic(`keys ${n}, absent ${n}, false positives ${hits}, rate ${(100 * rate).toFixed(4)}%, theory ${(100 * expected).toFixed(4)}%, bits ${f.bitBytes} B, ${ms.toFixed(0)} ms`);
-  // P = ceil(10^7 / 7 / 64) * 64 = 1,428,608 bits a partition, 7 partitions.
-  assert.equal(f.bitBytes, 1_250_032);
+  // P = ceil(10^7 / 7 / 4096) * 4096 = 1,429,504 bits a partition (FOLD_UNIT, D28 of DOM-029), 7 partitions.
+  assert.equal(f.bitBytes, 1_250_816);
   assert.ok(rate >= 0.008 && rate <= 0.012, `rate ${rate}`);
   assert.ok(Math.abs(rate - expected) < 5 * sigma, `rate ${rate} is more than 5 sigma from ${expected}`);
 });
@@ -162,7 +176,7 @@ test("delta: a delta of another filter is refused, and rebase moves it to the ne
   assert.throws(() => new ProvisionalFilter(later, d), isLedger("pair"));
 });
 
-test("filter: buildFilter adds every domain of the packs once, sized by their records", async () => {
+test("filter: buildFilter adds every domain of the packs once, sized by their records, then folded toward the distinct keys", async () => {
   const a = await writeMem(
     [...range(0, 300)].sort().map((k) => domainRecord(k, [seen(0, 100)])),
     DOMAINS_CODEC,
@@ -173,6 +187,88 @@ test("filter: buildFilter adds every domain of the packs once, sized by their re
   );
   const f = await buildFilter([await readerOf(a, DOMAINS_CODEC), await readerOf(b, DOMAINS_CODEC)], { asOf: AS_OF });
   assert.equal(f.keys, 500, "the 100 domains in both packs are added once");
-  assert.equal(f.partitionBits, Math.ceil((600 * 10) / 7 / 64) * 64, "sized for the 600 records of the two packs");
+  // Sized for the 600 records, one FOLD_UNIT of 4,096 bits, then folded twice:
+  // 7 hashes of 1,024 bits give each of the 500 keys 14.3 bits, and one more
+  // fold would give 7.2, under 10 (D28 of DOM-029).
+  assert.equal(Math.max(FOLD_UNIT, Math.ceil((600 * 10) / 7 / FOLD_UNIT) * FOLD_UNIT), 4096);
+  assert.equal(f.partitionBits, 1024);
   for (const k of range(0, 500)) assert.ok(f.has(hashKey(k)), k);
+});
+
+// `n` synthetic hashes from a seed.
+function hashes(n: number, seed: number): Hash64[] {
+  const r = rng(seed);
+  return Array.from({ length: n }, () => ({ hi: Math.floor(r() * 2 ** 32) >>> 0, lo: Math.floor(r() * 2 ** 32) >>> 0 }));
+}
+
+test("filter: a filter folded once equals, byte for byte, the filter of the same keys built at half its partition, and folded twice the one at a quarter", () => {
+  // At 7 bits a key and 7 hashes a partition is the expected keys, rounded up to FOLD_UNIT: 32,768, 16,384 and 8,192 bits.
+  const at = (expected: number) => BloomFilter.forKeys(expected, { asOf: AS_OF, bitsPerKey: 7, hashes: 7 });
+  const [p, half, quarter] = [at(32_768), at(16_384), at(8_192)];
+  assert.deepEqual([p.partitionBits, half.partitionBits, quarter.partitionBits], [32_768, 16_384, 8_192]);
+  const keys = hashes(100_000, 29);
+  for (const f of [p, half, quarter]) for (const h of keys) f.add(h);
+  const once = p.fold();
+  assert.equal(once.partitionBits, 16_384);
+  assert.deepEqual(once.encode(), half.encode());
+  assert.deepEqual(once.fold().encode(), quarter.encode());
+  // The folded filter keeps the keys, hashes and as_of, and finds every key.
+  assert.deepEqual([once.keys, once.hashes, once.asOf], [100_000, 7, AS_OF]);
+  for (const h of keys.slice(0, 1000)) assert.ok(once.fold().has(h));
+  // The original is left as it was.
+  assert.equal(p.partitionBits, 32_768);
+});
+
+test("filter: a fold of a partition that is not a multiple of 128 bits is refused, and a folded filter round-trips through its bytes", () => {
+  let f = BloomFilter.forKeys(1, { asOf: AS_OF });
+  assert.equal(f.partitionBits, FOLD_UNIT);
+  for (const h of hashes(50, 7)) f.add(h);
+  // Six folds from FOLD_UNIT reach 64 bits; a seventh would give 32.
+  for (let i = 0; i < 6; i += 1) f = f.fold();
+  assert.equal(f.partitionBits, 64);
+  assert.throws(() => f.fold(), isLedger("usage", /does not fold: 32 bits is not a multiple of 64/));
+  const folded = BloomFilter.forKeys(2000, { asOf: AS_OF }).fold();
+  for (const h of hashes(500, 8)) folded.add(h);
+  const back = BloomFilter.decode(folded.encode());
+  assert.deepEqual(back.encode(), folded.encode());
+  assert.deepEqual([back.partitionBits, back.keys, back.crc], [folded.partitionBits, folded.keys, folded.crc]);
+});
+
+// One domains pack of the keys `from` to `to`.
+const domainsPack = async (from: number, to: number) =>
+  readerOf(
+    await writeMem(
+      [...range(from, to)].sort().map((k) => domainRecord(k, [seen(0, 100)])),
+      DOMAINS_CODEC,
+    ),
+    DOMAINS_CODEC,
+  );
+
+test("filter: buildFilter over packs whose records sum to five times their distinct keys folds twice, every key found", async () => {
+  // 28,672 keys in five packs: sized for 143,360 records, partitions of 204,800 bits (50 units), folded to 51,200: 12.5 bits a key.
+  const n = 28_672;
+  const pack = await domainsPack(0, n);
+  const f = await buildFilter([pack, pack, pack, pack, pack], { asOf: AS_OF });
+  assert.equal(f.keys, n);
+  assert.equal(BloomFilter.forKeys(5 * n, { asOf: AS_OF }).partitionBits, 204_800);
+  assert.equal(f.partitionBits, 51_200);
+  assert.ok((f.hashes * f.partitionBits) / f.keys >= 10);
+  assert.ok((f.hashes * f.partitionBits) / 2 / f.keys < 10, "one more fold would give each key under 10 bits");
+  for (const k of range(0, n)) assert.ok(f.has(hashKey(k)), k);
+});
+
+test("filter: maxBytes folds past bitsPerKey while the filter's bits are over it, and a bad maxBytes is refused", async () => {
+  const pack = await domainsPack(0, 2000);
+  const plain = await buildFilter([pack], { asOf: AS_OF });
+  // 2,000 records at 10 bits a key and 7 hashes: 4,096 bits a partition, no fold (one would give 7.2 bits a key).
+  assert.equal(plain.partitionBits, 4096);
+  const capped = await buildFilter([pack], { asOf: AS_OF, maxBytes: plain.bitBytes / 2 });
+  assert.equal(capped.partitionBits, 2048);
+  assert.equal(capped.bitBytes, plain.bitBytes / 2);
+  const lower = await buildFilter([pack], { asOf: AS_OF, maxBytes: plain.bitBytes / 2 - 1 });
+  assert.equal(lower.partitionBits, 1024);
+  for (const k of range(0, 2000)) assert.ok(capped.has(hashKey(k)) && lower.has(hashKey(k)), k);
+  await assert.rejects(buildFilter([pack], { asOf: AS_OF, maxBytes: 0 }), isLedger("usage"));
+  await assert.rejects(buildFilter([pack], { asOf: AS_OF, maxBytes: 1.5 }), isLedger("usage"));
+  assert.equal(MAX_BUILD_KEYS, 3_000_000_000);
 });

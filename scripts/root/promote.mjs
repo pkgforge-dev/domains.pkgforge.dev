@@ -41,12 +41,24 @@
 // kept ones and it, in passes until a pass keeps none, since one pack can
 // close the hole another needs (keepLiveSet). A pack the rule refuses waits:
 // it stays owed in state, and a later run adds it again. Only the live-set
-// refusal waits: a missing pack, a quarantined manifest, a withdrawn one, a
-// refused replacement, the guard and every other fault exit as without
-// --partial. Without --partial a root the rule refuses is refused whole, exit
-// 1, so an operator's promotion is never cut down. --partial applies to the
-// additions alone: each replacement spans what it replaces, so it opens no
-// hole, and the replacements are built first, whole, and refused whole.
+// refusal waits: a missing pack, a withdrawn one, a refused replacement, the
+// guard and every other fault exit as without --partial. Without --partial a
+// root the rule refuses is refused whole, exit 1, so an operator's promotion
+// is never cut down. --partial applies to the additions alone: each
+// replacement spans what it replaces, so it opens no hole, and the
+// replacements are built first, whole, and refused whole. The rule takes a
+// hole that the root's gaps name, the --gap days among them (ruling 24), so a
+// backfill's additions and its gap days join in one promotion.
+//
+// gaps (D31 of DOM-029): the live root's, with --gap's days added; then each
+// kept addition of tier seg removes the days it spans whole from the gaps of
+// each source it carries, when the root still builds without the day (another
+// dataset's hole there may still need it: dropCoveredGaps), so a late file of
+// a day once declared lacking, added by a later backfill, leaves the day
+// listed no more. A compacted pack drops
+// no gap day: a month pack that carries thc-ct spans 2026-10-04, which THC
+// lacks. A quarantined segment (dev.pkgforge.domains.quarantine) joins marked
+// (ruling 23, packFromManifest).
 //
 // psl is the sha256 of the list pinned at promotion: the
 // dev.pkgforge.domains.sha256 annotation of the ref package's --psl
@@ -58,8 +70,7 @@
 // the duty of the job that wrote it, before this one runs, and nothing here
 // checks that it ran: this script reads a pack's manifest and index heads and
 // holds them to each other, not every block; that a time copy holds exactly
-// the rows of its key copy is the verifier's `time` check. A manifest that carries
-// dev.pkgforge.domains.quarantine is refused (packFromManifest).
+// the rows of its key copy is the verifier's `time` check.
 //
 // --fixture NAME runs one synthetic case against the GHCR double of
 // scripts/root/fixture.mjs, in this process, with no network and no token:
@@ -77,7 +88,9 @@
 // default the live root's. --partial takes no value.
 // stdout, one line each: `live`; on a re-run, `dropped` for each pack the
 // live root names or supersedes; with --partial, `waiting PKG:TAG: MESSAGE`
-// for each addition that waits; then `unchanged`, or `built`, push.mjs's own
+// for each addition that waits; `gap dropped SOURCE DAY: PKG:TAG spans it`
+// for each gap day an added segment ends, and `gap kept ...` for one another
+// dataset's hole still needs; then `unchanged`, or `built`, push.mjs's own
 // lines and `latest`.
 // Environment: GITHUB_ACTOR and REGISTRY_TOKEN (the job's GITHUB_TOKEN, to oras
 // on stdin only), GITHUB_RUN_ATTEMPT, GITHUB_RUN_ID, ORAS, RUNNER_TEMP.
@@ -92,7 +105,7 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { artifactType, GhcrError, LayoutError, NAMESPACE, refTag, repoOf } from '@domains/ghcr';
-import { buildRoot, canonical, checkLiveSet, comparePacks, createdOf, dropSuperseded, EMPTY_COVERAGE, layerBytes, RootError, sourcesLayer } from '@domains/root';
+import { buildRoot, canonical, checkLiveSet, comparePacks, createdOf, dropSuperseded, EMPTY_COVERAGE, layerBytes, RootError, sourcesLayer, spansDay } from '@domains/root';
 import { anonymousReader, PRIVATE_LINE } from '../ghcr/check-public.mjs';
 import { orasRunner } from '../ghcr/push.mjs';
 import { RateLimitError, readPaused, realSleep } from '../ghcr/rate.mjs';
@@ -198,7 +211,8 @@ export function keepLiveSet(input) {
   const join = ({ dataset, pack }) => {
     if (manifests.has(pack.manifest)) throw new RootError('live-set', `datasets.${dataset}: ${refOf(pack)} names the manifest ${pack.manifest}, which the root names already`);
     const list = [...(lists.get(dataset) ?? []), pack].sort(comparePacks);
-    checkLiveSet(dataset, list);
+    // The root's gaps name the holes the rule takes (ruling 24), as validateRoot reads them.
+    checkLiveSet(dataset, list, base.gaps);
     lists.set(dataset, list);
     manifests.add(pack.manifest);
   };
@@ -300,6 +314,41 @@ function mergeGaps(live, extra) {
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
+// `gaps` without `day` of `source`; a source left with no day leaves the object.
+function withoutDay(gaps, source, day) {
+  const out = {};
+  for (const [id, days] of Object.entries(gaps)) {
+    const kept = id === source ? days.filter((d) => d !== day) : [...days];
+    if (kept.length > 0) out[id] = kept;
+  }
+  return out;
+}
+
+// D31 of DOM-029: `gaps` less each day that an addition of tier seg spans
+// whole, from the gaps of each source it carries, when the root still holds
+// without the day: `fits(gaps)` answers whether it does. A day stays listed
+// when another dataset of its source still has a hole there (the names
+// segment of the day added, its domains segment waiting): gaps name days of a
+// source, not of a dataset, and the hole needs the day. Returns
+// { gaps, dropped, kept }, each of dropped and kept [{ source, day, ref }].
+export function dropCoveredGaps(gaps, add, fits = () => true) {
+  let out = gaps;
+  const dropped = [];
+  const kept = [];
+  for (const [source, days] of Object.entries(gaps)) {
+    for (const day of days) {
+      const by = add.find(({ pack }) => pack.tier === 'seg' && pack.sources.includes(source) && spansDay(pack, day));
+      if (by === undefined) continue;
+      const without = withoutDay(out, source, day);
+      if (fits(without)) {
+        out = without;
+        dropped.push({ source, day, ref: refOf(by.pack) });
+      } else kept.push({ source, day, ref: refOf(by.pack) });
+    }
+  }
+  return { gaps: out, dropped, kept };
+}
+
 // One promotion, past its arguments; throws UsageError, Fault, PrivateRoot,
 // RootError, GhcrError or RateLimitError, each mapped to its exit by main.
 async function promoteIn(plan, deps) {
@@ -332,13 +381,29 @@ async function promoteIn(plan, deps) {
       add = kept.add;
       replace = kept.replace;
     }
-    const gaps = mergeGaps(live?.root.gaps ?? {}, plan.gaps);
+    const merged = mergeGaps(live?.root.gaps ?? {}, plan.gaps);
     const now = createdOf(deps.now());
     if (plan.partial && add.length > 0) {
-      const kept = keepLiveSet({ live: live === null ? null : { root: live.root, digest: live.digest }, add, replace, psl, now, gaps });
+      const kept = keepLiveSet({ live: live === null ? null : { root: live.root, digest: live.digest }, add, replace, psl, now, gaps: merged });
       for (const w of kept.waiting) out(`waiting ${w.ref}: ${w.message}`);
       add = kept.add;
     }
+    // D31 of DOM-029: an added segment over a day its source lacked ends the gap,
+    // unless a hole of another dataset there still needs it.
+    const liveInput = live === null ? null : { root: live.root, digest: live.digest };
+    const fits = (g) => {
+      try {
+        buildRoot({ live: liveInput, add, replace, psl, now, gaps: g });
+        return true;
+      } catch (e) {
+        if (liveSetRefusal(e)) return false;
+        throw e;
+      }
+    };
+    const covered = dropCoveredGaps(merged, add, fits);
+    const gaps = covered.gaps;
+    for (const g of covered.dropped) out(`gap dropped ${g.source} ${g.day}: ${g.ref} spans it`);
+    for (const g of covered.kept) out(`gap kept ${g.source} ${g.day}: ${g.ref} spans it, and a hole of another dataset there still needs it`);
     const sameCoverage = coverage === null || (live !== null && canonical(coverage) === canonical(live.coverage));
     // The sources.json layer the live root would carry now: the registry and
     // the fetched times, each compared, so a change of either alone is written.

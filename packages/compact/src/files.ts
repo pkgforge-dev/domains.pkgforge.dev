@@ -61,6 +61,10 @@ export interface PlanFile {
   readonly sources: readonly string[];
   readonly psl: readonly string[];
   readonly records: number;
+  // The expected sources the day goes on without (D15), and whether the unit
+  // absorbs segments into a live day pack (D17): TierPlan's late and absorb.
+  readonly late: readonly string[];
+  readonly absorb: boolean;
   readonly records_per_block: number;
   readonly page_entries: number;
   readonly key: CopyPlan | null;
@@ -132,6 +136,8 @@ export function planFile(input: PlanFileInput): PlanFile {
     sources: p.sources,
     psl: p.psl,
     records: p.records,
+    late: p.late,
+    absorb: p.absorb,
     records_per_block: input.recordsPerBlock ?? DEFAULT_RECORDS_PER_BLOCK,
     page_entries: input.pageEntries ?? DEFAULT_PAGE_ENTRIES,
     key: input.key === null ? null : copyOf(input.key),
@@ -159,6 +165,7 @@ export function checkPlanFile(v: unknown): PlanFile {
   const { id, ...body } = v;
   if (typeof id !== "string" || id !== idOf(body)) throw bad("the plan's id is not the SHA-256 of its body: the plan was edited after it was written");
   if (!Array.isArray(v.inputs) || !Array.isArray(v.sources) || !Array.isArray(v.psl) || !isWhole(v.records)) throw bad("the plan lacks its inputs, sources, psl or records");
+  if (!Array.isArray(v.late) || v.late.some((s) => typeof s !== "string") || typeof v.absorb !== "boolean") throw bad("the plan lacks its late sources or its absorb");
   if (!isWhole(v.records_per_block, 1, 0xffff) || !isWhole(v.page_entries, 1, 0xffff)) throw bad("the plan's records_per_block or page_entries is not a whole number of 1 to 65535");
   if (v.verdict === "ready") {
     const key = checkCopy(v.key, "key");

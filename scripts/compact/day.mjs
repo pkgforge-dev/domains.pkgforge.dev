@@ -14,11 +14,21 @@
 //      Ready: the inputs (the hour packs and segments of the day, THC's day
 //      segment among them) merged in one process (mergeSpan), held to them by
 //      the second pass (checkMerged), written to --out/domains with
-//      manifest.json and blobs.json. The facts.json of each segment input
-//      whose manifest names one (see the facts, below) are merged into the
-//      pack's own layer facts.json, every key of it a key of the pack. Present:
-//      the live pack is read. Wait: exit 3, nothing is written. Skip (a day
-//      every source lacks, ruling 24): exit 0, nothing is written.
+//      manifest.json and blobs.json. The facts.json of each segment input,
+//      and of the live day pack an absorb takes in, whose manifest names one
+//      (see the facts, below) are merged into the pack's own layer
+//      facts.json, every key of it a key of the pack. Present: the live pack
+//      is read. Wait: exit 3, nothing is written. Skip (a day every source
+//      lacks, ruling 24): exit 0, nothing is written.
+//      Absorb (D17 of DOM-029): with --rebuild domains, a live domains day
+//      pack with live segments inside its day is planned with them
+//      (planTier's absorb), merged with them and replaced with them under
+//      the next -rN, as the plan job of compact-daily.yml planned it. A day
+//      pack with no segment inside stays present.
+//      A domains day pack built with a quarantined input carries the
+//      annotation dev.pkgforge.domains.quarantined-inputs, the sources of
+//      those inputs, sorted, and a rebuild carries the live day pack's
+//      forward (L8 of DOM-029's design): a pack above seg holds no quarantine field.
 //   2. feed-d-DAY: the exact join (exactNew of @domains/ledger, `since` the
 //      day's start and the precision of each source) of the day's records
 //      against every live domains pack that ends by the day's start; a pack
@@ -30,7 +40,16 @@
 //      (writeFeedPack) and the layer summary.json (docs/format.md section 16)
 //      to --out/feed, with manifest.json and blobs.json. The pack replaces
 //      every live feed pack of the day (planTier of feed); it does not wait on
-//      them, since its rows come from the join.
+//      them, since its rows come from the join. With --rebuild feed and a
+//      live feed day that an absorb of its domains day rebuilds (planTier's
+//      absorb of feed: a segment taken in that is not quarantined), the live
+//      feed day is the carry input, its suspect bits carried as the hour
+//      packs' are, and it is replaced. A feed plan of skip (a day before the
+//      corpus of feed, every pack quarantined, every day a gap) writes no feed
+//      pack and prints `skip feed DAY: REASON`. When the day's records are a
+//      live domains day pack that carries quarantined-inputs, the exact join
+//      would take those records as new (ruling 23): no feed pack is written,
+//      and `keep feed:TAG: REASON` says the live feed stays.
 //   3. The ledger, unless --no-ledger: the filter of every domains pack
 //      through the day's end, as of that end, and the live delta rebased onto
 //      it, to --out/ledger/filter.dlbf (ledger-filter-YYYYMMDD) and
@@ -38,7 +57,12 @@
 //      and delta are --filter FILE and --delta FILE, read and held to each
 //      other before anything is built; --first-ledger starts the ledger with
 //      an empty delta. A live filter of this day already is `present`; a
-//      newer one is refused.
+//      newer one is refused. The filter is folded toward its distinct keys
+//      and under LEDGER_MAX_BYTES of scripts/state/lib.mjs, the most a reader
+//      of state takes (D28 of DOM-029); one still over it, which cannot fold,
+//      is a fault, exit 1, so a filter the hour builds of ingest-live.yml
+//      could not read is never written. Its line gives keys, partition_bits,
+//      bytes and bits_per_key.
 // A pack whose tag the package holds is `present` (tagDecision, ruling 25;
 // --rebuild domains,feed takes the next tag): nothing of it is written. Its
 // records are still merged again for the join when the root does not name it
@@ -75,7 +99,8 @@
 // input's facts go into the domains pack's layer, as its records go into the
 // pack, and not to the feed, whose join leaves its records out. The live
 // domains day pack's own facts.json is read alike, its bits held to the
-// pack's sources, and only when the feed is built.
+// pack's sources: when the feed is built from it (present), or when an absorb
+// takes it in (with --inputs, DIR/<tag>/manifest.json of that pack too).
 //
 // --out is checked before anything is read: a file, or a path under a file,
 // is exit 2, and so is an output that cannot be written. Every blob it reads
@@ -96,7 +121,8 @@
 //     --tags FILE          the tags of the packages names and feed, a JSON object
 //                          { "names": [...], "feed": [...] } (default: read from GHCR)
 //     --rebuild LIST       domains, feed or domains,feed: take the next tag of the day,
-//                          or find the build that holds the same bytes (present)
+//                          or find the build that holds the same bytes (present);
+//                          domains also absorbs the segments beside a live day pack
 //     --run ID             the workflow run (default GITHUB_RUN_ID)
 //     --records-per-block N, --page-entries N   the writer (defaults 4096 and 64)
 // stdout: `verdict DATASET VERDICT PACKAGE:TAG`, `reason ...`, one line for
@@ -104,15 +130,18 @@
 // carry facts.json, and the keys of their merge) or `facts names:TAG KEYS`
 // (the live domains day pack's), `check ...` lines, then for each pack
 // `present PACKAGE:TAG ...` or `wrote PACKAGE:TAG sha256:DIGEST records N`,
-// `replace PACKAGE:TAG MANIFEST...`, `exact ...`, `carry ...`, `summary ...`
-// and `ledger ...`.
+// `quarantined-inputs names:TAG SOURCES`, `replace PACKAGE:TAG MANIFEST...`,
+// `skip feed DAY: ...`, `keep feed:TAG: ...`,
+// `exact ...`, `carry ...`, `summary ...` and `ledger ...`.
 // Exit codes: 0 written, present or skip · 1 a fault: a live pack crosses the
 // day's edge, the root does not validate, an index or a manifest that does
 // not hash to the digest the root names, a blob the root names that GHCR does
 // not give with no credential, a merge whose check fails, inputs built under
 // two PSL hashes, a facts.json that is not its manifest's, does not parse,
 // names a bit other than its pack's sources' or a key the day's records lack,
-// a live filter newer than the day or a delta of another filter, a row
+// a live filter newer than the day or a delta of another filter, a filter
+// over LEDGER_MAX_BYTES that cannot fold, a quarantined-inputs annotation that
+// is not source ids, a row
 // outside the day, an hour row the day's records lack, a time copy that does
 // not bind to its key copy, a tag list GHCR cut short, a build of the day
 // that the tag list names and whose manifest GHCR does not give or carries no
@@ -144,6 +173,7 @@ import {
   mergeSpan,
   packManifest,
   planTier,
+  QUARANTINED_INPUTS_ANNOTATION,
   rebuildLedger,
   SUMMARY_MEDIA_TYPE,
   SUMMARY_TITLE,
@@ -153,13 +183,14 @@ import {
 import { DirPartsSink, fileDigest, openCopy, titlesOf } from '@domains/compact/node';
 import { FeedError } from '@domains/feed';
 import { checkRef, GhcrError, LATEST, LayoutError, LEDGER_DELTA_TAG, MANIFEST_LIMIT_BYTES, NAMESPACE, packageOfDataset } from '@domains/ghcr';
-import { LedgerError } from '@domains/ledger';
+import { FILTER_HEADER_BYTES, LedgerError } from '@domains/ledger';
 import { DOMAINS_CODEC, FEED_CODEC, IDX_TITLE, mergePacks, PackError, TIME_IDX_TITLE } from '@domains/pack';
 import { nodeCompress, writerId } from '@domains/pack/node';
 import { anonymousReader, isNotPublic, PRIVATE_LINE } from '../ghcr/check-public.mjs';
 import { RateLimitError, readPaused } from '../ghcr/rate.mjs';
 import { parseArgs } from '../lib/args.mjs';
 import { Fault } from '../root/lib.mjs';
+import { LEDGER_MAX_BYTES } from '../state/lib.mjs';
 import { DEFAULT_SOURCES } from '../verify-pack.mjs';
 import { bitsOf, FACTS_CONCURRENCY, factsBytes, factsLayerOf, factsTableOf, mapAtMost, registryOf } from './hour.mjs';
 import { buildTags, checkOutDir, decideRebuild, freshDir, lostBlob, onOutput, rootOf, writeOut } from './plan.mjs';
@@ -253,8 +284,18 @@ async function tagsOf(args, pkg, reader, deps) {
 // --inputs, held to the digest the root names (one that is not there is exit
 // 2, since a segment's facts.json is found through its manifest), or read
 // from GHCR by that digest with no credential. The root named it, so GHCR
-// refusing it is a fault, never PRIVATE PACKAGE.
-async function manifestOf(p, { dir, reader, deps }) {
+// refusing it is a fault, never PRIVATE PACKAGE. Each is read once a run
+// (io.manifests, by digest): the facts and the quarantined-inputs read it.
+function manifestOf(p, io) {
+  let m = io.manifests.get(p.manifest);
+  if (m === undefined) {
+    m = readManifest(p, io);
+    io.manifests.set(p.manifest, m);
+  }
+  return m;
+}
+
+async function readManifest(p, { dir, reader, deps }) {
   if (dir !== undefined) {
     const path = join(dir, p.tag, 'manifest.json');
     if (!existsSync(path)) throw new UsageError(`--inputs: ${path} does not exist: the ${FACTS_TITLE} of ${pkgTag(p)} is found through its manifest`);
@@ -311,6 +352,20 @@ async function factsOfPack(p, registry, io) {
   return factsTableOf(bytes, bitsOf(registry, p.sources, what), what);
 }
 
+// The sources a live pack of tier d or above names in its annotation
+// dev.pkgforge.domains.quarantined-inputs: the quarantined inputs it took in
+// (L8 of DOM-029's design). None when it carries none. A value that is not
+// source ids sorted and distinct, one space apart, is a fault of the pack.
+const QUARANTINED_INPUTS = /^[a-z0-9]+(?:-[a-z0-9]+)*(?: [a-z0-9]+(?:-[a-z0-9]+)*)*$/;
+async function quarantinedInputsOf(p, io) {
+  const v = (await manifestOf(p, io))?.annotations?.[QUARANTINED_INPUTS_ANNOTATION];
+  if (v === undefined) return [];
+  const ids = typeof v === 'string' && QUARANTINED_INPUTS.test(v) ? v.split(' ') : null;
+  if (ids === null || ids.some((id, i) => i > 0 && !(id > ids[i - 1])))
+    throw new Fault(`${pkgTag(p)} carries ${QUARANTINED_INPUTS_ANNOTATION}=${JSON.stringify(v)}, not source ids sorted and distinct, one space apart`);
+  return ids;
+}
+
 // A directory of --out for one pack or the ledger, made with those above it.
 function subDir(path) {
   onOutput(path, 'the output directory', () => mkdirSync(path, { recursive: true }));
@@ -363,10 +418,14 @@ export async function main(argv, deps = {}) {
 // a time copy of another span: writeFeedPack binds the two copies by
 // construction, so no input makes the bind check below refuse
 // (docs/conventions/code.md, "Mocks exist for determinism").
-// `readRoot` is rootOf of plan.mjs. A test gives a double that returns a root
-// whose entry carries the field `quarantine`: validateRoot refuses that field
-// until DOM-029 adds it, so no root file reaches the wiring of ruling 23 below.
-async function dayJob(argv, { reader = anonymousReader(), out = console.log, err = console.error, env = process.env, sleep, random, build = buildDay, readRoot = rootOf }) {
+// `readRoot` is rootOf of plan.mjs. A test gives a double that throws each
+// error class, or that changes the disk once the root is read.
+// `ledgerMaxBytes` is LEDGER_MAX_BYTES of scripts/state/lib.mjs. A test gives
+// a few bytes: a filter over the real cap needs about 1.5 billion keys.
+async function dayJob(
+  argv,
+  { reader = anonymousReader(), out = console.log, err = console.error, env = process.env, sleep, random, build = buildDay, readRoot = rootOf, ledgerMaxBytes = LEDGER_MAX_BYTES },
+) {
   const deps = { sleep, random, log: (l) => err(`day: ${l}`) };
   let inputsDir;
   let io;
@@ -379,14 +438,17 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
   try {
     const args = parse(argv, env);
     inputsDir = args.inputs;
-    io = { dir: inputsDir, reader, deps };
+    io = { dir: inputsDir, reader, deps, manifests: new Map() };
     const day = dayOf(args.day);
     const registry = registryOf(args.sources ?? DEFAULT_SOURCES);
     // The live ledger is read and held to the day before any pack is read.
     const ledger = args.ledger === 'none' ? null : checkLedger(args.ledger === 'first' ? null : { filter: readFile(args.filter, '--filter'), delta: readFile(args.delta, '--delta') }, day);
     const { root, ref } = await readRoot(args, reader, deps);
-    const dPlan = planTier(root, 'domains', 'd', day.start);
-    const fPlan = planTier(root, 'feed', 'd', day.start);
+    // D17 of DOM-029: a rebuild of domains absorbs the segments beside a live
+    // day pack, and the feed day follows; the expected rule is the plan job's.
+    const absorb = args.rebuild.includes('domains');
+    const dPlan = planTier(root, 'domains', 'd', day.start, { absorb });
+    const fPlan = planTier(root, 'feed', 'd', day.start, { absorb });
     for (const l of planLines('domains', dPlan)) out(l);
     if (dPlan.verdict === 'skip') {
       out(`skip ${day.date}: nothing is written`);
@@ -400,6 +462,9 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
     const psl = psls[0];
     const report = { format: DAY_FORMAT, day: day.date, root: ref, domains: null, feed: null, exact: null, carry: null, summary: null, facts: null, ledger: null };
     freshDir(args.out, 'day');
+    // The live domains day pack whose records are the day's, when one is: the
+    // pack present, or the one an absorb takes in (planTier lets one alone in).
+    const dayPack = dPlan.verdict === 'present' ? dPlan.present : dPlan.absorb ? (dPlan.inputs.find((p) => p.tier === 'd') ?? null) : null;
 
     // 1. The day's domain records, and the facts the feed reads beside them:
     // a table, or, for a live day pack, its facts.json read once the feed is built.
@@ -425,16 +490,20 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
       const tags = await tagsOf(args, 'names', reader, deps);
       const first = tagDecision('domains', 'd', day.start, tags, args.rebuild.includes('domains'));
       const inputs = await open(dPlan.inputs, DOMAINS_CODEC);
-      // The facts of the segment inputs, read before the merge, so the check
-      // of the merge sees every key their merge names.
-      const segs = dPlan.inputs.filter((p) => p.tier === 'seg');
+      // The facts of the segment inputs, and of the live day pack an absorb
+      // takes in, read before the merge, so the check of the merge sees every
+      // key their merge names.
+      const segs = dPlan.inputs.filter((p) => p.tier === 'seg' || p.tier === 'd');
       const tables = await mapAtMost(segs, FACTS_CONCURRENCY, (p) => factsOfPack(p, registry, io));
       const carried = tables.filter((t) => t !== null);
       const dayFacts = mergeFacts(carried);
       out(`facts ${carried.length} ${dayFacts.size}`);
-      report.facts = { from: 'segments', layers: carried.length, keys: dayFacts.size };
+      report.facts = { from: dayPack === null ? 'segments' : 'inputs', layers: carried.length, keys: dayFacts.size };
       // A quarantined input gives the feed no row (ruling 23), so none of its facts either.
       feedFacts = segs.some(isQuarantined) ? mergeFacts(tables.filter((t, i) => t !== null && !isQuarantined(segs[i]))) : dayFacts;
+      // The sources of the quarantined inputs, and those the live day pack an
+      // absorb takes in names: the annotation quarantined-inputs (L8).
+      const quarantined = [...new Set([...dPlan.inputs.filter(isQuarantined).flatMap((p) => p.sources), ...(dayPack === null ? [] : await quarantinedInputsOf(dayPack, io))])].sort();
       const dir = subDir(join(args.out, 'domains'));
       const sink = new DirPartsSink(dir, 'key');
       let merged;
@@ -497,10 +566,12 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
           parts: blobs.slice(1, 1 + sink.files.length).map((b) => ({ digest: b.digest, size: b.size })),
           idx: { digest: sha(merged.idx), size: merged.idx.length },
           ...(factsLayer === null ? {} : { extra: [{ title: FACTS_TITLE, mediaType: FACTS_MEDIA_TYPE, bytes: factsLayer }] }),
+          ...(quarantined.length === 0 ? {} : { annotations: { [QUARANTINED_INPUTS_ANNOTATION]: quarantined.join(' ') } }),
         });
         writeOut(join(dir, 'manifest.json'), manifest.text, 'day');
         writeOut(join(dir, 'blobs.json'), `${JSON.stringify(blobs)}\n`, 'day');
         out(`wrote names:${decision.tag} ${manifest.digest} records ${merged.records} parts ${merged.parts.length}`);
+        if (quarantined.length > 0) out(`quarantined-inputs names:${decision.tag} ${quarantined.join(' ')}`);
         out(`replace names:${decision.tag} ${dPlan.replaces.join(' ')}`);
         report.domains = { action: 'write', tag: decision.tag, manifest: manifest.digest, replaces: dPlan.replaces, records: merged.records, sha256: merged.sha256 };
       }
@@ -512,15 +583,30 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
     out(`base ${baseEntries.length} domains pack(s) end by ${day.start}`);
 
     // 3. The exact feed of the day.
+    // A live feed day an absorb rebuilds is the carry input, as hour packs are.
+    const liveFeed = fPlan.absorb ? (fPlan.inputs.find((p) => p.tier === 'd') ?? null) : null;
     if (fPlan.verdict === 'present') {
       out(`present feed:${fPlan.present.tag}: the day's feed is live`);
       report.feed = { action: 'present', tag: fPlan.present.tag, manifest: fPlan.present.manifest, replaces: [] };
+    } else if (fPlan.verdict === 'skip') {
+      // F7 of DOM-029: a feed day before the corpus of feed, or of no input, gets no pack.
+      out(`skip feed ${day.date}: ${fPlan.reason}`);
+      report.feed = { action: 'skip', tag: fPlan.tag, manifest: null, replaces: [] };
     } else {
       const tags = await tagsOf(args, 'feed', reader, deps);
       const first = tagDecision('feed', 'd', day.start, tags, args.rebuild.includes('feed'));
+      // L8 of DOM-029's design: the day's records are a live day pack that took
+      // in quarantined records, which the join cannot tell apart (ruling 23).
+      const held = first.action === 'present' || dayPack === null ? [] : await quarantinedInputsOf(dayPack, io);
       if (first.action === 'present') {
         out(`present feed:${first.tag} (${first.builds.join(', ')}): nothing is written`);
         report.feed = { action: 'present', tag: first.tag, manifest: null, replaces: fPlan.replaces };
+      } else if (held.length > 0) {
+        const tag = liveFeed?.tag ?? fPlan.tag;
+        out(
+          `keep feed:${tag}: the day's records are names:${dayPack.tag}, which carries ${QUARANTINED_INPUTS_ANNOTATION} ${held.join(' ')}, and an exact join over it would take those records as new (ruling 23); no feed pack is written${liveFeed === null ? '' : ', and the live feed day stays'}`,
+        );
+        report.feed = { action: 'keep', tag, manifest: liveFeed?.manifest ?? null, replaces: [] };
       } else {
         const factsTable = feedFacts ?? (await loadFacts());
         const hours = await open(fPlan.inputs, FEED_CODEC);
@@ -604,13 +690,31 @@ async function dayJob(argv, { reader = anonymousReader(), out = console.log, err
       out(`present state:${day.filterTag}: the live filter holds the table through ${day.end} already; no filter and no delta is written`);
       report.ledger = { action: 'present', tag: day.filterTag };
     } else {
-      const next = await rebuildLedger([...base, dayReader], day, ledger);
+      // D28 of DOM-029: folded under the cap a reader of state takes, and
+      // refused over it, so the hour builds of ingest-live.yml read every
+      // filter written; a fault here is the daily's, never the chain's.
+      const next = await rebuildLedger([...base, dayReader], day, ledger, { maxBytes: Math.max(1, ledgerMaxBytes - FILTER_HEADER_BYTES) });
+      if (next.filter.length > ledgerMaxBytes)
+        throw new Fault(
+          `the filter of ${day.filterTag} is ${next.filter.length} B (${next.keys} keys, ${next.hashes} partitions of ${next.partitionBits} bits), over the ${ledgerMaxBytes} B a reader of state takes (LEDGER_MAX_BYTES), and it does not fold further: no filter and no delta is written`,
+        );
       const dir = subDir(join(args.out, 'ledger'));
       writeOut(join(dir, FILTER_TITLE), next.filter, 'day');
       writeOut(join(dir, DELTA_TITLE), next.delta, 'day');
-      out(`wrote state:${day.filterTag} ${join(dir, FILTER_TITLE)} ${sha(next.filter)} keys ${next.keys} bytes ${next.filter.length}`);
+      const bitsPerKey = next.keys === 0 ? 'none' : ((next.hashes * next.partitionBits) / next.keys).toFixed(2);
+      out(`wrote state:${day.filterTag} ${join(dir, FILTER_TITLE)} ${sha(next.filter)} keys ${next.keys} partition_bits ${next.partitionBits} bytes ${next.filter.length} bits_per_key ${bitsPerKey}`);
       out(`wrote state:${LEDGER_DELTA_TAG} ${join(dir, DELTA_TITLE)} ${sha(next.delta)} hashes ${next.before} to ${next.kept}`);
-      report.ledger = { action: 'write', tag: day.filterTag, filter: sha(next.filter), delta: sha(next.delta), keys: next.keys, before: next.before, kept: next.kept };
+      report.ledger = {
+        action: 'write',
+        tag: day.filterTag,
+        filter: sha(next.filter),
+        delta: sha(next.delta),
+        keys: next.keys,
+        partition_bits: next.partitionBits,
+        bytes: next.filter.length,
+        before: next.before,
+        kept: next.kept,
+      };
     }
     writeOut(join(args.out, 'day.json'), `${JSON.stringify(report)}\n`, 'day');
     return EXIT.ok;

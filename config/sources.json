@@ -3,6 +3,48 @@
   "comment": "Written by node scripts/sources/build.mjs from adapters/*/source.json; never edited by hand. Sorted by bit, then the sources with no bit by id.",
   "sources": [
     {
+      "id": "thc-ct",
+      "bit": 0,
+      "family": "ct",
+      "datasets": [
+        "names",
+        "domains"
+      ],
+      "precision": "day",
+      "kind": "ct_name",
+      "basis": [
+        "ct-first"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "bytes",
+        "min": 0.4,
+        "max": 4,
+        "relative": true
+      },
+      "urls": [
+        "https://cs2.ip.thc.org/",
+        "https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps"
+      ],
+      "retention": "unknown",
+      "parser": "thc-ct/1",
+      "failure_modes": [
+        "The file is late: it lands at about 00:02 to 00:05 UTC the next day (MEASURED 2026-11-01, DOM-029), and the hourly run reads it then. A day not written by D+1 06:00Z goes to the cursor's open list, so the days after it are read as they land, and the daily compaction stops waiting for it; a file that lands after its day pack was built is absorbed into that day pack by the next daily.",
+        "The file never comes: a day not written by D+2 12:00Z is declared a gap, which reaches the root's gaps through state (2026-10-04 and 2026-10-09 so far). A gap is never final: a later backfill dispatch that finds the day adds its segments, and the promotion drops the gap.",
+        "One host fails, times out after 900 s or answers 404: the other host is read in the same run, cs2 first for the live day and the bucket first for a backfill. A listing of the bucket that fails is a fault, never an absence.",
+        "Every host fails: one fault line a host, the cursor kept, and the next hour's run tries again; a day still unwritten at D+2 12:00Z becomes a gap.",
+        "A body shorter or longer than its length, a Content-Encoding, a truncated gzip or a second gzip member, or a file over 2 GiB: the faults length, encoding, gzip and size. Each host is taken through its whole integrity pass before anything is written, so nothing is written from a host that faults.",
+        "An empty file, or a changed line format: the fault empty when no name is kept, and format when more than half of the non-empty lines are refused; from 1% refused the share is a stat the workflow warns on (0.018% measured, all address literals; MEASURED 2026-11-01, DOM-029).",
+        "The volume shifts without notice (September 843 to 986 MB a day, October 77 to 984 MB): the band is 0.4 to 4 times the median of the last 7 accepted days, a day outside it on either side is quarantined (served, never as new), and 3 consecutive days on one side reset the baseline (the replay of the 59 days quarantines 2026-10-05, 10-06 and 10-15; MEASURED 2026-11-01, DOM-029).",
+        "The order is a locale collation, not bytes (24.5% of adjacent lines inverted in the head of 2026-10-31; MEASURED 2026-11-01, DOM-029): the adapter sorts the keys itself, in runs merged by a heap.",
+        "Upper case on 0.6 to 1.0% of the lines: lowercased by the names package.",
+        "CRLF line endings: one trailing carriage return is stripped from a line and counted (none measured); a carriage return inside a line is refused as charset.",
+        "Address literals such as 192.0.2.1, which a certificate carried: refused as numeric-tld and counted.",
+        "The bucket's directory is the month the file was uploaded, not the month of its date: 2026-10-31 sits at 2026/11/2026-10-31.txt.gz (MEASURED 2026-11-01, DOM-029). The path is always taken from the bucket's listing, never built from the date."
+      ],
+      "adapter": "thc-ct"
+    },
+    {
       "id": "oi-nrd",
       "bit": 1,
       "family": "ct",

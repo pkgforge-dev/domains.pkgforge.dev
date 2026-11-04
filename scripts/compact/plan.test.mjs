@@ -1,7 +1,8 @@
 // scripts/compact/plan.mjs: the plan of one compaction from a root.json file
 // or from root:latest in the GHCR double of scripts/root/fixture.mjs. Real
 // packs of synthetic records (scripts/compact/fixture.mjs); each refusal is
-// planted alone.
+// planted alone. DOM-029: the expected sources (--now), the absorb (--absorb),
+// the quarantine mark and a named hole read from a root file.
 //
 //   node scripts/test.mjs scripts/compact --name "plan cli"
 import assert from 'node:assert/strict';
@@ -12,18 +13,18 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { CompactError, MAX_LAYERS, packManifest, planFile, planRanges, planTier } from '@domains/compact';
 import { DirPartsSink, fileDigest } from '@domains/compact/node';
-import { artifactType, GhcrError } from '@domains/ghcr';
-import { FEED_CODEC, IDX_TITLE, PackError, readIdx, writePack } from '@domains/pack';
+import { artifactType, GhcrError, repoOf, segTag } from '@domains/ghcr';
+import { FEED_CODEC, IDX_TITLE, NAMES_CODEC, PackError, parseHead, readIdx, writePack } from '@domains/pack';
 import { nodeCompress, writerId } from '@domains/pack/node';
-import { buildRoot, SOURCES_LAYER_FORMAT } from '@domains/root';
+import { buildRoot, packFromManifest, QUARANTINE_ANNOTATION, SOURCES_LAYER_FORMAT } from '@domains/root';
 import { pack } from '../../packages/root/test/helpers.ts';
 import { MAX_LAYERS as PUSH_MAX_LAYERS } from '../ghcr/push.mjs';
 import { RateLimitError } from '../ghcr/rate.mjs';
 import { registry } from '../root/fixture.mjs';
 import { Fault, UsageError } from '../root/lib.mjs';
 import { main as assembleMain } from './assemble.mjs';
-import { dayIso, PSL, rootOf, week, writeInput } from './fixture.mjs';
-import { EXIT, lines, main, onOutput } from './plan.mjs';
+import { dayIso, keysOf, PSL, rootOf, week, writeInput } from './fixture.mjs';
+import { EXIT, lines, main, onOutput, rootOf as planRootOf } from './plan.mjs';
 import { main as rangeMain } from './range.mjs';
 
 const MONDAY = '2026-10-19T00:00:00Z';
@@ -151,22 +152,6 @@ test('plan cli: bad arguments are exit 2', async () => {
     const r = await plan(argv);
     assert.equal(r.code, EXIT.usage, `${argv.join(' ')}\n${r.text}`);
   }
-});
-
-test('plan cli: an excluded pack is printed in its own package, a quarantined segment of obs', () => {
-  // planTier and planFile on synthetic entries: validateRoot refuses the field
-  // `quarantine` until DOM-029 adds it, so no root.json carries the mark yet.
-  const seg = { ...pack('feed', 'seg', '2026-10-06T00:00:00Z', { end: '2026-10-07T00:00:00Z', sources: ['oi-nrd'] }).pack, quarantine: true };
-  const day = (d) => pack('feed', 'd', `2026-10-${String(d).padStart(2, '0')}T00:00:00Z`).pack;
-  const tier = planTier({ datasets: { feed: [day(5), seg, day(7), day(8), day(9), day(10), day(11)] } }, 'feed', 'w', '2026-10-05T00:00:00Z');
-  assert.equal(tier.verdict, 'ready', tier.reason);
-  const file = planFile({ plan: tier, root: `sha256:${'e'.repeat(64)}`, key: { cuts: [], ranges: 1, bytes: [0], total: 0 }, time: null });
-  const printed = lines(file);
-  assert.deepEqual(
-    printed.filter((l) => l.startsWith('excluded ')),
-    [`excluded obs:${seg.tag} ${seg.manifest} quarantined`],
-  );
-  assert.equal(printed.filter((l) => l.startsWith('input feed:feed-d-')).length, 6);
 });
 
 test('plan cli: --root with --ref, or --ranges with --target-bytes, is exit 2 before anything is read, on a root that plans alone', () =>
@@ -521,4 +506,172 @@ test('plan cli: ranges from the input bytes are held to the ceiling, 255 for nam
       if (dataset === 'feed') assert.match(r.text, new RegExp(`^ranges time ${ceiling} merge$`, 'm'));
       assert.equal(JSON.parse(readFileSync(matrix, 'utf8')).include.length, ceiling);
     }
+  }));
+
+// ---- DOM-029: the expected sources (D15), the absorb (D17), ruling 23's mark and ruling 24's holes on a root file.
+
+// A names segment of thc-ct over the day of `start` in DIR/<tag>/, its manifest by packManifest (tier seg).
+async function writeSegment(dir, start, { seed = 9, n = 12, quarantine = false } = {}) {
+  const end = dayIso(Date.parse(start) + 86_400_000);
+  const tag = segTag('thc-ct', start, end);
+  const at = join(dir, tag);
+  mkdirSync(at, { recursive: true });
+  const day = (Date.parse(start) - Date.UTC(2026, 0, 1)) / 86_400_000;
+  const records = keysOf(seed, n).map((key) => ({ key, flags: 1, sources: [{ bit: 0, first: day, last: day }] }));
+  const sink = new DirPartsSink(at, 'key');
+  const summary = await writePack(records, { codec: NAMES_CODEC, compress: nodeCompress, sink, recordsPerBlock: 8, pageEntries: 2 });
+  await sink.close();
+  writeFileSync(join(at, IDX_TITLE), summary.idx);
+  const parts = [];
+  for (const f of sink.files) parts.push(await fileDigest(f));
+  const idx = { digest: `sha256:${createHash('sha256').update(summary.idx).digest('hex')}`, size: summary.idx.length };
+  const m = packManifest({ dataset: 'names', tier: 'seg', span: { start, end }, tag, sources: ['thc-ct'], precision: 'day', psl: PSL, run: '1', summary, writer: writerId(), parts, idx });
+  const json = quarantine ? { ...m.json, annotations: { ...m.json.annotations, [QUARANTINE_ANNOTATION]: '1' } } : m.json;
+  const digest = `sha256:${createHash('sha256').update(JSON.stringify(json)).digest('hex')}`;
+  return { tag, dir: at, manifest: { ...m, json, digest }, summary, keys: records.map((r) => r.key), time: null, repo: repoOf('obs') };
+}
+
+// The root entries of `inputs` (writeInput's or writeSegment's), each in its own package, and a root.json of them.
+function rootFileOf(dir, inputs, gaps = {}) {
+  const facts = (bytes) => {
+    const h = parseHead(bytes, bytes.length);
+    return { dataset: h.header.dataset, records: h.header.records, keyMin: h.keyMin, keyMax: h.keyMax, parts: h.parts.map((p) => p.bytes) };
+  };
+  const add = inputs.map((i) => packFromManifest({ repo: i.repo ?? repoOf('names'), tag: i.tag, digest: i.manifest.digest, json: i.manifest.json, head: facts(i.summary.idx), timeHead: null }));
+  const root = buildRoot({ live: null, psl: PSL, now: '2026-11-01T08:00:00Z', add, gaps });
+  const rootPath = join(dir, 'root.json');
+  writeFileSync(rootPath, `${JSON.stringify(root)}\n`);
+  return { root, rootPath };
+}
+
+const dayArgs = (rootPath, span, more = []) => ['--dataset', 'names', '--tier', 'd', '--span', span, '--root', rootPath, ...more];
+
+test('plan cli: --root prints the excluded line of a quarantined obs segment, read from a root file (ruling 23)', () =>
+  inTmp(async (dir) => {
+    const seg = pack('feed', 'seg', '2026-10-06T00:00:00Z', { end: '2026-10-07T00:00:00Z', sources: ['oi-nrd'], psl: PSL, quarantine: true });
+    const days = [5, 7, 8, 9, 10, 11].map((d) => pack('feed', 'd', `2026-10-${String(d).padStart(2, '0')}T00:00:00Z`, { psl: PSL }));
+    const rootPath = syntheticRoot(dir, [days[0], seg, ...days.slice(1)]);
+    assert.equal(JSON.parse(readFileSync(rootPath, 'utf8')).datasets.feed.find((p) => p.tier === 'seg').quarantine, true, 'the root file carries the mark');
+    // plan.mjs reads its --root through rootOf, validated as a writer validates it: the field is read.
+    const { root } = await planRootOf({ rootFile: rootPath }, null, {});
+    const tier = planTier(root, 'feed', 'w', '2026-10-05T00:00:00Z');
+    const printed = lines(planFile({ plan: tier, root: `sha256:${'e'.repeat(64)}`, key: { cuts: [], ranges: 1, bytes: [0], total: 0 }, time: null }));
+    assert.deepEqual(
+      printed.filter((l) => l.startsWith('excluded ')),
+      [`excluded obs:${seg.pack.tag} ${seg.pack.manifest} quarantined`],
+    );
+    assert.equal(printed.filter((l) => l.startsWith('input feed:feed-d-')).length, 6);
+  }));
+
+test('plan cli: a gap day between two packs plans skip, exit 0, and the days beside it are ready (ruling 24)', () =>
+  inTmp(async (dir) => {
+    const inDir = join(dir, 'in');
+    const a = await writeSegment(inDir, '2026-10-03T00:00:00Z', { seed: 3 });
+    const b = await writeSegment(inDir, '2026-10-05T00:00:00Z', { seed: 5 });
+    const { rootPath } = rootFileOf(dir, [a, b], { 'thc-ct': ['2026-10-04'] });
+    const r = await plan(dayArgs(rootPath, '2026-10-04T00:00:00Z', ['--absorb', '--out', join(dir, 'plan.json')]));
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.equal(r.out[0], 'verdict skip names:names-d-20261004 2026-10-04T00:00:00Z 2026-10-05T00:00:00Z');
+    assert.match(r.text, /^reason every day of the unit is a gap the root names: no pack is written \(ruling 24\)$/m);
+    assert.match(r.text, /^gap 2026-10-04$/m);
+    assert.doesNotMatch(r.text, /^late /m, 'the gap day of thc-ct excuses it');
+    assert.equal(r.out.at(-1), 'matrix {"include":[]}');
+    const beside = await plan(dayArgs(rootPath, '2026-10-05T00:00:00Z', ['--inputs', inDir, '--ranges', '1']));
+    assert.equal(beside.code, EXIT.ok, beside.text);
+    assert.match(beside.out[0], /^verdict ready names:names-d-20261005 /);
+  }));
+
+test('plan cli: expected: a day without thc-ct waits until D+1 06:00Z, exit 3; --now gives the instant, and the clock to the second gives it otherwise', () =>
+  inTmp(async (dir) => {
+    // A day of the lane as one day pack of oi-cs is present: the rule is read on the day after it, from its hours.
+    const hours = Array.from({ length: 24 }, (_, h) => pack('names', 'h', `2026-10-31T${String(h).padStart(2, '0')}:00:00Z`, { psl: PSL, sources: ['oi-cs'] }));
+    const rootPath = syntheticRoot(dir, [pack('names', 'd', '2026-10-30T00:00:00Z', { psl: PSL, sources: ['oi-cs'] }), ...hours]);
+    const r = await plan(dayArgs(rootPath, '2026-10-31T00:00:00Z', ['--now', '2026-11-01T05:59:59Z', '--out', join(dir, 'plan.json')]));
+    assert.equal(r.code, EXIT.wait, r.text);
+    assert.equal(r.out[0], 'verdict wait names:names-d-20261031 2026-10-31T00:00:00Z 2026-11-01T00:00:00Z');
+    assert.ok(r.out.includes('missing 2026-10-31T00:00:00Z 2026-11-01T00:00:00Z the source thc-ct is expected in names until 2026-11-01T06:00:00Z, and no live pack of it lies in the day'), r.text);
+    const file = JSON.parse(readFileSync(join(dir, 'plan.json'), 'utf8'));
+    assert.deepEqual([file.verdict, file.late, file.absorb], ['wait', [], false]);
+    // With no --now, the clock of the process, cut to the second.
+    const clocked = await plan(dayArgs(rootPath, '2026-10-31T00:00:00Z'), { now: () => Date.parse('2026-11-01T05:59:59Z') + 999 });
+    assert.equal(clocked.code, EXIT.wait, clocked.text);
+    for (const [now, why] of [
+      ['2026-11-01T06:00Z', /--now "2026-11-01T06:00Z" is not YYYY-MM-DDTHH:MM:SSZ of a calendar time/],
+      ['2026-02-30T00:00:00Z', /--now "2026-02-30T00:00:00Z" is not YYYY-MM-DDTHH:MM:SSZ/],
+      ['2026-11-01T06:00:00.000Z', /is not YYYY-MM-DDTHH:MM:SSZ/],
+    ]) {
+      const bad = await plan(dayArgs(rootPath, '2026-10-31T00:00:00Z', ['--now', now]));
+      assert.equal(bad.code, EXIT.usage, `${now}\n${bad.text}`);
+      assert.match(bad.text, why);
+    }
+    const noValue = await plan([...dayArgs(rootPath, '2026-10-31T00:00:00Z'), '--now']);
+    assert.equal(noValue.code, EXIT.usage, noValue.text);
+    const absorbValue = await plan([...dayArgs(rootPath, '2026-10-31T00:00:00Z'), '--absorb=yes']);
+    assert.equal(absorbValue.code, EXIT.usage, absorbValue.text);
+  }));
+
+test('plan cli: expected: after the deadline the day is ready and names thc-ct late, in its lines and its plan file', () =>
+  inTmp(async (dir) => {
+    const hours = Array.from({ length: 24 }, (_, h) => pack('names', 'h', `2026-10-31T${String(h).padStart(2, '0')}:00:00Z`, { psl: PSL, sources: ['oi-cs'] }));
+    const rootPath = syntheticRoot(dir, hours);
+    // The plan is ready: its indexes would be read next, so the verdict is read from planTier over the same root and now.
+    const root = JSON.parse(readFileSync(rootPath, 'utf8'));
+    const tier = planTier(root, 'names', 'd', '2026-10-31T00:00:00Z', { now: '2026-11-01T06:00:00Z' });
+    assert.equal(tier.verdict, 'ready', tier.reason);
+    const file = planFile({ plan: tier, root: `sha256:${'e'.repeat(64)}`, key: { cuts: [], ranges: 1, bytes: [0], total: 0 }, time: null });
+    assert.deepEqual(file.late, ['thc-ct']);
+    assert.ok(lines(file).includes('late thc-ct'));
+    assert.match(lines(file)[1], /; without thc-ct, late past its instant$/);
+    // Through plan.mjs: the root names no pack on disk, so the index read fails after the verdict; one second before it waits.
+    const at = await plan(dayArgs(rootPath, '2026-10-31T00:00:00Z', ['--now', '2026-11-01T06:00:00Z', '--inputs', join(dir, 'none')]));
+    assert.equal(at.code, EXIT.usage, at.text);
+    assert.match(at.text, /--inputs: .*names-h-2026103100[\\/]idx does not exist/);
+  }));
+
+test('plan cli: absorb: a live day pack with a late segment is ready, and the ranges and the assembly write it under -r2', () =>
+  inTmp(async (dir) => {
+    const inDir = join(dir, 'in');
+    const dayPack = await writeInput(inDir, 'names', 'd', '2026-10-25T00:00:00Z', { seed: 2, sources: ['oi-cs', 'oi-nrd'] });
+    const seg = await writeSegment(inDir, '2026-10-25T00:00:00Z', { seed: 7 });
+    const { rootPath } = rootFileOf(dir, [dayPack, seg]);
+    const planPath = join(dir, 'plan.json');
+    const r = await plan(dayArgs(rootPath, '2026-10-25T00:00:00Z', ['--absorb', '--inputs', inDir, '--ranges', '1', '--records-per-block', '4', '--page-entries', '2', '--out', planPath]));
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.equal(r.out[0], 'verdict ready names:names-d-20261025 2026-10-25T00:00:00Z 2026-10-26T00:00:00Z');
+    assert.equal(r.out[1], `reason absorb: names:names-d-20261025 takes in 1 segment(s) that came after it: obs:${seg.tag}`);
+    assert.ok(r.out.includes(`absorb names:names-d-20261025 obs:${seg.tag}`), r.text);
+    const file = JSON.parse(readFileSync(planPath, 'utf8'));
+    assert.equal(file.absorb, true);
+    assert.deepEqual(file.sources, ['oi-cs', 'oi-nrd', 'thc-ct']);
+    assert.equal(file.replaces.length, 2);
+    const ranges = join(dir, 'ranges');
+    const x = await call(rangeMain, ['all', '--plan', planPath, '--inputs', inDir, '--out', ranges]);
+    assert.equal(x.code, 0, x.text);
+    // The span's tag is in the package: the absorb takes the next tag of the day (ruling 25).
+    writeFileSync(join(dir, 'tags.json'), JSON.stringify(['names-d-20261025']));
+    const a = await call(assembleMain, ['--plan', planPath, '--dir', ranges, '--out', join(dir, 'asm'), '--tags', join(dir, 'tags.json'), '--run', '7', '--inputs', inDir, '--rebuild']);
+    assert.equal(a.code, 0, a.text);
+    assert.match(a.text, /^assembled names:names-d-20261025-r2 /m);
+    const manifest = JSON.parse(readFileSync(join(dir, 'asm', 'manifest.json'), 'utf8'));
+    assert.equal(manifest.annotations['dev.pkgforge.domains.source'], 'oi-cs,oi-nrd,thc-ct');
+    assert.equal(manifest.annotations['dev.pkgforge.domains.count'], String(new Set([...dayPack.keys, ...seg.keys]).size));
+    // Without --absorb the day pack is present, and nothing is read.
+    const plain = await plan(dayArgs(rootPath, '2026-10-25T00:00:00Z'));
+    assert.equal(plain.code, EXIT.ok, plain.text);
+    assert.match(plain.out[0], /^verdict present names:names-d-20261025 /);
+  }));
+
+test('plan cli: absorb: a day pack with no segment inside stays present, exit 0, no ranges', () =>
+  inTmp(async (dir) => {
+    const inDir = join(dir, 'in');
+    const dayPack = await writeInput(inDir, 'names', 'd', '2026-10-25T00:00:00Z', { seed: 2 });
+    const next = await writeSegment(inDir, '2026-10-26T00:00:00Z', { seed: 7 });
+    const { rootPath } = rootFileOf(dir, [dayPack, next]);
+    const r = await plan(dayArgs(rootPath, '2026-10-25T00:00:00Z', ['--absorb', '--out', join(dir, 'plan.json')]));
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.match(r.out[0], /^verdict present names:names-d-20261025 /);
+    assert.match(r.text, /^reason names:names-d-20261025 is live and spans the unit$/m);
+    assert.doesNotMatch(r.text, /^absorb /m);
+    assert.equal(r.out.filter((l) => l.startsWith('ranges ')).length, 0);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'plan.json'), 'utf8')).absorb, false);
   }));

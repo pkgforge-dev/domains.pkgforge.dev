@@ -26,9 +26,9 @@ const wf = parse(TEXT);
 const job = wf.jobs.promote;
 const steps = job.steps;
 const step = (name) => steps.find((s) => s.name === name);
-const INPUTS = ['add', 'replace', 'psl', 'rollback_to'];
+const INPUTS = ['add', 'replace', 'psl', 'rollback_to', 'gap'];
 
-test('root-promote: called and dispatched with the same four string inputs and the boolean partial, default false, in the group root-writer with queue: max and no cancel', () => {
+test('root-promote: called and dispatched with the same five string inputs and the boolean partial, default false, in the group root-writer with queue: max and no cancel', () => {
   for (const trigger of ['workflow_call', 'workflow_dispatch']) {
     assert.deepEqual(Object.keys(wf.on[trigger].inputs), [...INPUTS, 'partial'], trigger);
     for (const i of INPUTS) assert.deepEqual([wf.on[trigger].inputs[i].type, wf.on[trigger].inputs[i].required, wf.on[trigger].inputs[i].default], ['string', false, ''], `${trigger}.${i}`);
@@ -65,6 +65,7 @@ test('root-promote: only the move step holds the token; the links and oras come 
     REPLACE: '${{ inputs.replace }}',
     PSL: '${{ inputs.psl }}',
     ROLLBACK_TO: '${{ inputs.rollback_to }}',
+    GAP: '${{ inputs.gap }}',
     PARTIAL: '${{ inputs.partial }}',
   });
   assert.doesNotMatch(move.run, /REGISTRY_TOKEN/);
@@ -125,7 +126,7 @@ function runMove(t, env) {
   const r = spawnSync(BASH, ['-c', `${prelude}${script}`], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, FAKE_BIN: bin, FAKE_LOG: posix(log), GITHUB_OUTPUT: posix(output), ADD: '', REPLACE: '', PSL: '', ROLLBACK_TO: '', PARTIAL: 'false', ...env },
+    env: { ...process.env, FAKE_BIN: bin, FAKE_LOG: posix(log), GITHUB_OUTPUT: posix(output), ADD: '', REPLACE: '', PSL: '', ROLLBACK_TO: '', GAP: '', PARTIAL: 'false', ...env },
   });
   const calls = readFileSync(log, 'utf8')
     .split('--\n')
@@ -174,11 +175,28 @@ test('root-promote: rollback_to runs rollback.mjs, alone; with another input it 
   const r = runMove(t, { ROLLBACK_TO: 'r-20261029t091000z' });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.calls, [['scripts/root/rollback.mjs', '--to', 'r-20261029t091000z']]);
-  for (const extra of [{ ADD: 'names:x' }, { REPLACE: 'names:a=names:b' }, { PSL: 'psl-1f96bae40adf' }, { PARTIAL: 'true' }]) {
+  for (const extra of [{ ADD: 'names:x' }, { REPLACE: 'names:a=names:b' }, { PSL: 'psl-1f96bae40adf' }, { GAP: 'thc-ct=2026-10-04' }, { PARTIAL: 'true' }]) {
     const bad = runMove(t, { ROLLBACK_TO: 'r-20261029t091000z', ...extra });
     assert.equal(bad.status, 2, JSON.stringify(extra));
     assert.deepEqual(bad.calls, []);
     assert.equal(bad.output, 'rc=2\n');
-    assert.match(bad.stdout, /::error::rollback_to takes no add, replace, psl or partial/);
+    assert.match(bad.stdout, /::error::rollback_to takes no add, replace, psl, gap or partial/);
+  }
+});
+
+test('root-promote: each gap word reaches promote.mjs as its own --gap, and a word that is not SOURCE=YYYY-MM-DD runs nothing and fails', {
+  skip: BASH === null ? 'no bash on this machine' : false,
+}, (t) => {
+  const r = runMove(t, { ADD: 'obs:a', GAP: 'thc-ct=2026-10-04\n thc-ct=2026-10-09', PARTIAL: 'true' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.calls, [['scripts/root/promote.mjs', '--add', 'obs:a', '--gap', 'thc-ct=2026-10-04', '--gap', 'thc-ct=2026-10-09', '--partial']]);
+  // A gap alone promotes: the days a source lacks, with no pack added.
+  assert.deepEqual(runMove(t, { GAP: 'thc-ct=2026-10-04' }).calls, [['scripts/root/promote.mjs', '--gap', 'thc-ct=2026-10-04']]);
+  for (const word of ['thc-ct', 'thc-ct=2026-10-4', 'THC=2026-10-04', 'thc-ct=2026-10-04T00:00:00Z', '*']) {
+    const bad = runMove(t, { ADD: 'obs:a', GAP: `thc-ct=2026-10-09 ${word}` });
+    assert.equal(bad.status, 2, word);
+    assert.deepEqual(bad.calls, [], word);
+    assert.equal(bad.output, 'rc=2\n');
+    assert.ok(bad.stdout.includes(`::error::gap holds ${word}, which is not SOURCE=YYYY-MM-DD`), bad.stdout);
   }
 });

@@ -1,5 +1,6 @@
 // planTier: the input packs of one tier unit from a root's live set
-// (docs/architecture.md sections 4.5 and 4.6, rulings 23 and 24). Each case
+// (docs/architecture.md sections 4.5 and 4.6, rulings 23 and 24), with the
+// expected sources (D15 of DOM-029) and the absorb (D17). Each case
 // plants one fault in a live set of synthetic pack entries
 // (packages/root/test/helpers.ts).
 //
@@ -9,7 +10,7 @@ import { test } from "node:test";
 import type { TierDataset } from "@domains/ghcr";
 import type { PackEntry, RootTier } from "@domains/root";
 import { pack } from "../../root/test/helpers.ts";
-import { CompactError, type LiveInput, planTier } from "../src/index.ts";
+import { CompactError, EXPECTED, type LiveInput, planTier } from "../src/index.ts";
 
 const entry = (dataset: TierDataset, tier: RootTier, start: string, o: Parameters<typeof pack>[3] = {}): PackEntry => pack(dataset, tier, start, o).pack;
 const day = (d: string): string => `${d}T00:00:00Z`;
@@ -256,20 +257,18 @@ test("plan: a source behind its clock is excused by its own gap days only; a hol
   );
 });
 
-test('plan: the quarantine mark is true, 1 or "1"; any other value marks nothing (ruling 23)', () => {
-  for (const v of [true, 1, "1"]) {
+test("plan: the quarantine mark is true alone, the one value validatePack of @domains/root takes; any other value marks nothing (ruling 23)", () => {
+  const hours = hoursOf("feed", "2026-10-26");
+  hours[3] = { ...hours[3], quarantine: true } as PackEntry;
+  const plan = planTier(liveOf("feed", hours), "feed", "d", day("2026-10-26"));
+  assert.equal(plan.inputs.length, 23);
+  assert.deepEqual(
+    plan.excluded.map((e) => e.tag),
+    ["feed-h-2026102603"],
+  );
+  for (const v of [1, "1", false, 0, "0", "true", null]) {
     const hours = hoursOf("feed", "2026-10-26");
-    hours[3] = { ...hours[3], quarantine: v } as PackEntry;
-    const plan = planTier(liveOf("feed", hours), "feed", "d", day("2026-10-26"));
-    assert.equal(plan.inputs.length, 23, `quarantine ${JSON.stringify(v)}`);
-    assert.deepEqual(
-      plan.excluded.map((e) => e.tag),
-      ["feed-h-2026102603"],
-    );
-  }
-  for (const v of [false, 0, "0", "true", null]) {
-    const hours = hoursOf("feed", "2026-10-26");
-    hours[3] = { ...hours[3], quarantine: v } as PackEntry;
+    hours[3] = { ...hours[3], quarantine: v } as unknown as PackEntry;
     const plan = planTier(liveOf("feed", hours), "feed", "d", day("2026-10-26"));
     assert.equal(plan.inputs.length, 24, `quarantine ${JSON.stringify(v)}`);
     assert.deepEqual(plan.excluded, []);
@@ -348,4 +347,191 @@ test("plan: a tier, a dataset or a start that is not one is refused (usage)", ()
   refused(() => planTier(live, "names", "w", day("2026-10-20")), "usage", /not 00:00:00Z of a Monday/);
   refused(() => planTier(live, "names", "h" as never, "2026-10-20T01:00:00Z"), "usage", /not a tier a compaction builds/);
   refused(() => planTier(live, "dumps" as never, "d", day("2026-10-20")), "usage", /not a dataset with tiers/);
+});
+
+// D15 of DOM-029: the day of names or domains waits on thc-ct until D+1
+// 06:00Z, 108,000 s after its start, while no live pack of thc-ct lies in it
+// and the root names no gap day of thc-ct there; then it goes on, late.
+test("plan: expected: a day without thc-ct waits until D+1 06:00Z, to the second, and only with now", () => {
+  const lane = hoursOf("names", "2026-10-31", { sources: ["oi-cs"] });
+  const at = (now: string) => planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now });
+  const before = at("2026-11-01T05:59:59Z");
+  assert.equal(before.verdict, "wait", before.reason);
+  assert.deepEqual(
+    before.missing.map((m) => [m.start, m.end, m.why]),
+    [["2026-10-31T00:00:00Z", "2026-11-01T00:00:00Z", "the source thc-ct is expected in names until 2026-11-01T06:00:00Z, and no live pack of it lies in the day"]],
+  );
+  assert.deepEqual(before.late, []);
+  assert.equal(before.inputs.length, 24, "the inputs are named while the day waits");
+  // With no now the rule does not run: day.mjs plans so, after the plan job decided.
+  const noNow = planTier(liveOf("names", lane), "names", "d", day("2026-10-31"));
+  assert.equal(noNow.verdict, "ready", noNow.reason);
+  assert.deepEqual(noNow.late, []);
+  // THC's segment in the day: no wait, and nothing late.
+  const thc = entry("names", "seg", day("2026-10-31"), { end: day("2026-11-01"), sources: ["thc-ct"] });
+  const with_ = planTier(liveOf("names", [thc, ...lane]), "names", "d", day("2026-10-31"), { now: "2026-11-01T01:00:00Z" });
+  assert.equal(with_.verdict, "ready", with_.reason);
+  assert.deepEqual(with_.late, []);
+  // A quarantined THC segment is still THC's pack in names: it is an input there.
+  const quarantined = { ...thc, quarantine: true } as PackEntry;
+  assert.equal(planTier(liveOf("names", [quarantined, ...lane]), "names", "d", day("2026-10-31"), { now: "2026-11-01T01:00:00Z" }).verdict, "ready");
+  // A gap day of thc-ct there excuses it; a gap day of another source does not.
+  assert.equal(planTier(liveOf("names", lane, { "thc-ct": ["2026-10-31"] }), "names", "d", day("2026-10-31"), { now: "2026-11-01T01:00:00Z" }).verdict, "ready");
+  assert.equal(planTier(liveOf("names", lane, { "oi-cs": ["2026-10-30"], "isc-new": ["2026-10-31"] }), "names", "d", day("2026-10-31"), { now: "2026-11-01T01:00:00Z" }).verdict, "wait");
+  // domains alike; feed, and the tiers above the day, never wait on it.
+  const dlane = hoursOf("domains", "2026-10-31", { sources: ["oi-nrd"] });
+  assert.equal(planTier(liveOf("domains", dlane), "domains", "d", day("2026-10-31"), { now: "2026-11-01T05:00:00Z" }).verdict, "wait");
+  const flane = hoursOf("feed", "2026-10-31", { sources: ["oi-nrd"] });
+  assert.equal(planTier(liveOf("feed", flane), "feed", "d", day("2026-10-31"), { now: "2026-11-01T05:00:00Z" }).verdict, "ready");
+  const week = WEEK43.map((d) => entry("names", "d", day(d), { sources: ["oi-cs"] }));
+  assert.equal(planTier(liveOf("names", week), "names", "w", day("2026-10-19"), { now: "2026-10-26T01:00:00Z" }).verdict, "ready");
+  // An expected list of the caller's, and none at all.
+  assert.equal(planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now: "2026-11-01T01:00:00Z", expected: [] }).verdict, "ready");
+  const other = planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now: "2026-10-31T23:00:00Z", expected: [{ source: "ct-le", datasets: ["names"], untilS: 86_400 }] });
+  assert.equal(other.verdict, "wait");
+  assert.match(other.reason, /the source ct-le is expected in names until 2026-11-01T00:00:00Z/);
+});
+
+test("plan: expected: after the deadline the day is ready and names thc-ct late", () => {
+  const lane = hoursOf("names", "2026-10-31", { sources: ["oi-cs"] });
+  for (const now of ["2026-11-01T06:00:00Z", "2026-11-02T12:00:00Z"]) {
+    const plan = planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now });
+    assert.equal(plan.verdict, "ready", plan.reason);
+    assert.deepEqual(plan.late, ["thc-ct"], now);
+    assert.equal(plan.reason, "24 input pack(s) make the unit whole; without thc-ct, late past its instant");
+    assert.deepEqual(plan.sources, ["oi-cs"]);
+  }
+  // A day that waits for another reason still names the source late.
+  const behind = planTier(liveOf("names", lane.slice(0, 20)), "names", "d", day("2026-10-31"), { now: "2026-11-01T07:00:00Z" });
+  assert.equal(behind.verdict, "wait");
+  assert.deepEqual(behind.late, ["thc-ct"]);
+});
+
+test("plan: expected: a now that is not YYYY-MM-DDTHH:MM:SSZ of a calendar time, or a wait that is not whole seconds, is refused (usage)", () => {
+  const lane = hoursOf("names", "2026-10-31", { sources: ["oi-cs"] });
+  for (const now of ["2026-11-01T06:00Z", "2026-11-01T06:00:00.000Z", "2026-02-30T00:00:00Z", ""])
+    refused(() => planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now }), "usage", /^now /);
+  for (const untilS of [-1, 1.5, Number.NaN])
+    refused(
+      () => planTier(liveOf("names", lane), "names", "d", day("2026-10-31"), { now: "2026-11-01T06:00:00Z", expected: [{ source: "thc-ct", datasets: ["names"], untilS }] }),
+      "usage",
+      /is not a whole number of seconds|not a whole number/,
+    );
+});
+
+test("plan: EXPECTED holds thc-ct for names and domains until 108,000 s after the day's start, frozen", () => {
+  assert.deepEqual(EXPECTED, [{ source: "thc-ct", datasets: ["names", "domains"], untilS: 108_000 }]);
+  assert.ok(Object.isFrozen(EXPECTED) && Object.isFrozen(EXPECTED[0]) && Object.isFrozen(EXPECTED[0].datasets));
+  // 108,000 s after the start is 21,600 s after the end: D+1 06:00Z.
+  assert.equal(EXPECTED[0].untilS - 86_400, 21_600);
+});
+
+// D17 of DOM-029: a THC file that lands after its day pack was built.
+test("plan: absorb: a live day pack with a late segment is ready, the day pack and the segment its inputs, all replaced", () => {
+  const dayPack = entry("names", "d", day("2026-10-25"), { sources: ["oi-cs"] });
+  const thc = entry("names", "seg", day("2026-10-25"), { end: day("2026-10-26"), sources: ["thc-ct"] });
+  const live = liveOf("names", [entry("names", "d", day("2026-10-24"), { sources: ["oi-cs"] }), dayPack, thc, entry("names", "d", day("2026-10-26"), { sources: ["oi-cs"] })]);
+  const plan = planTier(live, "names", "d", day("2026-10-25"), { absorb: true });
+  assert.equal(plan.verdict, "ready", plan.reason);
+  assert.equal(plan.absorb, true);
+  assert.equal(plan.tag, "names-d-20261025", "the span's tag: the output takes its next -rN (tagDecision)");
+  assert.deepEqual(
+    plan.inputs.map((p) => p.tag),
+    [dayPack.tag, thc.tag],
+  );
+  assert.deepEqual(plan.replaces, [dayPack.manifest, thc.manifest]);
+  assert.deepEqual(plan.sources, ["oi-cs", "thc-ct"]);
+  assert.equal(plan.reason, `absorb: names:${dayPack.tag} takes in 1 segment(s) that came after it: obs:${thc.tag}`);
+  // Without absorb the day pack is present, as before.
+  const plain = planTier(live, "names", "d", day("2026-10-25"));
+  assert.equal(plain.verdict, "present");
+  assert.equal(plain.absorb, false);
+  // A rebuild of the day absorbs alike: names-d-20261025-r2 is a day pack of the same span.
+  const r2 = { ...dayPack, tag: "names-d-20261025-r2" };
+  const again = planTier(liveOf("names", [r2, thc]), "names", "d", day("2026-10-25"), { absorb: true });
+  assert.equal(again.verdict, "ready", again.reason);
+  assert.deepEqual(
+    again.inputs.map((p) => p.tag),
+    ["names-d-20261025-r2", thc.tag],
+  );
+  // A quarantined late segment is absorbed into names and domains too: its names are served (ruling 23).
+  const q = planTier(
+    liveOf("domains", [
+      entry("domains", "d", day("2026-10-25"), { sources: ["oi-nrd"] }),
+      { ...entry("domains", "seg", day("2026-10-25"), { end: day("2026-10-26"), sources: ["thc-ct"] }), quarantine: true } as PackEntry,
+    ]),
+    "domains",
+    "d",
+    day("2026-10-25"),
+    {
+      absorb: true,
+    },
+  );
+  assert.equal(q.verdict, "ready", q.reason);
+  assert.equal(q.inputs.length, 2);
+  // Past its instant the expected rule names nothing late: thc-ct is in the day.
+  assert.deepEqual(planTier(live, "names", "d", day("2026-10-25"), { absorb: true, now: "2026-11-02T02:00:00Z" }).late, []);
+});
+
+test("plan: absorb: a day pack with no segment inside stays present, and the tiers above the day never absorb", () => {
+  const dayPack = entry("names", "d", day("2026-10-25"), { sources: ["oi-cs", "thc-ct"] });
+  const plan = planTier(liveOf("names", [dayPack]), "names", "d", day("2026-10-25"), { absorb: true });
+  assert.equal(plan.verdict, "present");
+  assert.equal(plan.present?.tag, dayPack.tag);
+  assert.equal(plan.absorb, false);
+  assert.equal(plan.reason, `names:${dayPack.tag} is live and spans the unit`);
+  // A segment of the next day is no late segment of this one.
+  const next = entry("names", "seg", day("2026-10-26"), { end: day("2026-10-27"), sources: ["thc-ct"] });
+  assert.equal(planTier(liveOf("names", [dayPack, next]), "names", "d", day("2026-10-25"), { absorb: true }).verdict, "present");
+  // A live week is present for its days, and a week pack is present for itself, with absorb.
+  const week = entry("names", "w", day("2026-10-19"), { sources: ["oi-cs"] });
+  assert.equal(planTier(liveOf("names", [week]), "names", "d", day("2026-10-21"), { absorb: true }).verdict, "present");
+  assert.equal(planTier(liveOf("names", [week]), "names", "w", day("2026-10-19"), { absorb: true }).verdict, "present");
+});
+
+test("plan: absorb: a pack of a tier but seg beside a live day pack is refused (plan)", () => {
+  const dayPack = entry("names", "d", day("2026-10-25"), { sources: ["oi-cs"] });
+  const hour = entry("names", "h", "2026-10-25T05:00:00Z", { sources: ["oi-cs"] });
+  refused(
+    () => planTier(liveOf("names", [dayPack, hour]), "names", "d", day("2026-10-25"), { absorb: true }),
+    "plan",
+    /names:names-h-2026102505 \(tier h\) lies inside the day of the live day pack names:names-d-20261025/,
+  );
+});
+
+test("plan: absorb: a live feed day is rebuilt when its domains day absorbs a segment that is not quarantined, and kept when every one is", () => {
+  const feedDay = entry("feed", "d", day("2026-10-25"), { sources: ["oi-nrd"] });
+  const domainsDay = entry("domains", "d", day("2026-10-25"), { sources: ["oi-nrd"] });
+  const seg = entry("domains", "seg", day("2026-10-25"), { end: day("2026-10-26"), sources: ["thc-ct"] });
+  const live = (segs: PackEntry[], domains: PackEntry[] = [domainsDay]): LiveInput => ({ datasets: { feed: [feedDay], domains: [...domains, ...segs] } });
+  const plan = planTier(live([seg]), "feed", "d", day("2026-10-25"), { absorb: true });
+  assert.equal(plan.verdict, "ready", plan.reason);
+  assert.equal(plan.absorb, true);
+  assert.deepEqual(
+    plan.inputs.map((p) => p.tag),
+    [feedDay.tag],
+  );
+  assert.deepEqual(plan.replaces, [feedDay.manifest]);
+  assert.equal(plan.reason, `absorb: the day of domains takes in 1 segment(s) that are not quarantined (obs:${seg.tag}), so feed:${feedDay.tag} is built again from its exact join, its rows carried`);
+  // Only quarantined segments: they add no row, and the feed day stays.
+  const quarantined = { ...seg, quarantine: true } as PackEntry;
+  assert.equal(planTier(live([quarantined]), "feed", "d", day("2026-10-25"), { absorb: true }).verdict, "present");
+  // A mix: the one that is not quarantined moves it.
+  const isc = entry("domains", "seg", day("2026-10-25"), { end: day("2026-10-26"), sources: ["isc-new"] });
+  assert.match(planTier(live([quarantined, isc]), "feed", "d", day("2026-10-25"), { absorb: true }).reason, /takes in 1 segment\(s\) that are not quarantined \(obs:isc-new\./);
+  // No domains day pack live: the domains day is no absorb, and the feed day stays.
+  assert.equal(planTier(live([seg], []), "feed", "d", day("2026-10-25"), { absorb: true }).verdict, "present");
+  // Without absorb the feed day is present.
+  assert.equal(planTier(live([seg]), "feed", "d", day("2026-10-25")).verdict, "present");
+});
+
+test("plan: a gap day between two packs plans skip, with no pack written (ruling 24)", () => {
+  const packs = [entry("names", "seg", day("2026-10-03"), { end: day("2026-10-04"), sources: ["thc-ct"] }), entry("names", "seg", day("2026-10-05"), { end: day("2026-10-06"), sources: ["thc-ct"] })];
+  const gap = planTier(liveOf("names", packs, { "thc-ct": ["2026-10-04"] }), "names", "d", day("2026-10-04"), { now: "2026-11-02T02:00:00Z", absorb: true });
+  assert.equal(gap.verdict, "skip", gap.reason);
+  assert.equal(gap.reason, "every day of the unit is a gap the root names: no pack is written (ruling 24)");
+  assert.deepEqual(gap.gapDays, ["2026-10-04"]);
+  assert.deepEqual(gap.late, [], "the gap day of thc-ct excuses it");
+  // The days on each side are built from their segments.
+  assert.equal(planTier(liveOf("names", packs, { "thc-ct": ["2026-10-04"] }), "names", "d", day("2026-10-05"), { now: "2026-11-02T02:00:00Z" }).verdict, "ready");
 });

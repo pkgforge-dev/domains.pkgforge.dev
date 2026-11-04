@@ -2,6 +2,14 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-11-03
+
+- THC's daily dumps are an adapter, with their backfill (DOM-029, partial; no deploy, and no run on GitHub before the push). `adapters/thc-ct/` reads THC's file of a day from cs2 or the Hugging Face bucket, each host through a whole integrity pass before anything is written, sorts the names in runs merged by a heap, and writes a names and a domains segment with the file as their layer `raw`. Its cursor holds a late day open from D+1 06:00Z and declares it a gap at D+2 12:00Z. `.github/workflows/ingest-thc.yml` runs the live day, dispatched hourly by the chain's new row `5 * * * *`, and a backfill of at most 62 days, whose plan (`scripts/ingest/thc-plan.mjs`) adopts stranded tags and writes gap proposals itself (`scripts/ingest/adopt.mjs`). A dry run on a desktop, with no push, wrote and verified both segments of 2026-10-26 from the bucket and of 2026-11-01 from cs2 (`docs/research/2026-11-01-thc-ct.md`).
+- Ruling 23 is built: a quarantined segment joins the root with `quarantine: true`, is owed like any other, is served and counts toward no `new` window. A day pack built with a quarantined input carries `dev.pkgforge.domains.quarantined-inputs`, and no exact join reads it as new. A day source quarantines on both sides of its band, and 3 days on one side reset the baseline either way, so a source that returns to its old volume resumes on the third day.
+- Ruling 24 is built: the root accepts a hole that a source carried on both sides names in `gaps`. A run declares a gap day, `state.json` holds it pending in its optional `gaps`, and the promotion passes it with the new input `gap` of `root-promote.yml`, and drops a gap day that an added segment spans.
+- The daily compaction waits for THC until D+1 06:00Z and runs a second time at 06:35, through the chain's second row of `compact-daily.yml`. Every plan absorbs a late segment into its live day pack under `-rN`, and a range of at most 62 days is one dispatch (`from` and `to`). The ledger filter folds to its distinct keys under the 1 GiB a reader takes, and the day step has 240 minutes.
+- A day source's file layer may hold 2 GiB (`FILE_RAW_BYTES`), and a segment's `url` names the URL its bytes came from.
+
 ## 2026-11-02
 
 - An owed segment that a compaction replaced settles as held (DOM-063, closed): run 41367496155, the first of `ingest-live.yml` on 137a220, read 60 roots back to root_seq 14. It settled the 11 owed segments of `oi-nrd-fqdn` of 2026-10-28 as held, and its log holds no `waiting` line.

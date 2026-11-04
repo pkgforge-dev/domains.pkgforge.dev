@@ -34,10 +34,17 @@
 //     --out FILE           write the plan, JSON (domains.compact-plan.v1)
 //     --matrix FILE        write the matrix, JSON: { "include": [{ "range": 0 }, ...] }
 //     --json               print the plan as JSON instead of lines
+//     --now ISO            the instant of the plan, YYYY-MM-DDTHH:MM:SSZ (default: the clock, to the
+//                          second): a day of names or domains waits on each source of EXPECTED of
+//                          packages/compact with no live pack in it until its instant, then goes on and
+//                          names it late (D15 of DOM-029). Every plan applies EXPECTED.
+//     --absorb             a live day pack with live segments inside its day is ready, the day pack and
+//                          those segments its inputs, and a live feed day follows its domains day (D17)
 // stdout: `verdict VERDICT PACKAGE:TAG START END`, `reason ...`, one line for
 // each input (`input PACKAGE:TAG ...`), excluded pack (`excluded PACKAGE:TAG
 // MANIFEST REASON`, the package its own: a quarantined segment is of obs),
-// missing span and gap day, `ranges key N ...`, `ranges time N MODE`,
+// missing span and gap day, each late source (`late SOURCE`), an absorb's
+// inputs (`absorb PACKAGE:TAG ...`), `ranges key N ...`, `ranges time N MODE`,
 // `plan ID` and `matrix JSON`.
 // Exit codes: 0 the plan is ready, present or skip · 1 a fault: a live pack
 // crosses the unit's edge, the root does not validate, an index does not hash
@@ -66,9 +73,12 @@ export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, wait: 3, private:
 // index of about 23 million blocks, far above a year pack's [E].
 export const IDX_MAX_BYTES = 1024 * 1024 * 1024;
 const USAGE =
-  'usage: node scripts/compact/plan.mjs --dataset DATASET --tier d|w|m|y --span START [--root FILE | --ref REF] [--inputs DIR] [--ranges N | --target-bytes N] [--out FILE] [--matrix FILE] [--json]';
-const VALUED = ['dataset', 'tier', 'span', 'root', 'ref', 'inputs', 'ranges', 'target-bytes', 'records-per-block', 'page-entries', 'out', 'matrix'];
-const FLAGS = [...VALUED, 'json'];
+  'usage: node scripts/compact/plan.mjs --dataset DATASET --tier d|w|m|y --span START [--root FILE | --ref REF] [--inputs DIR] [--ranges N | --target-bytes N] [--out FILE] [--matrix FILE] [--json] [--now ISO] [--absorb]';
+const VALUED = ['dataset', 'tier', 'span', 'root', 'ref', 'inputs', 'ranges', 'target-bytes', 'records-per-block', 'page-entries', 'out', 'matrix', 'now'];
+const SWITCHES = ['json', 'absorb'];
+const FLAGS = [...VALUED, ...SWITCHES];
+const ISO_SECOND = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const isoOfMs = (ms) => `${new Date(ms).toISOString().slice(0, 19)}Z`;
 
 const whole = (v, name, min, max) => {
   if (v === undefined) return undefined;
@@ -157,9 +167,9 @@ export async function buildTags(pkg, what, reader, deps) {
   }
 }
 
-function parse(argv) {
+function parse(argv, nowMs) {
   const a = parseArgs(argv);
-  if (typeof a.json === 'string') throw new UsageError(`${JSON.stringify(a.json)} is not a flag`);
+  for (const k of SWITCHES) if (typeof a[k] === 'string') throw new UsageError(`${JSON.stringify(a[k])} is not a flag`);
   for (const k of Object.keys(a)) if (k !== '_' && !FLAGS.includes(k)) throw new UsageError(`unknown flag --${k}`);
   for (const k of VALUED) if (a[k] === true) throw new UsageError(`--${k} needs a value`);
   if (a._.length > 0) throw new UsageError(`${JSON.stringify(a._[0])} is not a flag`);
@@ -177,6 +187,8 @@ function parse(argv) {
   const ceiling = rangeCeiling(a.dataset, a.tier);
   if (ranges !== undefined && ranges > ceiling)
     throw new UsageError(`--ranges ${ranges} is above ${ceiling}, the most ranges of a ${a.dataset} pack of tier ${a.tier} whose parts and indexes fit one manifest`);
+  if (a.now !== undefined && (!ISO_SECOND.test(a.now) || !Number.isFinite(Date.parse(a.now)) || isoOfMs(Date.parse(a.now)) !== a.now))
+    throw new UsageError(`--now ${JSON.stringify(a.now)} is not YYYY-MM-DDTHH:MM:SSZ of a calendar time`);
   if (a.out !== undefined) checkOutFile(a.out, '--out');
   if (a.matrix !== undefined) checkOutFile(a.matrix, '--matrix');
   return {
@@ -194,6 +206,8 @@ function parse(argv) {
     out: a.out,
     matrix: a.matrix,
     json: a.json === true,
+    now: a.now ?? isoOfMs(Math.floor(nowMs / 1000) * 1000),
+    absorb: a.absorb === true,
   };
 }
 
@@ -303,6 +317,8 @@ export function lines(file) {
   for (const e of file.excluded) out.push(`excluded ${pkgTag(e)} ${e.manifest} ${e.reason}`);
   for (const m of file.missing) out.push(`missing ${m.start} ${m.end} ${m.why}${m.found.length > 0 ? `; found ${m.found.join(' ')}` : ''}`);
   for (const d of file.gap_days) out.push(`gap ${d}`);
+  for (const s of file.late) out.push(`late ${s}`);
+  if (file.absorb) out.push(`absorb ${file.inputs.map(pkgTag).join(' ')}`);
   if (file.key !== null) out.push(`ranges key ${file.key.ranges} bytes ${file.key.bytes.join(',')}`);
   if (file.time !== null) out.push(`ranges time ${file.time.ranges} ${file.time.mode}`);
   out.push(`plan ${file.id}`, `matrix ${JSON.stringify(file.matrix)}`);
@@ -319,12 +335,13 @@ export async function main(argv, deps = {}) {
   }
 }
 
-async function plan(argv, { reader = anonymousReader(), out = console.log, err = console.error, sleep, random }) {
+async function plan(argv, { reader = anonymousReader(), out = console.log, err = console.error, sleep, random, now = Date.now }) {
   const deps = { sleep, random, log: (l) => err(`plan: ${l}`) };
   try {
-    const args = parse(argv);
+    const args = parse(argv, now());
     const { root, ref } = await rootOf(args, reader, deps);
-    const tier = planTier(root, args.dataset, args.tier, args.span);
+    // EXPECTED of packages/compact is planTier's default: every plan applies it.
+    const tier = planTier(root, args.dataset, args.tier, args.span, { now: args.now, absorb: args.absorb });
     let key = null;
     let time = null;
     if (tier.verdict === 'ready') {

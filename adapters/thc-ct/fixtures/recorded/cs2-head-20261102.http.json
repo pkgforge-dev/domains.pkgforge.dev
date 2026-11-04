@@ -1,0 +1,17 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "recorded",
+  "recorded_at": "2026-11-02T04:29:18Z",
+  "request": {
+    "method": "HEAD",
+    "url": "https://cs2.ip.thc.org/2026-11-02.txt.gz"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/html",
+      "content-length": "162"
+    },
+    "body_base64": ""
+  }
+}

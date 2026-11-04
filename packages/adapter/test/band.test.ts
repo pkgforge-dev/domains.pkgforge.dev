@@ -1,7 +1,8 @@
 // packages/adapter/src/band.ts. The replay reads THC's daily sizes from the
 // measured file docs/research/measure/DOM-009/result.json: `per_day[].gz_bytes`,
 // the gzip size of each day's dump in the Hugging Face bucket, 54 days from
-// 2026-09-01 to 2026-10-26. The other tests use synthetic histories.
+// 2026-09-01 to 2026-10-26, and LATE below for 10-27 to 10-31. The other tests
+// use synthetic histories.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,18 +16,30 @@ const DOM_009 = JSON.parse(readFileSync(join(ROOT, "docs", "research", "measure"
   per_day: { day: string; gz_bytes: number }[];
 };
 const THC: { day: string; count: number }[] = DOM_009.per_day.map((d) => ({ day: d.day, count: d.gz_bytes }));
-// docs/architecture.md section 5.8: 40% and 250% of the median.
+// docs/architecture.md section 5.8: 40% and 250% of the median, the band
+// before DOM-029. THC's own (adapters/thc-ct/source.json, D6 of DOM-029) is
+// 40% and 400%.
 const RELATIVE: Band = { metric: "bytes", min: 0.4, max: 2.5, relative: true };
+const THC_BAND: Band = { metric: "bytes", min: 0.4, max: 4, relative: true };
+// The five days after DOM-009's, from the bucket's listing (MEASURED
+// 2026-11-01T07:45:37Z, DOM-029's design M2): 59 days in all.
+const LATE: readonly { day: string; count: number }[] = [
+  { day: "2026-10-27", count: 348_643_615 },
+  { day: "2026-10-28", count: 360_799_046 },
+  { day: "2026-10-29", count: 341_588_311 },
+  { day: "2026-10-30", count: 331_290_206 },
+  { day: "2026-10-31", count: 324_537_041 },
+];
 const MB = (n: number | null): number => Math.round((n ?? Number.NaN) / 1e6);
 
 // The backfill in date order: each day checked against the verdicts before it.
-function replay(resetAfter?: number): Map<string, BandResult> {
+function replay(resetAfter?: number, band: Band = RELATIVE, sizes: readonly { day: string; count: number }[] = THC): Map<string, BandResult> {
   const history: BandDay[] = [];
   const out = new Map<string, BandResult>();
-  for (const d of THC) {
-    const r = checkBand(d.count, history, RELATIVE, { precision: "day", ...(resetAfter === undefined ? {} : { resetAfter }) });
+  for (const d of sizes) {
+    const r = checkBand(d.count, history, band, { precision: "day", ...(resetAfter === undefined ? {} : { resetAfter }) });
     out.set(d.day, r);
-    // A held day is not pushed until the operator decides; none occurs here.
+    // A day source never holds (D26 of DOM-029).
     assert.notEqual(r.verdict, "hold", d.day);
     history.push({ day: d.day, count: d.count, quarantined: r.verdict === "quarantine" });
   }
@@ -77,6 +90,28 @@ test("adapter band: the THC backfill quarantines 10-05 and 10-06, accepts 10-07 
   );
 });
 
+test("adapter band: THC's band of 0.4 and 4 over the 59 listed days gives the same three quarantines and one reset, and holds nothing (M12)", () => {
+  const r = replay(undefined, THC_BAND, [...THC, ...LATE]);
+  assert.equal(r.size, 59);
+  assert.deepEqual(
+    [...r].filter(([, v]) => v.verdict !== "ok").map(([day, v]) => `${day} ${v.verdict} ${v.reason}`),
+    ["2026-10-05 quarantine below", "2026-10-06 quarantine below", "2026-10-15 quarantine below"],
+  );
+  assert.deepEqual(
+    [...r].filter(([, v]) => v.reset !== null).map(([day, v]) => `${day} ${v.reset}`),
+    ["2026-10-07 294318949"],
+  );
+  // The verdicts of DOM-009's 54 days are those of the band of 2.5: only the ceiling moves.
+  const before = replay();
+  const kept = (v: BandResult | undefined) => (v === undefined ? null : [v.verdict, v.reason, v.median, v.floor, v.reset]);
+  for (const [day, v] of before) assert.deepEqual(kept(r.get(day)), kept(v), day);
+  // A return to September's volume after 10-31 (986 MB over a median of 331 MB) is a normal day.
+  const history = [...r].map(([day, v]) => ({ day, count: [...THC, ...LATE].find((d) => d.day === day)!.count, quarantined: v.verdict === "quarantine" }));
+  const back = checkBand(986e6, history, THC_BAND, { precision: "day" });
+  assert.deepEqual([back.verdict, back.reason, MB(back.median)], ["ok", "within", 331]);
+  assert.deepEqual(checkBand(986e6, history, RELATIVE, { precision: "day" }).verdict, "quarantine");
+});
+
 test("adapter band: without the step change all 21 observed THC days from 10-05 are quarantined", () => {
   const r = replay(Number.POSITIVE_INFINITY);
   const from = [...r].filter(([day]) => day >= "2026-10-05");
@@ -97,13 +132,74 @@ test("adapter band: the first day has no baseline and is accepted", () => {
   assert.deepEqual(verdict(5, []), ["ok", "no-baseline"]);
 });
 
-test("adapter band: below the floor is quarantine for a day source and hold for a second source; above the ceiling holds both", () => {
+test("adapter band: outside the band is quarantine for a day source and hold for a second source, below the floor and above the ceiling alike", () => {
   assert.deepEqual(verdict(39, steady), ["quarantine", "below"]);
   assert.deepEqual(verdict(40, steady), ["ok", "within"]);
   assert.deepEqual(verdict(39, steady, "second"), ["hold", "below"]);
   assert.deepEqual(verdict(250, steady), ["ok", "within"]);
-  assert.deepEqual(verdict(251, steady), ["hold", "above"]);
+  // D26 of DOM-029: a day above the ceiling of a day source is quarantined, not held.
+  assert.deepEqual(verdict(251, steady), ["quarantine", "above"]);
   assert.deepEqual(verdict(251, steady, "second"), ["hold", "above"]);
+});
+
+test("adapter band: three consecutive days above the ceiling reset the baseline upward, and the third is ok step-change", () => {
+  const two = [...steady, { day: "2026-01-04", count: 300, quarantined: true }, { day: "2026-01-05", count: 400, quarantined: true }];
+  const r = checkBand(500, two, RELATIVE, { precision: "day" });
+  assert.deepEqual([r.verdict, r.reason, r.reset, r.median], ["ok", "step-change", 400, 100]);
+  // One day above is not a run.
+  assert.deepEqual(verdict(500, two.slice(0, 4)), ["quarantine", "above"]);
+  // After the reset the baseline is 300, 400 and 500: 1000 is within, 1300 above.
+  const after = [...two, { day: "2026-01-06", count: 500, quarantined: false }];
+  assert.deepEqual(checkBand(1000, after, RELATIVE, { precision: "day" }).median, 400);
+  assert.deepEqual(verdict(1000, after), ["ok", "within"]);
+  assert.deepEqual(verdict(1001, after), ["quarantine", "above"]);
+  // A second source never resets, upward either.
+  assert.deepEqual(verdict(500, two, "second"), ["hold", "above"]);
+  // Two days below and then one above is no reset: the run is of one side, and the day above starts its own.
+  const twoBelow = [...steady, { day: "2026-01-04", count: 30, quarantined: true }, { day: "2026-01-05", count: 25, quarantined: true }];
+  assert.deepEqual(verdict(10, twoBelow), ["ok", "step-change"]);
+  assert.deepEqual(verdict(500, twoBelow), ["quarantine", "above"]);
+  assert.deepEqual(verdict(10, two), ["quarantine", "below"]);
+  // A day above breaks a run below, and a day below one above: the run is of one side.
+  assert.deepEqual(verdict(10, [...steady, { day: "2026-01-04", count: 30, quarantined: true }, { day: "2026-01-05", count: 300, quarantined: true }]), ["quarantine", "below"]);
+  assert.deepEqual(verdict(500, [...steady, { day: "2026-01-04", count: 30, quarantined: true }, { day: "2026-01-05", count: 300, quarantined: true }]), ["quarantine", "above"]);
+});
+
+// The door lens of DOM-029's design (M20), under THC's band: a short outage,
+// then the old volume. Under the rule before D26 the recovered day held, and a
+// held day writes no history, so it held for good.
+function outageThenRecovery(level: number, low: number, back: number): BandResult[] {
+  const history: BandDay[] = [];
+  let n = 1;
+  const push = (count: number): BandResult => {
+    const r = checkBand(count, history, THC_BAND, { precision: "day" });
+    assert.notEqual(r.verdict, "hold");
+    history.push({ day: `2026-03-${String(n++).padStart(2, "0")}`, count, quarantined: r.verdict === "quarantine" });
+    return r;
+  };
+  for (let i = 0; i < 7; i++) push(level + i * 5e6);
+  for (let i = 0; i < 3; i++) push(low);
+  return [push(back), push(back), push(back), push(back)];
+}
+
+test("adapter band: after three 77 MB days the 340 MB day is quarantined, and the source resumes on the third such day", () => {
+  const r = outageThenRecovery(300e6, 77e6, 340e6);
+  assert.deepEqual(
+    r.map((x) => `${x.verdict} ${x.reason}`),
+    ["quarantine above", "quarantine above", "ok step-change", "ok within"],
+  );
+  assert.equal(MB(r[0]!.median), 77);
+  assert.equal(MB(r[0]!.ceiling), 308);
+  assert.equal(MB(r[2]!.reset), 340);
+});
+
+test("adapter band: after three 5 MB days a 300 MB day resumes the same way", () => {
+  const r = outageThenRecovery(300e6, 5e6, 300e6);
+  assert.deepEqual(
+    r.map((x) => `${x.verdict} ${x.reason}`),
+    ["quarantine above", "quarantine above", "ok step-change", "ok within"],
+  );
+  assert.equal(MB(r[2]!.reset), 300);
 });
 
 test("adapter band: a missing day neither counts nor breaks the run of low days", () => {
@@ -155,10 +251,13 @@ test("adapter band: history order does not matter: the replay runs in day order"
   assert.deepEqual(checkBand(500, shuffled, RELATIVE, { precision: "day" }), sorted);
 });
 
-test("adapter band: a median of zero holds every non-zero day", () => {
+test("adapter band: a median of zero puts every non-zero day above: a day source quarantines it, a second source holds it", () => {
   const zero = days([0, false], [0, false]);
   assert.deepEqual(verdict(0, zero), ["ok", "within"]);
-  assert.deepEqual(verdict(1, zero), ["hold", "above"]);
+  assert.deepEqual(verdict(1, zero), ["quarantine", "above"]);
+  assert.deepEqual(verdict(1, zero, "second"), ["hold", "above"]);
+  // The third non-zero day resets the baseline.
+  assert.deepEqual(verdict(1, days([0, false], [0, false], [1, true], [1, true])), ["ok", "step-change"]);
 });
 
 test("adapter band: an absolute band compares with min and max themselves and never resets", () => {
@@ -166,7 +265,10 @@ test("adapter band: an absolute band compares with min and max themselves and ne
   const low = days([10, true], [10, true]);
   const r = checkBand(10, low, band, { precision: "day" });
   assert.deepEqual([r.verdict, r.floor, r.ceiling, r.median], ["quarantine", 100, 1000, null]);
-  assert.deepEqual(verdict(1001, [], "day", band), ["hold", "above"]);
+  // A day source quarantines above an absolute band too (D26 of DOM-029), and never resets it.
+  assert.deepEqual(verdict(1001, [], "day", band), ["quarantine", "above"]);
+  assert.deepEqual(verdict(1001, days([2000, true], [2000, true]), "day", band), ["quarantine", "above"]);
+  assert.deepEqual(verdict(1001, [], "second", band), ["hold", "above"]);
   assert.deepEqual(verdict(1000, [], "day", band), ["ok", "within"]);
   assert.deepEqual(verdict(100, [], "second", band), ["ok", "within"]);
   assert.deepEqual(verdict(99, [], "second", band), ["hold", "below"]);

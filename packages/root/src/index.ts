@@ -4,7 +4,8 @@
 //   root.ts    root.json's schema (a pack's time copy among it), validateRoot, the live-set rule, derive, checkForward
 //   build.ts   packFromManifest, buildRoot, rollbackRoot, dropSuperseded, the sources layer
 //   chain.ts   packNamed and packSpanning: the entry a root names, and the pack of a
-//              higher tier that spans a segment (replacedOnChain of scripts/state/lib.mjs, DOM-063)
+//              higher tier that spans a segment (replacedOnChain of scripts/state/lib.mjs, DOM-063);
+//              spansDay and segmentOfDay: the segment that ends a gap day (DOM-029)
 // The GHCR side, reading the live root and moving `latest`, is scripts/root/
 // (promote.mjs, rollback.mjs, show.mjs). This package reads and writes no
 // network: it runs unchanged in Node and in workerd, and imports nothing from
@@ -38,7 +39,7 @@ export {
   TIER_ANNOTATION,
 } from "./build.ts";
 export type { NamedPack } from "./chain.ts";
-export { packNamed, packSpanning } from "./chain.ts";
+export { packNamed, packSpanning, segmentOfDay, spansDay } from "./chain.ts";
 export type { RootErrorCode } from "./errors.ts";
 export { RootError } from "./errors.ts";
 export type { Blob, DatasetCount, Derived, PackEntry, RootJson, RootTier, Span, TimeCopy, ValidateOptions, Withdrawn } from "./root.ts";
@@ -54,6 +55,7 @@ export {
   msOf,
   PACK_FIELDS,
   PACK_OPTIONAL_FIELDS,
+  QUARANTINE_FIELD,
   ROOT_FIELDS,
   ROOT_FORMAT,
   ROOT_TIERS,

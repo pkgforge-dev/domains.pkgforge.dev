@@ -361,6 +361,7 @@ test("state: owe adds a pack in its order and sets updated, keeps a state that o
 test("state: the package exports the values of DOM-024's binding surface, with the run and time grammars the scripts share, and nothing else", async () => {
   const surface = await import("../src/index.ts");
   assert.deepEqual(Object.keys(surface).sort(), [
+    "GAP_DAYS",
     "HISTORY_DAYS",
     "LANES",
     "OWED_DAYS",
@@ -370,6 +371,7 @@ test("state: the package exports the values of DOM-024's binding surface, with t
     "STATE_FORMAT",
     "STATE_MAX_BYTES",
     "STATE_MEDIA_TYPE",
+    "STATE_OPTIONAL_FIELDS",
     "STATE_TITLE",
     "StateError",
     "advance",
@@ -392,7 +394,38 @@ test("state: the package exports the values of DOM-024's binding surface, with t
     "validateState",
   ]);
   assert.deepEqual([surface.STATE_FORMAT, surface.PROPOSAL_FORMAT, surface.STATE_TITLE, surface.STATE_MEDIA_TYPE], ["domains.state.v1", "domains.proposal.v1", "state.json", "application/json"]);
-  assert.deepEqual([surface.STATE_MAX_BYTES, surface.PROPOSAL_MAX_BYTES, surface.HISTORY_DAYS, surface.OWED_DAYS], [1_048_576, 1_048_576, 90, 7]);
+  assert.deepEqual([surface.STATE_MAX_BYTES, surface.PROPOSAL_MAX_BYTES, surface.HISTORY_DAYS, surface.OWED_DAYS, surface.GAP_DAYS], [1_048_576, 1_048_576, 90, 7, 366]);
+  assert.deepEqual([...surface.STATE_OPTIONAL_FIELDS], ["gaps"]);
   const e = new surface.StateError("stale", "x");
   assert.deepEqual([e.name, e.code, e.message, e instanceof Error], ["StateError", "stale", "x", true]);
+});
+
+test("state: pending gaps are an optional object of sorted days a source, never empty, and a change of them alone is a change for sameState", () => {
+  const s = emptyState("2026-11-02T00:00:00Z");
+  const g = validateState({ ...s, gaps: { "thc-ct": ["2026-10-04", "2026-10-09"] } });
+  assert.deepEqual(g.gaps, { "thc-ct": ["2026-10-04", "2026-10-09"] });
+  assert.deepEqual(parseState(encodeState(g)), g);
+  // A state of v1 without the key reads as before, with no key.
+  assert.equal(Object.hasOwn(validateState(s), "gaps"), false);
+  // The only change a settle of a gap makes is a change.
+  assert.equal(sameState(s, g), false);
+  assert.equal(sameState(g, validateState({ ...g, updated: "2026-11-02T01:00:00Z" })), true);
+  assert.equal(sameState(null, g), false);
+  const bad: [Record<string, unknown>, RegExp][] = [
+    [{ gaps: {} }, /gaps is empty; a state with no pending gap has no key gaps/],
+    [{ gaps: [] }, /gaps is not an object/],
+    [{ gaps: { "thc-ct": [] } }, /gaps\.thc-ct is not a list of days/],
+    [{ gaps: { "thc-ct": ["2026-10-09", "2026-10-04"] } }, /gaps\.thc-ct is not sorted and distinct/],
+    [{ gaps: { "thc-ct": ["2026-10-04", "2026-10-04"] } }, /gaps\.thc-ct is not sorted and distinct/],
+    [{ gaps: { "thc-ct": ["2026-02-30"] } }, /is not a calendar day/],
+    [{ gaps: { THC: ["2026-10-04"] } }, /gaps names "THC", which is not a source id/],
+    [{ gaps: { "thc-ct": Array.from({ length: 367 }, (_, i) => new Date(Date.UTC(2025, 0, 1) + i * 86_400_000).toISOString().slice(0, 10)) } }, /holds 367 days, over 366/],
+    [{ gap: {} }, /unknown field gap/],
+  ];
+  for (const [plant, re] of bad)
+    assert.throws(
+      () => validateState({ ...s, ...plant }),
+      (e: unknown) => e instanceof StateError && e.code === "schema" && re.test(e.message),
+      re.source,
+    );
 });

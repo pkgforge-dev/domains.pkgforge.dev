@@ -18,12 +18,20 @@
 //   scripts/state/hours.mjs     --now --sources
 //   scripts/state/move.mjs, scripts/ghcr/push.mjs   nothing (the clock is JOIN_NOW)
 //   scripts/root/promote.mjs    --sources
+// With JOIN_THC_RECORDINGS (the steps of ingest-thc.yml in
+// scripts/workflows/ingest-thc-scripts.test.mjs, DOM-029), the tree's own
+// adapters and registry stand, and THC's hosts are answered by the
+// recordings of that directory:
+//   scripts/ingest/thc-plan.mjs, scripts/ingest/run.mjs   --recordings JOIN_THC_RECORDINGS --now
+//   scripts/state/advance.mjs   --now
+//   scripts/state/move.mjs, scripts/root/promote.mjs   nothing
 // Any other script exits 99, so a step cannot pass on a script this file does
 // not run.
 //
 // Usage: node scripts/workflows/script-world.mjs SCRIPT ARG...
 // Environment: JOIN_WORLD (the double's file; absent is an empty double),
-// JOIN_NOW (ISO 8601 UTC), and the step's own.
+// JOIN_NOW (ISO 8601 UTC), JOIN_THC_RECORDINGS (a directory, or absent), and
+// the step's own.
 // Exit: the script's own code; 99 a script this file does not run.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -42,6 +50,13 @@ const FIXTURE = {
   'scripts/ghcr/push.mjs': () => [],
   'scripts/root/promote.mjs': () => ['--sources', SOURCES],
 };
+const THC = (dir) => ({
+  'scripts/ingest/thc-plan.mjs': (now) => ['--recordings', dir, '--now', now],
+  'scripts/ingest/run.mjs': (now) => ['--recordings', dir, '--now', now],
+  'scripts/state/advance.mjs': (now) => ['--now', now],
+  'scripts/state/move.mjs': () => [],
+  'scripts/root/promote.mjs': () => [],
+});
 
 // The double's state in FILE: its manifests by PKG:REF, its blobs by
 // PKG@DIGEST and their bytes by digest. The test seeds the first one with
@@ -66,8 +81,9 @@ export function readWorld(file) {
 }
 
 async function run(script, argv) {
-  if (!Object.hasOwn(FIXTURE, script)) {
-    process.stderr.write(`script-world: no world for ${JSON.stringify(script)}; it runs ${Object.keys(FIXTURE).join(', ')}\n`);
+  const fixture = process.env.JOIN_THC_RECORDINGS ? THC(process.env.JOIN_THC_RECORDINGS) : FIXTURE;
+  if (!Object.hasOwn(fixture, script)) {
+    process.stderr.write(`script-world: no world for ${JSON.stringify(script)}; it runs ${Object.keys(fixture).join(', ')}\n`);
     return 99;
   }
   const now = process.env.JOIN_NOW;
@@ -78,7 +94,7 @@ async function run(script, argv) {
   const reg = registry({ t0: Date.parse(now) });
   try {
     loadWorld(reg, file);
-    const code = await main([...argv, ...FIXTURE[script](now, argv)], {
+    const code = await main([...argv, ...fixture[script](now, argv)], {
       env: { ...process.env },
       oras: reg.oras,
       sleep: async () => undefined,

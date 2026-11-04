@@ -24,7 +24,7 @@ import { ROOT } from '../files.mjs';
 import { RateLimitError } from '../ghcr/rate.mjs';
 import { Fault } from '../root/lib.mjs';
 import { loadRegistry } from '../verify-pack.mjs';
-import { CHAIN_ROOTS, CHAIN_SECONDS, chainLine, filterTagOf, heldBy, newestFilterTag, replacedOnChain } from './lib.mjs';
+import { CHAIN_ROOTS, CHAIN_SECONDS, chainLine, filterTagOf, gapHeldBy, heldBy, newestFilterTag, replacedOnChain } from './lib.mjs';
 import { ADVANCE_FORMAT, EXIT, main } from './advance.mjs';
 
 const NOW = '2026-10-30T08:40:00Z';
@@ -717,3 +717,106 @@ test('replaced segment: an owed segment older than OWED_DAYS is no candidate and
   const ew = await replacedOnChain(edge.live, [owedOf(x, day7)], edge.readOlder, { now: NOW });
   assert.deepEqual([ew.candidates, ew.replaced.size, edge.reads], [1, 1, [3, 2]]);
 });
+
+// D17 of DOM-029: THC's file of 2026-10-29 lands after its day pack was built
+// without it. root_seq 2 adds the late day segment beside names-d-20261029,
+// root_seq 3 (the daily's absorb) replaces both with names-d-20261029-r2,
+// which carries thc-ct, and root_seq 4 adds another pack. The day pack of
+// root_seq 2 spans the segment and lacks its source, and the walk still
+// settles it at root_seq 2, which names it; a quarantined segment, which the
+// absorb takes into names and domains alike, settles the same way.
+test('replaced segment: a late day segment that an absorb took into the day pack under -r2 settles as held at the root that named it beside the day pack', async () => {
+  for (const quarantine of [false, true]) {
+    const day = pack('names', 'd', '2026-10-29T00:00:00Z', { sources: ['oi-cs'] });
+    const late = pack('names', 'seg', '2026-10-29T00:00:00Z', { sources: ['thc-ct'], end: '2026-10-30T00:00:00Z', quarantine });
+    const r2 = pack('names', 'd', '2026-10-29T00:00:00Z', { sources: ['oi-cs', 'thc-ct'], rebuild: 2 });
+    assert.equal(r2.pack.tag, 'names-d-20261029-r2');
+    const steps = [
+      { now: '2026-10-30T06:00:00Z', add: [d28, day] },
+      { now: '2026-10-30T07:30:00Z', add: [late] },
+      { now: '2026-10-30T07:40:00Z', replace: [{ old: [day.pack.manifest, late.pack.manifest], new: r2 }] },
+      { now: '2026-10-30T07:50:00Z', add: [z] },
+    ];
+    const c = chainOf(steps);
+    const owed = owedOf(late, SINCE);
+    const walk = await replacedOnChain(c.live, [owed], c.readOlder, { now: NOW });
+    assert.deepEqual([walk.candidates, walk.replaced.size, walk.unnamed, walk.open, c.reads], [1, 1, 0, 0, [3, 2]], `quarantine ${quarantine}`);
+    assert.equal(
+      walk.replaced.get(owed.ref),
+      `root_seq 2 named ${owed.ref} (${late.pack.manifest}), root_seq 3 replaced it, and names:names-d-20261029-r2 (tier d, 2026-10-29T00:00:00Z to 2026-10-30T00:00:00Z) holds it in root_seq 4`,
+    );
+    const s = settle({ ...emptyState(SINCE), owed: [owed] }, heldBy(c.live, walk.replaced), NOW);
+    assert.deepEqual([s.settled.map((e) => e.code), s.state.owed], [['held'], []], `quarantine ${quarantine}`);
+    // The day pack of root_seq 2, beside the segment, lacks thc-ct: had the
+    // walk not met the root naming it first, the segment would stay owed.
+    assert.equal(
+      c.byDigest
+        .get(digestOf('root 2'))
+        .datasets.names.find((p) => p.tag === 'names-d-20261029')
+        .sources.includes('thc-ct'),
+      false,
+    );
+  }
+});
+
+test('advance: a pending gap day settles when the live root lists it, or when a live segment of its source spans the whole day; the rest stay pending and are printed', () =>
+  inRegistry(async (reg, tmp) => {
+    const day21 = pack('names', 'seg', '2026-10-21T00:00:00Z', { sources: ['isc-new'], end: '2026-10-22T00:00:00Z' });
+    // Ten minutes of 10-23 are not the day.
+    const part23 = pack('names', 'seg', '2026-10-22T00:00:00Z', { sources: ['isc-new'], end: '2026-10-23T00:10:00Z' });
+    seedRoot(reg, { now: '2026-10-30T08:00:00Z', add: [day21, part23], gaps: { 'isc-new': ['2026-10-20'] } });
+    const live = { ...emptyState('2026-10-30T07:30:00Z'), gaps: { 'isc-new': ['2026-10-20', '2026-10-21', '2026-10-23'] } };
+    reg.seed('state', 'latest', TYPE, {}, [{ title: 'state.json', bytes: encodeState(live) }]);
+    const out = join(tmp, 'state');
+    const r = await call(main, ['--proposals', join(tmp, 'none'), '--out', out, '--now', NOW], { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.deepEqual(r.out.slice(1), [
+      'settled gap isc-new 2026-10-20 root_seq 1 lists 2026-10-20 in gaps.isc-new',
+      `settled gap isc-new 2026-10-21 root_seq 1 names obs:${day21.pack.tag}, a segment of isc-new over 2026-10-21`,
+      'gap isc-new 2026-10-23 pending',
+      'next changed owed 0',
+    ]);
+    // A state whose only change is a settled gap is written.
+    assert.equal(JSON.parse(readFileSync(join(out, 'advance.json'), 'utf8')).changed, true);
+    const next = parseState(readFileSync(join(out, 'next.json')));
+    assert.deepEqual(next.gaps, { 'isc-new': ['2026-10-23'] });
+    assert.equal(next.updated, NOW);
+  }));
+
+test('advance: a gap-only proposal is accepted and its day is pending; with every gap settled the next state has no key gaps', () =>
+  inRegistry(async (reg, tmp) => {
+    seedRoot(reg, { now: '2026-10-30T08:00:00Z', gaps: { 'isc-new': ['2026-10-04'] } });
+    const dir = join(tmp, 'proposals');
+    mkdirSync(dir);
+    const gapOnly = propose({
+      adapter: 'fixture-file',
+      lane: null,
+      run: '40000000001',
+      attempt: 1,
+      at: NOW,
+      before: null,
+      after: null,
+      segments: [],
+      raw: [],
+      history: [],
+      gaps: [{ source: 'isc-new', day: '2026-10-09' }],
+    });
+    writeFileSync(join(dir, 'proposal.fixture-file.20261009.json'), encodeProposal(gapOnly));
+    const out = join(tmp, 'state');
+    const r = await call(main, ['--proposals', dir, '--out', out, '--now', NOW, '--run', '40000000002'], { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.ok(r.out.includes('accepted fixture-file segments 0 raw 0 history 0 cursor kept'), r.text);
+    assert.ok(r.out.includes('gap isc-new 2026-10-09 pending'), r.text);
+    const next = parseState(readFileSync(join(out, 'next.json')));
+    assert.deepEqual(next.gaps, { 'isc-new': ['2026-10-09'] });
+    // The next run, once the root lists the day: settled, and the key goes.
+    const settled = settle(next, () => null, NOW, gapHeldBy({ root_seq: 2, gaps: { 'isc-new': ['2026-10-04', '2026-10-09'] }, datasets: {} }));
+    assert.deepEqual(
+      settled.settledGaps.map((g) => g.day),
+      ['2026-10-09'],
+    );
+    assert.equal(Object.hasOwn(settled.state, 'gaps'), false);
+    assert.equal(Object.hasOwn(JSON.parse(new TextDecoder().decode(encodeState(settled.state))), 'gaps'), false);
+    // No root yet: nothing is held.
+    assert.equal(gapHeldBy(null)('isc-new', '2026-10-09'), null);
+  }));

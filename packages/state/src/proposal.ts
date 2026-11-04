@@ -21,14 +21,24 @@
 //             metric: the names segment's when the day has one, else the
 //             domains segment's; its quarantined is that segment's verdict
 //             (D18 of DOM-024)
+//   gaps      optional (D9 of DOM-029): the days the run declared lacking
+//             (RunResult.gaps), [ { "source": "thc-ct", "day": "2026-10-04" } ],
+//             sorted by source, then day, one each, at most MAX_GAPS, none
+//             after the day of `at`; absent when the run declared none, never
+//             empty. scripts/ingest/run.mjs holds each source to the adapter's
+//             rows; this file holds it to the id grammar
 //
-// A proposal names at least one segment, or an `after` other than `before`:
-// propose refuses an empty one, since it would move nothing. No ref twice
-// across segments and raw; no (source, day) twice in history. Canonical JSON
-// and one newline, at most PROPOSAL_MAX_BYTES. Every refusal is StateError
-// `proposal`, but `format` (another format, bytes that are not UTF-8 JSON)
-// and `size`.
-import { BandError, ContractError, type Cursor, checkCursor, checkHistory, jsonEqual, MAX_ID } from "@domains/adapter";
+// A proposal names at least one segment or one gap, or an `after` other than
+// `before`: propose refuses an empty one, since it would move nothing. No ref
+// twice across segments and raw; no (source, day) twice in history. Canonical
+// JSON and one newline, at most PROPOSAL_MAX_BYTES. Every refusal is
+// StateError `proposal`, but `format` (another format, bytes that are not
+// UTF-8 JSON) and `size`.
+//
+// The file is proposal.<adapter>.json, or proposal.<adapter>.<from>.json for a
+// backfill window (proposalFile, D13 of DOM-029), so the legs of one backfill
+// merge into one directory.
+import { BandError, ContractError, type Cursor, checkCursor, checkGaps, checkHistory, type Gap, jsonEqual, MAX_ID } from "@domains/adapter";
 import { LayoutError, rawTag, segmentTagProblem } from "@domains/ghcr";
 import { StateError } from "./errors.ts";
 import { DAY_MS, DIGEST, isId, isObject, isSecond, keysProblem, RUN_ID, readJson, refParts, writeJson } from "./state.ts";
@@ -65,6 +75,8 @@ export interface ProposedDay {
   readonly quarantined: boolean;
 }
 
+export type ProposedGap = Gap;
+
 export interface Proposal {
   readonly format: typeof PROPOSAL_FORMAT;
   readonly adapter: string;
@@ -77,11 +89,14 @@ export interface Proposal {
   readonly segments: readonly ProposedSegment[];
   readonly raw: readonly ProposedRaw[];
   readonly history: readonly ProposedDay[];
+  // Absent when the run declared no gap, never empty.
+  readonly gaps?: readonly ProposedGap[];
 }
 
 export type ProposeInput = Omit<Proposal, "format">;
 
 const PROPOSAL_FIELDS = Object.freeze(["adapter", "after", "at", "attempt", "before", "format", "history", "lane", "raw", "run", "segments"]);
+const PROPOSAL_OPTIONAL_FIELDS = Object.freeze(["gaps"]);
 const SEGMENT_FIELDS = Object.freeze(["count", "dataset", "digest", "end", "quarantined", "ref", "source", "start"]);
 const RAW_FIELDS = Object.freeze(["digest", "end", "ref", "source", "start"]);
 const DAY_FIELDS = Object.freeze(["count", "day", "quarantined", "source"]);
@@ -89,7 +104,9 @@ const DAY_FIELDS = Object.freeze(["count", "day", "quarantined", "source"]);
 const bad = (detail: string): StateError => new StateError("proposal", `proposal: ${detail}`);
 const show = (v: unknown): string => (v === undefined ? "nothing" : JSON.stringify(v));
 const byRef = (a: { readonly ref: string }, b: { readonly ref: string }): number => (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0);
-const byDay = (a: ProposedDay, b: ProposedDay): number => (a.source < b.source ? -1 : a.source > b.source ? 1 : a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
+const byDay = (a: { readonly source: string; readonly day: string }, b: { readonly source: string; readonly day: string }): number =>
+  a.source < b.source ? -1 : a.source > b.source ? 1 : a.day < b.day ? -1 : a.day > b.day ? 1 : 0;
+const byGap = byDay;
 
 function cursor(v: unknown, at: string): Cursor {
   try {
@@ -188,7 +205,7 @@ function list<T>(v: unknown, at: string, item: (x: unknown, at: string) => T): T
 export function validateProposal(value: unknown): Proposal {
   if (!isObject(value)) throw bad("not an object");
   if (value.format !== PROPOSAL_FORMAT) throw new StateError("format", `proposal: the format is ${show(value.format)}; this reader knows ${PROPOSAL_FORMAT}`);
-  const keys = keysProblem(value, PROPOSAL_FIELDS);
+  const keys = keysProblem(value, PROPOSAL_FIELDS, PROPOSAL_OPTIONAL_FIELDS);
   if (keys !== null) throw bad(keys);
   const { adapter, lane, run, attempt, at } = value;
   if (!isId(adapter)) throw bad(`adapter ${show(adapter)} is not an adapter id (at most ${MAX_ID} characters)`);
@@ -230,8 +247,10 @@ export function validateProposal(value: unknown): Proposal {
       );
     }
   }
-  if (segments.length === 0 && jsonEqual(before, after)) throw bad(`${adapter} names no segment and keeps its cursor ${JSON.stringify(after)}: an empty proposal moves nothing`);
-  return {
+  const gaps = Object.hasOwn(value, "gaps") ? gapsOf(value.gaps, at) : null;
+  if (segments.length === 0 && gaps === null && jsonEqual(before, after))
+    throw bad(`${adapter} names no segment and no gap and keeps its cursor ${JSON.stringify(after)}: an empty proposal moves nothing`);
+  const p: Proposal = {
     format: PROPOSAL_FORMAT,
     adapter,
     lane: lane as Lane | null,
@@ -244,6 +263,24 @@ export function validateProposal(value: unknown): Proposal {
     raw: raws,
     history,
   };
+  return gaps === null ? p : { ...p, gaps };
+}
+
+// The gaps of a proposal: checkGaps of @domains/adapter (the run's own rule),
+// not empty (a proposal with no gap has no key), and no day after the day of
+// `at`, when the run declared them. Fresh objects.
+function gapsOf(v: unknown, at: string): ProposedGap[] {
+  try {
+    checkGaps(v, "gaps");
+  } catch (e) {
+    if (e instanceof ContractError) throw bad(e.message.replace(/^result: /, ""));
+    throw e;
+  }
+  const list = v as readonly ProposedGap[];
+  if (list.length === 0) throw bad("gaps is empty; a proposal with no gap has no key gaps");
+  const today = at.slice(0, 10);
+  for (const g of list) if (g.day > today) throw bad(`gaps names ${g.source} on ${g.day}, after the day of at ${at}: a run declares a day lacking once it is past`);
+  return list.map((g) => ({ source: g.source, day: g.day }));
 }
 
 // The proposal of `input`, checked whole, with segments and raw sorted by ref
@@ -261,6 +298,9 @@ export function propose(input: ProposeInput): Proposal {
   sort("segments", byRef);
   sort("raw", byRef);
   sort("history", byDay);
+  // No gap is no key; a list is sorted as checkGaps holds it.
+  if (Array.isArray(value.gaps) && value.gaps.length === 0) delete value.gaps;
+  sort("gaps", byGap);
   // `format` is set here, so validateProposal's one other code cannot occur.
   return validateProposal(value);
 }
@@ -275,9 +315,17 @@ export function encodeProposal(p: Proposal): Uint8Array {
 
 // `proposal.<adapter>.json`: the file of one adapter's proposal in a lane's
 // artifact proposals-<lane>, so two adapters of a lane never share a name.
-export function proposalFile(adapter: string): string {
+// With `from`, the start of a backfill window (ISO 8601 UTC to the second),
+// `proposal.<adapter>.<YYYYMMDD>.json` when it starts at 00:00:00Z and
+// `proposal.<adapter>.<YYYYMMDDtHHMMSSz>.json` otherwise, so the legs of one
+// backfill, one window each, never share a name either (D13 of DOM-029).
+export function proposalFile(adapter: string, from?: string): string {
   if (!isId(adapter)) throw new StateError("usage", `${show(adapter)} is not an adapter id (at most ${MAX_ID} characters)`);
-  return `proposal.${adapter}.json`;
+  if (from === undefined) return `proposal.${adapter}.json`;
+  if (!isSecond(from)) throw new StateError("usage", `the window's start ${show(from)} is not an ISO 8601 UTC time to the second`);
+  const day = from.slice(0, 10).replaceAll("-", "");
+  const time = from.slice(11, 19);
+  return time === "00:00:00" ? `proposal.${adapter}.${day}.json` : `proposal.${adapter}.${day}t${time.replaceAll(":", "")}z.json`;
 }
 
 // Every ref a proposal names with the digest it says the tag holds: its

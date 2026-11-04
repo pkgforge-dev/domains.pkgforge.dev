@@ -1,5 +1,6 @@
 // @domains/compact: compaction (DOM-023, docs/architecture.md section 4.5).
-//   planTier, unitOf                the input packs of one tier unit from a root's live set: ready, wait, present or skip
+//   planTier, unitOf, EXPECTED      the input packs of one tier unit from a root's live set: ready, wait, present or skip;
+//                                   a day waits on its expected sources (D15 of DOM-029) and absorbs late segments (D17)
 //   mergeSpan                       the streaming k-way merge of packs into one, in one process
 //   checkMerged, checkRange         the second pass: the output holds exactly the inputs' distinct keys, each record their merge;
 //                                   checkRange over one range's part, part 0 from the key space's start
@@ -60,12 +61,13 @@ export {
   MANIFEST_MEDIA_TYPE,
   MAX_LAYERS,
   packManifest,
+  QUARANTINED_INPUTS_ANNOTATION,
   RUN_ANNOTATION,
   SOURCE_ANNOTATION,
   WORKFLOW_RUN_ID,
 } from "./manifest.ts";
-export type { CompactTier, Excluded, LiveInput, Missing, TierPlan, TierVerdict } from "./plan.ts";
-export { COMPACT_TIERS, isQuarantined, NEW_DATASETS, planTier, QUARANTINE_FIELD, SLOT_TIERS, unitOf } from "./plan.ts";
+export type { CompactTier, Excluded, Expected, LiveInput, Missing, PlanOptions, TierPlan, TierVerdict } from "./plan.ts";
+export { COMPACT_TIERS, EXPECTED, isQuarantined, NEW_DATASETS, planTier, QUARANTINE_FIELD, SLOT_TIERS, unitOf } from "./plan.ts";
 export type { Assembled, BlockDigest, MergeOptions, PackFormat, PartOptions, RangeCount, RangeFacts, RangeOptions, RangeOutput, RangePlan, RangeWindow } from "./range.ts";
 export {
   assembleRanges,

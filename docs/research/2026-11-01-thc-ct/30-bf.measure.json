@@ -1,0 +1,32 @@
+{
+  "script": "D:/_WORK_/domains.pkgforge.dev/scripts/ingest/run.mjs",
+  "argv": [
+    "--adapter",
+    "thc-ct",
+    "--out",
+    ".tmp/dom029/dry/bf",
+    "--psl",
+    ".tmp/dom029/dry/plan/psl-1f96bae40adf.dat",
+    "--state",
+    ".tmp/dom029/dry/plan/state.json",
+    "--from",
+    "2026-10-26T00:00:00Z",
+    "--to",
+    "2026-10-27T00:00:00Z",
+    "--run",
+    "1",
+    "--no-push"
+  ],
+  "start": "2026-11-02T07:58:51.537Z",
+  "end": "2026-11-02T08:37:21.769Z",
+  "wall_s": 2310.212,
+  "exit": 0,
+  "max_rss_kib": 1156196,
+  "user_cpu_s": 1051.812,
+  "system_cpu_s": 50.156,
+  "peak_heap_used_bytes_sampled": 320971880,
+  "node": "v26.7.0",
+  "exec_argv": [
+    "--max-old-space-size=8192"
+  ]
+}

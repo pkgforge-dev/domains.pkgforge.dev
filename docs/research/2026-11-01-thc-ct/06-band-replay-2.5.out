@@ -1,0 +1,9 @@
+band {"metric":"bytes","min":0.4,"max":2.5,"relative":true}, 59 files
+2026-09-01 915.0 MB ok no-baseline median - floor -
+2026-10-05 168.0 MB quarantine below median 946.8 floor 378.7
+2026-10-06 294.3 MB quarantine below median 946.8 floor 378.7
+2026-10-07 308.1 MB ok step-change median 946.8 floor 378.7 reset 294.3
+2026-10-15 77.0 MB quarantine below median 275.5 floor 110.2
+quarantined: 2026-10-05 2026-10-06 2026-10-15
+held: none
+a 986 MB day after 10-31: hold above, median 331.3 MB, ceiling 828.2 MB

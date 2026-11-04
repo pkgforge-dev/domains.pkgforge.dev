@@ -68,7 +68,7 @@ test("daily: basePacks are the live domains packs that end by the day's start; a
 
 test("daily: joinInputs leaves out the inputs the root marks quarantined, and their sources (ruling 23)", () => {
   const a = pack("domains", "seg", "2026-10-27T00:00:00Z", { sources: ["thc-ct"], end: "2026-10-28T00:00:00Z" }).pack;
-  const b = { ...pack("domains", "seg", "2026-10-27T05:00:00Z", { sources: ["oi-nrd"] }).pack, quarantine: 1 };
+  const b = { ...pack("domains", "seg", "2026-10-27T05:00:00Z", { sources: ["oi-nrd"] }).pack, quarantine: true as const };
   const c = pack("domains", "seg", "2026-10-27T06:00:00Z", { sources: ["isc-new"] }).pack;
   assert.deepEqual(joinInputs([a, b], ["A", "B"]), { readers: ["A"], left: [b], sources: ["thc-ct"] });
   // The sources of the inputs read, sorted; oi-nrd's one input is quarantined.

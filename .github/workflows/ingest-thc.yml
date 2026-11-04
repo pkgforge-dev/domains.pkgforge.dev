@@ -1,0 +1,507 @@
+# DOM-029 (TODO/ingest.md): THC's daily CT dumps, one gzip file of names a
+# UTC day, on cs2.ip.thc.org and in the Hugging Face bucket
+# IP-THC-ORG/Daily-Cerstream-Dumps (adapters/thc-ct), live and as a backfill
+# (docs/architecture.md sections 5.3, 5.4 and 5.5). A day gives a names and a
+# domains segment in the package obs, each with the file as its layer raw.
+# Nothing is deleted from GHCR (AGENTS.md absolute 13).
+#
+#   plan      on main alone. With no input, the live run: one leg, `live`,
+#             under the list root:latest pins. With from and to (days,
+#             inclusive, at most 62), a backfill: scripts/ingest/thc-plan.mjs
+#             gives each day an action (D22 of DOM-029): present (the root or
+#             state holds it, or a gap the root names), adopt (its two tags are
+#             in obs and nobody holds them), run (a host lists its file), gap
+#             (no host lists it past D+2 12:00Z). It writes the legs' inputs as
+#             the artifact thc-plan: plan.json, matrix.json, the live state
+#             with thc-ct's band history replayed over the window (each leg's
+#             --state, D14), and each list a leg builds under (D19). The adopt
+#             and gap proposals it writes itself are the artifact
+#             proposals-thc-plan: a gap day needs no leg.
+#   ingest    one leg a run day, or the one leg of the live run, at most 6 at
+#             once (D12), on main alone. A failed leg fails alone (fail-fast:
+#             false). scripts/ingest/run.mjs reads the day with
+#             NODE_OPTIONS=--max-old-space-size=8192 (D24): the live run from
+#             thc-ct's cursor in state:latest (null starts at the day before
+#             the run's), cs2 first; a backfill leg calls the adapter's backfill
+#             over its one day, the bucket first, under the plan's state and
+#             list. It verifies both segments before it pushes either, pushes
+#             them to obs with the job's token, and writes one proposal,
+#             uploaded as proposals-thc-<day>. The run step has 150 minutes and
+#             the job 165 (D29): a September-size day is 35 to 69 minutes on a
+#             runner [E]. Its awk warns on each quarantined segment, each fault
+#             line, a file of 900,000,000 B or more, and refused_share of 0.01
+#             or more.
+#   push      after the legs, on main alone, in the group root-writer (ruling
+#             18, rule 13 of scripts/check-workflows.mjs), when a leg ran or
+#             the plan wrote a proposal. The steps "Advance the cursors" and
+#             "Move state:latest" are those of ingest-live.yml, the same text
+#             (scripts/workflows/ingest-thc.test.mjs holds them equal): it
+#             owes each segment of every accepted proposal, quarantined or not
+#             (D7), holds the gap days pending, and moves state:latest. The
+#             backfill's proposals all keep the cursor, so advance accepts them
+#             together (D13). No hour is built: a day segment lies in no hour
+#             (segmentsOf of scripts/state/hours.mjs). Its outputs are add (the
+#             first 500 owed refs) and gap (SOURCE=DAY words).
+#   promote   only calls root-promote.yml with add, gap and partial: true,
+#             when add or gap holds a word, and holds no group (ruling 18). gap
+#             names the days THC lacks, so the root takes the hole (ruling 24),
+#             and the promotion drops a gap day an added segment covers (D31).
+# A failed leg makes the run red, and push and promote still apply the other
+# legs (L2 of DOM-029's design).
+#
+# The clock (D2 of DOM-029, ruling 27): the chain of ingest-live.yml
+# dispatches this workflow when its row `5 * * * *` of the table DUE of
+# scripts/ingest/chain.mjs is due, 20 minutes after its instant: about HH:30.
+# The cron below is the backstop. THC's file of day D lands at about 00:02 to
+# 00:05 UTC on D+1; the run at about 00:30 reads it, and each later hour tries
+# a day not yet written again. A day not written by D+1 06:00Z is open, so the
+# next days are read as they land, and one still not written by D+2 12:00Z is
+# declared a gap (D10).
+#
+# Every run waits in the group ingest-thc-ct (queue: max, no cancel), the group
+# ingest-<source> of docs/architecture.md section 5.9: one run at a time moves
+# thc-ct's cursor, so a backfill's proposals (before equal to after, the live
+# cursor) are never stale-before.
+#
+# The backfill is dispatched between 03:30 and 16:00 UTC (D12): its 4 to 7.2
+# hours [E] end before the day's file lands at 00:05 and stay out of the
+# compactions' window of 01:00 to 03:30, so six legs, a compaction and
+# mirror-archlinux stay within the organisation's 20 job slots. A failed leg's
+# day is dispatched again alone (-f from=D -f to=D); once its tags are in obs and
+# nobody holds them, the plan adopts them (D22). A window is dispatched again
+# only before the daily compaction of its days (DOM-063's Found of
+# 2026-11-01T17:34Z in TODO/ingest.md).
+#
+#   gh workflow run ingest-thc.yml --repo pkgforge-dev/domains.pkgforge.dev
+#   gh workflow run ingest-thc.yml --repo pkgforge-dev/domains.pkgforge.dev -f from=2026-09-01 -f to=2026-10-31
+#   gh run list --workflow ingest-thc.yml --limit 3 --repo pkgforge-dev/domains.pkgforge.dev
+#   node scripts/ghcr/tags.mjs obs --prefix thc-ct.
+#   node scripts/root/show.mjs --ref latest
+name: Ingest THC
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "With to: the first day of a backfill, YYYY-MM-DD; empty for the live run"
+        required: false
+        default: ""
+        type: string
+      to:
+        description: "With from: the last day of the backfill, YYYY-MM-DD, inclusive"
+        required: false
+        default: ""
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ingest-thc-ct
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  plan:
+    # Only main's code ingests: a dispatch on another branch plans nothing, so
+    # no job after it runs.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      any: ${{ steps.plan.outputs.any }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      proposals: ${{ steps.plan.outputs.proposals }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # The scripts import the workspace packages by name. --omit=dev links the
+      # workspaces and installs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/adapter'); await import('@domains/state'); await import('@domains/pack'); await import('@domains/compact'); await import('@domains/ghcr'); await import('@domains/root'); await import('@domains/names');"
+
+      # The live run is planned here, with no read. A backfill's plan reads the
+      # state, the root, obs and the hosts with no credential; its matrix.json
+      # is the one source of the matrix, held to plan.json's run days.
+      - name: Plan the days
+        id: plan
+        timeout-minutes: 15
+        env:
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -uo pipefail
+          if [ -z "$FROM" ] && [ -z "$TO" ]; then
+            {
+              echo "mode=live"
+              echo "any=true"
+              echo 'matrix={"include":[{"day":"live","psl":"root"}]}'
+              echo "proposals=false"
+            } >> "$GITHUB_OUTPUT"
+            echo "the live run: one leg, from thc-ct's cursor in state:latest, under the list root:latest pins"
+            exit 0
+          fi
+          day='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          if ! [[ "$FROM" =~ $day ]] || ! [[ "$TO" =~ $day ]]; then
+            echo "::error::from and to come together, each a day YYYY-MM-DD; nothing is ingested"
+            exit 2
+          fi
+          out="$RUNNER_TEMP/thc"
+          rc=0
+          node scripts/ingest/thc-plan.mjs --from "$FROM" --to "$TO" --out "$out" --run "$GITHUB_RUN_ID" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/thc-plan.mjs exited $rc (1 a day refused: not published yet, tags of two files, or one tag of a pair whose file no host lists; or a hold, or a fault of what GHCR holds; 2 could not run: usage, GHCR unreachable, a listing or an index that does not read or parse; 4 not public; 70 an internal error); nothing is ingested"
+            exit "$rc"
+          fi
+          if ! jq -e '.include | type == "array" and all(.[]; (.day | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")) and (.psl | type == "string" and test("^[0-9a-f]{12}$")))' "$out/matrix.json" > /dev/null; then
+            echo "::error::$out/matrix.json is not a list of legs { day, psl }"
+            exit 1
+          fi
+          if ! jq -e --slurpfile m "$out/matrix.json" '.format == "domains.thc-plan.v1" and ([.days[] | select(.action == "run") | .day] == [$m[0].include[].day])' "$out/plan.json" > /dev/null; then
+            echo "::error::$out/plan.json is not a plan of the format domains.thc-plan.v1 whose run days are the legs of matrix.json"
+            exit 1
+          fi
+          matrix="$(jq -c '{include: .include}' "$out/matrix.json")"
+          legs="$(jq -r '.include | length' <<< "$matrix")"
+          shopt -s nullglob
+          files=("$out"/proposals/proposal.thc-ct.*.json)
+          any=false
+          if [ "$legs" -gt 0 ]; then
+            any=true
+          fi
+          proposals=false
+          if [ "${#files[@]}" -gt 0 ]; then
+            proposals=true
+          fi
+          {
+            echo "mode=backfill"
+            echo "any=$any"
+            echo "matrix=$matrix"
+            echo "proposals=$proposals"
+          } >> "$GITHUB_OUTPUT"
+          echo "the backfill of $FROM to $TO: $legs leg(s), and ${#files[@]} proposal(s) the plan wrote (adopted and gap days)"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ steps.plan.outputs.mode == 'backfill' }}
+        with:
+          name: thc-plan
+          path: |
+            ${{ runner.temp }}/thc/plan.json
+            ${{ runner.temp }}/thc/matrix.json
+            ${{ runner.temp }}/thc/state.json
+            ${{ runner.temp }}/thc/psl-*.dat
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ steps.plan.outputs.proposals == 'true' }}
+        with:
+          name: proposals-thc-plan
+          path: ${{ runner.temp }}/thc/proposals/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: error
+
+  ingest:
+    needs: plan
+    if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.any == 'true' }}
+    runs-on: ubuntu-24.04
+    # D29 of DOM-029: the run step's 150 minutes, the setup and the push.
+    timeout-minutes: 165
+    # issues: write joins with scripts/track-issue (DOM-034), for the issue
+    # anomaly-thc-ct; until then the run step warns on a quarantined segment.
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      # A job that holds packages: write runs no package from the registry.
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/adapter'); await import('@domains/state'); await import('@domains/pack'); await import('@domains/compact'); await import('@domains/ghcr'); await import('@domains/root'); await import('@domains/names');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ needs.plan.outputs.mode == 'backfill' }}
+        with:
+          name: thc-plan
+          path: ${{ runner.temp }}/thc
+
+      # The only step of the leg that holds the job's token: run.mjs pushes
+      # with scripts/ghcr/push.mjs in its own process, the token on stdin. DAY
+      # and PSL come from the plan's matrix and are held to their forms before
+      # anything runs. tee prints each line as run.mjs writes it, so a step
+      # that its timeout ends keeps its lines; the exit is run.mjs's own, and
+      # `wait` lets tee finish before awk reads the file. tee is opened by
+      # exec, in this shell, so $! is its PID (run 41266148219 of
+      # ingest-live.yml).
+      - name: Run thc-ct
+        id: run
+        timeout-minutes: 150
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          DAY: ${{ matrix.day }}
+          PSL: ${{ matrix.psl }}
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          set -uo pipefail
+          if ! [[ "$DAY" =~ ^(live|[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+            echo "::error::the leg's day is not live or YYYY-MM-DD; nothing runs"
+            exit 1
+          fi
+          if ! [[ "$PSL" =~ ^(root|[0-9a-f]{12})$ ]]; then
+            echo "::error::the leg's list is not root or 12 hex digits; nothing runs"
+            exit 1
+          fi
+          args=(--adapter thc-ct --out "$RUNNER_TEMP/out")
+          if [ "$MODE" = live ] && [ "$DAY" = live ] && [ "$PSL" = root ]; then
+            args+=(--psl root)
+          elif [ "$MODE" = backfill ] && [ "$DAY" != live ] && [ "$PSL" != root ]; then
+            end="$(date -u -d "$DAY + 1 day" +%Y-%m-%d)"
+            args+=(--psl "$RUNNER_TEMP/thc/psl-$PSL.dat" --state "$RUNNER_TEMP/thc/state.json" --from "${DAY}T00:00:00Z" --to "${end}T00:00:00Z")
+          else
+            echo "::error::the mode $MODE, the day $DAY and the list $PSL are not a live leg (live, live, root) nor a backfill leg (backfill, a day, a list); nothing runs"
+            exit 1
+          fi
+          rc=0
+          exec 3> >(tee "$RUNNER_TEMP/run.txt")
+          tee_pid=$!
+          node scripts/ingest/run.mjs "${args[@]}" >&3 || rc=$?
+          exec 3>&-
+          wait "$tee_pid" || true
+          awk '
+            $1 == "segment" && $(NF - 1) == "verdict" && $NF == "quarantine" { print "::warning::" $0 ": served and never new (ruling 23); the issue anomaly-thc-ct waits on DOM-034" }
+            $1 == "fault" { print "::warning::" $0 }
+            $1 == "stats" {
+              if (match($0, /"bytes":[0-9]+/) && substr($0, RSTART + 8, RLENGTH - 8) + 0 >= 900000000) print "::warning::thc-ct read " substr($0, RSTART + 8, RLENGTH - 8) " B, 900000000 B or more: a day file layer holds 2 GiB at most (D27 of DOM-029)"
+              if (match($0, /"refused_share":[-+.0-9eE]+/) && substr($0, RSTART + 16, RLENGTH - 16) + 0 >= 0.01) print "::warning::thc-ct refused a share of " substr($0, RSTART + 16, RLENGTH - 16) " of the non-empty lines, 0.01 or more; above 0.5 the file is the fault format (D4 of DOM-029)"
+            }
+          ' "$RUNNER_TEMP/run.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/ingest/run.mjs exited $rc for thc-ct (1 a fault: a day faulted on every host, a declared gap, a backfill day not published, a contract fault, a verdict other than ok or quarantine, or a push that failed; 2 could not run; 4 not public; 70 an internal error)"
+          fi
+          exit "$rc"
+
+      # A proposal written before a later fault is real progress, so it is
+      # uploaded whatever the run step did.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: proposals-thc-${{ matrix.day }}
+          path: ${{ runner.temp }}/out/proposals/
+          overwrite: true
+          retention-days: 3
+          if-no-files-found: ignore
+
+  # Ruling 18: the job that moves state runs in root-writer itself, after the
+  # legs with needs, and the job that calls root-promote.yml follows it. A leg
+  # that failed wrote its proposal up to the fault; the other legs' and the
+  # plan's are advanced.
+  push:
+    needs: [plan, ingest]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' && (needs.plan.outputs.any == 'true' || needs.plan.outputs.proposals == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: root-writer
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      add: ${{ steps.move.outputs.add }}
+      gap: ${{ steps.move.outputs.gap }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          node --input-type=module -e "await import('@domains/state'); await import('@domains/root'); await import('@domains/ghcr'); await import('@domains/pack'); await import('@domains/compact'); await import('@domains/ledger'); await import('@domains/adapter');"
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # Every leg's proposal and the plan's in one directory. No artifact at
+      # all, when no leg wrote a proposal, is no proposal.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: proposals-thc-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/proposals
+
+      # It pushes nothing. The token tells an absent state from a private one
+      # (a state that does not read with no credential): absent is the first
+      # state, private is exit 4.
+      - name: Advance the cursors
+        id: advance
+        timeout-minutes: 5
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          rc=0
+          node scripts/state/advance.mjs --proposals "$RUNNER_TEMP/proposals" --out "$RUNNER_TEMP/state" > "$RUNNER_TEMP/advance.txt" || rc=$?
+          cat "$RUNNER_TEMP/advance.txt"
+          # A dropped proposal is read again from its old cursor by the next run.
+          awk '$1 == "dropped" { print "::warning::" $0 "; the adapter is read again from its live cursor next run" }' "$RUNNER_TEMP/advance.txt"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/advance.mjs exited $rc (1 a live state or root that does not validate, or a next state over 1 MiB; 2 could not run; 4 not public; 70 an internal error); state is not moved"
+          fi
+          exit "$rc"
+
+      # Last in the job: the step of ingest-live.yml, the same text. A refusal
+      # keeps the live state, warns and fails the job, so nothing is promoted.
+      # add is the first 500 packs the state owes, in the state's order; gap
+      # every day the state holds pending, SOURCE=DAY words (D9 of DOM-029).
+      - name: Move state:latest
+        id: move
+        if: ${{ !cancelled() && steps.advance.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          a="$RUNNER_TEMP/state/advance.json"
+          next="$RUNNER_TEMP/state/next.json"
+          if [ ! -f "$a" ] || [ ! -f "$next" ]; then
+            echo "::error::scripts/state/advance.mjs exited 0 and wrote no advance.json or no next.json"
+            exit 1
+          fi
+          if ! jq -e '.format == "domains.advance.v1"' "$a" > /dev/null; then
+            echo "::error::$a is not of the format domains.advance.v1"
+            exit 1
+          fi
+          expect="$(jq -r '.live // "none"' "$a")"
+          if ! [[ "$expect" =~ ^(none|sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error::advance.json names a live state that is not none or a sha256 digest"
+            exit 1
+          fi
+          rc=0
+          node scripts/state/move.mjs state --file "$next" --expect "$expect" || rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::warning::state:latest was not moved: another writer moved it since this run read it, or the move failed (scripts/state/move.mjs exited 1); the live state is kept, and the next run proposes again from it"
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::scripts/state/move.mjs exited $rc moving state:latest (1 refused or a fault, 2 could not run, 4 not public, 70 an internal error); nothing is promoted in this run"
+            exit "$rc"
+          fi
+          rc=0
+          owed="$(jq -r '.owed[].ref' "$next")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::$next holds no list owed of packs with a ref (jq exited $rc)"
+            exit 1
+          fi
+          refs=()
+          if [ -n "$owed" ]; then
+            while IFS= read -r ref; do
+              if ! [[ "$ref" =~ ^(obs|feed):[a-z0-9][a-z0-9._-]*$ ]]; then
+                echo "::error::next.json owes $ref, which is not obs:TAG or feed:TAG"
+                exit 1
+              fi
+              refs+=("$ref")
+            done <<< "$owed"
+          fi
+          max=500
+          add=("${refs[@]:0:max}")
+          stay=$(( ${#refs[@]} - ${#add[@]} ))
+          echo "add=${add[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#refs[@]}" -eq 0 ]; then
+            echo "state owes no pack: nothing to promote"
+          else
+            echo "state owes ${#refs[@]} pack(s) to the root; add holds the first ${#add[@]} in the state's order, and $stay stay owed for a later run: ${add[*]}"
+          fi
+          if [ "$stay" -gt 0 ]; then
+            echo "::warning::state owes ${#refs[@]} packs, past the $max one promotion takes: $stay stay owed, and the root falls behind its segments until the promotions catch up"
+          fi
+          rc=0
+          pending="$(jq -r '.gaps // {} | to_entries[] | .key as $s | .value[] | "\($s)=\(.)"' "$next")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::$next holds gaps that are not lists of days by source (jq exited $rc)"
+            exit 1
+          fi
+          gaps=()
+          if [ -n "$pending" ]; then
+            while IFS= read -r g; do
+              if ! [[ "$g" =~ ^[a-z0-9-]+=[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                echo "::error::next.json holds the gap $g, which is not SOURCE=YYYY-MM-DD"
+                exit 1
+              fi
+              gaps+=("$g")
+            done <<< "$pending"
+          fi
+          echo "gap=${gaps[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#gaps[@]}" -gt 0 ]; then
+            echo "state holds ${#gaps[@]} gap day(s) pending; gap passes them to the promotion: ${gaps[*]}"
+          fi
+
+  # Ruling 18: this job only calls root-promote.yml, which holds the group
+  # root-writer itself. partial: an owed pack the live-set rule refuses waits,
+  # owed, and the others are promoted. gap: the days state holds pending (D9
+  # of DOM-029), so a promotion runs for a gap alone too.
+  promote:
+    needs: push
+    if: ${{ !cancelled() && needs.push.result == 'success' && (needs.push.outputs.add != '' || needs.push.outputs.gap != '') }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/root-promote.yml
+    with:
+      add: ${{ needs.push.outputs.add }}
+      gap: ${{ needs.push.outputs.gap }}
+      partial: true

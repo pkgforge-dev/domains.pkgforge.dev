@@ -234,6 +234,8 @@ function readyPlan(): TierPlan {
     sources: ["isc-new"],
     psl: [PSL],
     records: 10,
+    late: [],
+    absorb: false,
   };
 }
 const KEY = { cuts: ["m"], ranges: 2, bytes: [5, 5], total: 10 };
@@ -367,6 +369,9 @@ test("guard plan file: each field a job reads is held to its kind, one fault at 
     [{ psl: "x" }, /the plan lacks its inputs, sources, psl or records/],
     [{ records: -1 }, /the plan lacks its inputs, sources, psl or records/],
     [{ records: 1.5 }, /the plan lacks its inputs, sources, psl or records/],
+    [{ late: null }, /^the plan lacks its late sources or its absorb$/],
+    [{ late: [7] }, /^the plan lacks its late sources or its absorb$/],
+    [{ absorb: "true" }, /^the plan lacks its late sources or its absorb$/],
     [{ records_per_block: 70_000 }, /records_per_block or page_entries is not a whole number of 1 to 65535/],
     [{ page_entries: 0 }, /records_per_block or page_entries is not a whole number of 1 to 65535/],
     [{ page_entries: 70_000 }, /records_per_block or page_entries is not a whole number of 1 to 65535/],
@@ -383,6 +388,9 @@ test("guard plan file: each field a job reads is held to its kind, one fault at 
     [{ verdict: "present", key: null }, /^a plan whose verdict is present has no cuts$/],
   ];
   for (const [change, why] of cases) refused(() => checkPlanFile(reId({ ...good, ...change })), "plan", why);
+  // A plan file of a writer before DOM-029 holds neither field.
+  const { late: _late, absorb: _absorb, ...older } = good;
+  refused(() => checkPlanFile(reId(older)), "plan", /^the plan lacks its late sources or its absorb$/);
 });
 
 test("guard plan file: each field of a count file and of a range file is held to its kind, one fault at a time (plan)", () => {

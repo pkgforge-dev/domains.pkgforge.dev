@@ -216,16 +216,17 @@ test("ingest-live: each job's grants, timeout, needs and if", () => {
   assert.equal(push['timeout-minutes'], 30);
   assert.deepEqual(push.concurrency, { group: 'root-writer', queue: 'max', 'cancel-in-progress': false });
   assert.deepEqual(push.permissions, { contents: 'read', packages: 'write' });
-  assert.deepEqual(push.outputs, { add: '${{ steps.move.outputs.add }}' });
+  assert.deepEqual(push.outputs, { add: '${{ steps.move.outputs.add }}', gap: '${{ steps.move.outputs.gap }}' });
 
   assert.equal(promote.needs, 'push');
-  assert.equal(promote.if, "${{ !cancelled() && needs.push.result == 'success' && needs.push.outputs.add != '' }}");
+  // A pending gap day alone runs a promotion too (D9 of DOM-029).
+  assert.equal(promote.if, "${{ !cancelled() && needs.push.result == 'success' && (needs.push.outputs.add != '' || needs.push.outputs.gap != '') }}");
   assert.deepEqual(promote.permissions, { contents: 'read', packages: 'write' });
   assert.equal(promote.uses, './.github/workflows/root-promote.yml');
   // partial: an owed pack across a hole waits, owed, and the others are promoted (scripts/root/promote.mjs --partial).
-  assert.deepEqual(promote.with, { add: '${{ needs.push.outputs.add }}', partial: true });
+  assert.deepEqual(promote.with, { add: '${{ needs.push.outputs.add }}', gap: '${{ needs.push.outputs.gap }}', partial: true });
   const called = parse(readFileSync(join(ROOT, '.github', 'workflows', 'root-promote.yml'), 'utf8')).on.workflow_call.inputs;
-  assert.deepEqual([called.add.type, called.partial.type], ['string', 'boolean'], 'each value is of the type the called input takes');
+  assert.deepEqual([called.add.type, called.gap.type, called.partial.type], ['string', 'string', 'boolean'], 'each value is of the type the called input takes');
   assert.equal(promote.concurrency, undefined, 'root-promote.yml holds root-writer itself (ruling 18)');
   assert.equal(promote.steps, undefined);
 
@@ -572,13 +573,14 @@ const owedItem = (ref) => ({
   end: '2026-10-30T09:00:00Z',
   since: '2026-10-30T09:07:12Z',
 });
-const nextJson = (refs) => `${JSON.stringify({ format: 'domains.state.v1', updated: '2026-10-30T09:07:12Z', cursors: {}, moved: {}, history: {}, owed: refs.map(owedItem) })}\n`;
+const nextJson = (refs, gaps) =>
+  `${JSON.stringify({ format: 'domains.state.v1', updated: '2026-10-30T09:07:12Z', cursors: {}, moved: {}, history: {}, owed: refs.map(owedItem), ...(gaps === undefined ? {} : { gaps }) })}\n`;
 const advanceJson = (live) => `${JSON.stringify({ format: 'domains.advance.v1', live, changed: true, accepted: [], dropped: [], settled: [] })}\n`;
-const move = (t, { live = `sha256:${hex('a')}`, refs = [], rc = 0, files } = {}) =>
+const move = (t, { live = `sha256:${hex('a')}`, refs = [], rc = 0, files, gaps } = {}) =>
   step(t, 'move', MOVE_MUST, {
     env: { REGISTRY_TOKEN: 'placeholder' },
     stub: rc === 0 ? {} : { 'move.rc': String(rc) },
-    files: files ?? { 'state/advance.json': advanceJson(live), 'state/next.json': nextJson(refs) },
+    files: files ?? { 'state/advance.json': advanceJson(live), 'state/next.json': nextJson(refs, gaps) },
   });
 const SEG = 'obs:oi-cs.20261030t080000z.20261030t081000z-d';
 const HOUR = 'feed:feed-h-2026103008';
@@ -596,6 +598,32 @@ test("ingest-live: 'Move state:latest' moves under the digest advance.mjs read, 
   assert.equal(none.status, 0, none.text);
   assert.equal(none.output.add, '', 'nothing owed: promote is skipped');
   assert.match(none.text, /state owes no pack: nothing to promote/);
+});
+
+// D9 of DOM-029: the gap days state holds pending reach the promotion as
+// SOURCE=DAY words, so a hole a source lacks a day for is taken (ruling 24).
+test("ingest-live: 'Move state:latest' writes gap from the pending gaps of next.json, one SOURCE=DAY word a day, none when no gap is pending, and refuses a word off its form", { skip: SKIP }, (t) => {
+  const r = move(t, { refs: [SEG], gaps: { 'isc-new': ['2026-10-28'], 'thc-ct': ['2026-10-04', '2026-10-09'] } });
+  assert.equal(r.status, 0, r.text);
+  assert.equal(r.output.add, SEG);
+  assert.equal(r.output.gap, 'isc-new=2026-10-28 thc-ct=2026-10-04 thc-ct=2026-10-09');
+  assert.match(r.text, /^state holds 3 gap day\(s\) pending; gap passes them to the promotion: isc-new=2026-10-28 thc-ct=2026-10-04 thc-ct=2026-10-09$/m);
+  // A gap alone: add is empty and gap is not, so the promotion runs (the job's if).
+  const alone = move(t, { gaps: { 'thc-ct': ['2026-10-04'] } });
+  assert.equal(alone.status, 0, alone.text);
+  assert.deepEqual([alone.output.add, alone.output.gap], ['', 'thc-ct=2026-10-04']);
+  const none = move(t, { refs: [SEG] });
+  assert.equal(none.output.gap, '', 'no gap pending: gap is empty');
+  assert.doesNotMatch(none.text, /gap day/);
+  for (const gaps of [{ 'thc ct': ['2026-10-04'] }, { 'thc-ct': ['2026-10-4'] }, { 'thc-ct': ['2026-10-04 x'] }, { THC: ['2026-10-04'] }]) {
+    const bad = move(t, { refs: [SEG], gaps });
+    assert.equal(bad.status, 1, `${JSON.stringify(gaps)}\n${bad.text}`);
+    assert.match(bad.text, /::error::next\.json holds the gap .*, which is not SOURCE=YYYY-MM-DD/);
+    assert.equal(bad.output.gap, undefined);
+  }
+  const notLists = move(t, { refs: [SEG], gaps: { 'thc-ct': 7 } });
+  assert.equal(notLists.status, 1, notLists.text);
+  assert.match(notLists.text, /holds gaps that are not lists of days by source \(jq exited \d+\)/);
 });
 
 test("ingest-live: 'Move state:latest' warns on a refusal (1), keeps every exit, and writes no add when it did not move", { skip: SKIP }, (t) => {

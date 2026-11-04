@@ -1,0 +1,8 @@
+lines 2000000; gunzip+decode+split 4.53 s (2.27 us a line)
+normalise: 7.73 s (3.86 us a line)
+key(name): 6.02 s (3.01 us a line)
+reverse by split/reverse/join (no check): 2.65 s (1.32 us a line)
+split(name).reg: 5.13 s (2.56 us a line)
+distinct keys 1742048 of 1999072
+sort of the distinct keys: 1.31 s (0.66 us a line)
+rev equals key: true

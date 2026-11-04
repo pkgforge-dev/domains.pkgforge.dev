@@ -29,6 +29,22 @@
 // false-positive rate is that of the classic layout, (1 - e^(-n/P))^k, and P may
 // reach 2^32 bits, so k * 2^32 bits bound the filter, not 2^32.
 //
+// The fold (D28 of DOM-029). buildFilter sizes the filter by the sum of the
+// packs' records, which counts a key once a pack: after THC's backfill about
+// 1.5 billion records over about 300 million distinct keys, a filter of
+// 1,881,225,864 B (MEASURED 2026-11-01T10:12Z, DOM-029's design M18), past the
+// 1 GiB a reader takes. So once every key is added, it halves the partitions:
+// fold() ORs the two halves of each partition into one of P/2 bits. A probe
+// sets bit (lo + i * hi) mod P, and (x mod P) mod (P/2) = x mod (P/2) when P/2
+// divides P, so the folded filter equals, bit for bit, the filter of the same
+// keys built at P/2: no key is lost, and the false-positive rate is that of
+// P/2 for the keys added. forKeys rounds P up to a multiple of FOLD_UNIT
+// (64 * 2^6), so six folds keep P a multiple of 64. buildFilter folds while
+// the halved filter still gives every distinct key at least `bitsPerKey` bits,
+// or while the filter is over `maxBytes`, and P/2 is a multiple of 64. It caps
+// the expected keys at MAX_BUILD_KEYS, so the bits before the fold stay under
+// MAX_PARTITION_BITS a partition and about 3.75 GB in all.
+//
 // Byte layout of the filter (`ledger-filter-DATE`), little-endian:
 //   0  4  magic "DLBF"
 //   4  1  version, 1
@@ -74,6 +90,14 @@ export const DEFAULT_HASHES = 7;
 export const MAX_HASHES = 32;
 // A partition's bit offsets are u32: the largest multiple of 64 below 2^32.
 export const MAX_PARTITION_BITS = 2 ** 32 - 64;
+// The unit forKeys rounds a partition up to: 64 * 2^6 bits, so a filter folds
+// six times and each partition stays a multiple of 64 bits (D28 of DOM-029).
+export const FOLD_UNIT = 4096;
+// The most keys buildFilter sizes a filter for before its fold: at 10 bits a
+// key and 7 hashes, partitions of 4,285,718,528 bits, under MAX_PARTITION_BITS,
+// 3.75 GB of bits in all. The sum of the domains packs' records after THC's
+// backfill is about 1.5 billion [E, DOM-029's design section 2.3].
+export const MAX_BUILD_KEYS = 3_000_000_000;
 const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 const TWO_32 = 2 ** 32;
 
@@ -123,15 +147,45 @@ export class BloomFilter implements MembershipFilter {
     this.#keys = keys;
   }
 
-  // An empty filter sized for `expected` keys at `bitsPerKey` bits a key.
+  // An empty filter sized for `expected` keys at `bitsPerKey` bits a key, its
+  // partitions a multiple of FOLD_UNIT bits, at least one unit.
   static forKeys(expected: number, options: FilterOptions): BloomFilter {
     whole(expected, 0, MAX_SAFE, "the expected keys");
     const hashes = whole(options.hashes ?? DEFAULT_HASHES, 1, MAX_HASHES, "the hashes");
     const bitsPerKey = whole(options.bitsPerKey ?? DEFAULT_BITS_PER_KEY, 1, 64, "the bits a key");
     whole(options.asOf, 0, MAX_SAFE, "as_of");
-    const partition = Math.max(64, Math.ceil((expected * bitsPerKey) / hashes / 64) * 64);
+    const partition = Math.max(FOLD_UNIT, Math.ceil((expected * bitsPerKey) / hashes / FOLD_UNIT) * FOLD_UNIT);
     if (partition > MAX_PARTITION_BITS) throw new LedgerError("usage", `a filter of ${expected} keys at ${bitsPerKey} bits a key needs partitions of ${partition} bits, above ${MAX_PARTITION_BITS}`);
     return new BloomFilter(hashes, partition, options.asOf, new Uint8Array((hashes * partition) / 8), 0);
+  }
+
+  // The filter of the same keys at partitions of P/2 bits, each partition's
+  // halves ORed (the header's fold): bit for bit the filter built at P/2,
+  // with the same keys, hashes and as_of. Refused unless P/2 is a multiple of 64.
+  fold(): BloomFilter {
+    const half = this.partitionBits / 2;
+    if (half % 64 !== 0) throw new LedgerError("usage", `a filter of partitions of ${this.partitionBits} bits does not fold: ${half} bits is not a multiple of 64`);
+    const from = this.#bits;
+    const halfBytes = half / 8;
+    const out = new Uint8Array(this.hashes * halfBytes);
+    // Every offset is a multiple of 8 bytes (P/2 and P are multiples of 64 bits), so the ORs go 4 bytes at a time when the bits start aligned.
+    if (from.byteOffset % 4 === 0) {
+      const src = new Uint32Array(from.buffer, from.byteOffset, from.length / 4);
+      const dst = new Uint32Array(out.buffer);
+      const halfWords = halfBytes / 4;
+      for (let i = 0; i < this.hashes; i += 1) {
+        const a = i * 2 * halfWords;
+        const d = i * halfWords;
+        for (let w = 0; w < halfWords; w += 1) dst[d + w] = src[a + w]! | src[a + halfWords + w]!;
+      }
+    } else {
+      for (let i = 0; i < this.hashes; i += 1) {
+        const a = i * this.#partitionBytes;
+        const d = i * halfBytes;
+        for (let b = 0; b < halfBytes; b += 1) out[d + b] = from[a + b]! | from[a + halfBytes + b]!;
+      }
+    }
+    return new BloomFilter(this.hashes, half, this.asOf, out, this.#keys);
   }
 
   // The number of add calls.
@@ -382,16 +436,34 @@ export class ProvisionalFilter implements MembershipFilter {
   }
 }
 
+export interface BuildFilterOptions extends FilterOptions {
+  // The most bytes of the filter's bits, its header aside: buildFilter folds
+  // past bitsPerKey to get under it while it can fold. scripts/compact/day.mjs
+  // passes LEDGER_MAX_BYTES less the header, and refuses a filter still over.
+  readonly maxBytes?: number;
+}
+
 // The filter of the registrable domains of `packs` (the `domains` packs of the
-// live set), sized for the sum of their records. A key in two packs is added
-// once: the packs are merged by key.
-export async function buildFilter(packs: readonly PackReader<DomainRecord>[], options: FilterOptions): Promise<BloomFilter> {
-  let expected = 0;
+// live set), sized for the sum of their records (at most MAX_BUILD_KEYS), then
+// folded toward the distinct keys (the header's fold): while P/2 is a multiple
+// of 64, and the halved filter gives each key added at least `bitsPerKey` bits
+// or the filter's bits pass `maxBytes`. A key in two packs is added once: the
+// packs are merged by key.
+export async function buildFilter(packs: readonly PackReader<DomainRecord>[], options: BuildFilterOptions): Promise<BloomFilter> {
+  let sum = 0;
   for (const [i, reader] of packs.entries()) {
     if (reader.index.header.dataset !== DATASET_DOMAINS) throw new LedgerError("usage", `buildFilter: pack ${i} is dataset ${reader.index.header.dataset}, not ${DATASET_DOMAINS} (domains)`);
-    expected += reader.index.header.records;
+    sum += reader.index.header.records;
   }
-  const filter = BloomFilter.forKeys(expected, options);
+  const bitsPerKey = whole(options.bitsPerKey ?? DEFAULT_BITS_PER_KEY, 1, 64, "the bits a key");
+  const maxBytes = options.maxBytes === undefined ? Number.POSITIVE_INFINITY : whole(options.maxBytes, 1, MAX_SAFE, "the most bytes");
+  let filter = BloomFilter.forKeys(Math.min(sum, MAX_BUILD_KEYS), options);
   for await (const record of mergePacks(packs, DOMAINS_CODEC)) filter.add(hashKey(record.key));
+  for (;;) {
+    const half = filter.partitionBits / 2;
+    if (half % 64 !== 0) break;
+    if (!(filter.bitBytes > maxBytes || filter.hashes * half >= bitsPerKey * filter.keys)) break;
+    filter = filter.fold();
+  }
   return filter;
 }

@@ -1,0 +1,38 @@
+live root_seq 53, 272054 B; 61 days 09-01..10-31 (59 with a file)
+--- E1: one promotion
+E1 every segment, gaps 10-04 and 10-09, three quarantined days: OK root_seq 54 names 175 domains 284 corpus_since {"domains":"2026-09-01T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-01T00:00:00Z"} root.json 358488 B
+E1 no gaps named: RootError live-set: datasets.domains: a hole from 2026-10-04T00:00:00Z to 2026-10-05T00:00:00Z: no pack covers it, and gaps does not name 2026-10-04
+E1 only 10-04 named: RootError live-set: datasets.domains: a hole from 2026-10-09T00:00:00Z to 2026-10-10T00:00:00Z: no pack covers it, and gaps does not name 2026-10-09
+E1 checkForward(live, next): accepted. through thc-ct 2026-11-01T00:00:00Z; as_of 2026-11-01T10:00:00Z; psl_live 1
+E1 quarantined entries in names: 20261005,20261006,20261015 (x2 datasets)
+E1 quarantine: 1 refused: datasets.names[0]: quarantine is 1; a pack entry carries it as true or not at all
+--- E2: a leg fails (no segment, no gap), keepLiveSet of --partial, then the repair
+E2 leg 2026-09-20 failed: kept 78 of 116, waiting 38 (19 days, 20260901..20260919), passes 3, 58 ms
+E2   the partial root: root_seq 54 corpus_since {"domains":"2026-09-21T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-21T00:00:00Z"}
+E2   repair in time (waiting + the repaired day): OK root_seq 55 names 175 domains 284 corpus_since {"domains":"2026-09-01T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-01T00:00:00Z"} root.json 358488 B
+E2   repair after OWED_DAYS (the repaired day alone; the others expired from owed and D22 skips them): OK root_seq 55 names 156 domains 265 corpus_since {"domains":"2026-09-20T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-20T00:00:00Z"} root.json 330710 B
+E2   ... the root is valid and 19 days stay out of it for good: corpus_since {"domains":"2026-09-20T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-20T00:00:00Z"}, names 156 packs
+E2 leg 2026-10-22 failed: kept 18 of 116, waiting 98 (49 days, 20260901..20261021), passes 2, 71 ms
+E2   the partial root: root_seq 54 corpus_since {"domains":"2026-10-22T13:00:50Z","feed":"2026-10-25T00:00:00Z","names":"2026-10-22T13:00:54Z"}
+E2   repair in time (waiting + the repaired day): OK root_seq 55 names 175 domains 284 corpus_since {"domains":"2026-09-01T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-09-01T00:00:00Z"} root.json 358488 B
+E2   repair after OWED_DAYS (the repaired day alone; the others expired from owed and D22 skips them): OK root_seq 55 names 126 domains 235 corpus_since {"domains":"2026-10-22T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-10-22T00:00:00Z"} root.json 286742 B
+E2   ... the root is valid and 49 days stay out of it for good: corpus_since {"domains":"2026-10-22T00:00:00Z","feed":"2026-10-25T00:00:00Z","names":"2026-10-22T00:00:00Z"}, names 126 packs
+--- E3: planTier over every day of the promoted root (names, domains, feed)
+E3 names d: {"ready":52,"skip":2,"present":7,"wait":1}; other than ready (feed skip before 10-25 not listed): 2026-10-04:skip | 2026-10-09:skip | 2026-10-25:present | 2026-10-26:present | 2026-10-27:present | 2026-10-28:present | 2026-10-29:present | 2026-10-30:present | 2026-10-31:present | 2026-11-01:wait
+E3 domains d: {"ready":52,"skip":2,"present":7,"wait":1}; other than ready (feed skip before 10-25 not listed): 2026-10-04:skip | 2026-10-09:skip | 2026-10-25:present | 2026-10-26:present | 2026-10-27:present | 2026-10-28:present | 2026-10-29:present | 2026-10-30:present | 2026-10-31:present | 2026-11-01:wait
+E3 feed d: {"skip":54,"present":7,"wait":1}; other than ready (feed skip before 10-25 not listed): 2026-10-25:present | 2026-10-26:present | 2026-10-27:present | 2026-10-28:present | 2026-10-29:present | 2026-10-30:present | 2026-10-31:present | 2026-11-01:wait
+E3 domains 10-05 (quarantined seg): ready, inputs 1, excluded 0; the input keeps its mark: true
+E3 feed 10-05: skip: the unit ends at 2026-10-06T00:00:00Z, at or before the corpus of feed starts at 2026-10-25T00:00:00Z (corpus_since): no
+E3 names 10-04 (gap): skip: every day of the unit is a gap the root names: no pack is written (ruling 24)
+E3 names week 09-07 before any day pack: wait: the unit is not whole: 2026-09-07T00:00:00Z to 2026-09-14T00:00:00Z (no d pack covers it)
+--- E4: D18 (a day pack for each backfilled day, 09-01..10-24, ledger off), then weeks and months
+E4 root after D18: OK names 116 domains 166 root.json 223202 B
+E4 names w: 08-31=skip 09-07=ready 09-14=ready 09-21=ready 09-28=skip 10-05=ready 10-12=ready 10-19=ready 10-26=skip
+E4 domains w: 08-31=skip 09-07=ready 09-14=ready 09-21=ready 09-28=skip 10-05=ready 10-12=ready 10-19=ready 10-26=skip
+E4 names m: 09-01=ready 10-01=ready
+E4 domains m: 09-01=ready 10-01=ready
+E4 domains month 09: ready, 30 inputs, records upper bound 30000; reason 30 input pack(s) make the unit whole
+E4 (synthetic counts) packs: names 116, domains 166
+--- E5: D17 rebuilds of the live days with THC beside them, oldest first, one promotion each
+E5 7 of 7 rebuild promotions valid; names-d-20261029-r2 sources ["oi-nrd-fqdn","thc-ct"]; feed-d-20261031-r2 sources ["oi-nrd","oi-nrd-confirmed"]
+E5 plan of domains 10-29 after its rebuild: present (names:domains-d-20261029-r2 is live and spans the unit)

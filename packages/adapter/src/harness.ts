@@ -25,14 +25,19 @@
 //                  client sends it inside its bytes, so a recording made with
 //                  it matches only a request that sends it;
 //   threw          run() threw;
-//   result         the result is not { segments, cursor, stats, errors };
+//   result         the result is not { segments, cursor, stats, errors }, or
+//                  its optional gaps break checkGaps of validate.ts;
 //   segment, cursor  a segment or a cursor breaks its grammar, or a cursor is over 4 KiB;
+//   draft          a draft breaks the writer contract, its url among it
+//                  (checkDraftUrl, held to the sources when given);
 //   reported       the segments returned are not exactly the segments written;
 //   source         a segment names a source the adapter's sources do not hold,
-//                  or another precision or dataset than its source's;
-//   deterministic  `again` differs from `first`;
-//   continuation   `next` wrote a window `first` wrote, or `first` wrote
-//                  segments and returned the cursor it started from.
+//                  or another precision or dataset than its source's, or a
+//                  gap names one they do not hold or one that is not `day`;
+//   deterministic  `again` differs from `first`: its segments, cursor or gaps;
+//   continuation   `next` wrote a window `first` wrote or declared a day
+//                  `first` declared, or `first` wrote segments or declared
+//                  gaps and returned the cursor it started from.
 //
 // A recording is one JSON file, `NAME.http.json`:
 //   { "format": "domains.http-recording.v1",
@@ -57,8 +62,8 @@
 import type { Psl } from "@domains/names";
 import { type ConnectionLog, replayConnect, type TcpRecording } from "./connect.ts";
 import { bytesOfBase64, canonicalJson, jsonEqual } from "./json.ts";
-import type { AdapterContext, AdapterModule, Cursor, Fetch, RunResult, Segment, Source } from "./types.ts";
-import { ContractError, checkCursor, isIsoUtc, validateSegment } from "./validate.ts";
+import type { AdapterContext, AdapterModule, Cursor, Fetch, Gap, RunResult, Segment, Source } from "./types.ts";
+import { ContractError, checkCursor, checkGaps, isIsoUtc, validateSegment } from "./validate.ts";
 import { memoryWriter, type Written } from "./writer.ts";
 
 export const RECORDING_FORMAT = "domains.http-recording.v1";
@@ -288,12 +293,13 @@ async function withGlobalTrap<T>(calls: string[], fn: () => Promise<T>): Promise
 }
 
 // `result` as a RunResult, or ContractError `result`, `segment` or `cursor`:
-// { segments, cursor, stats, errors }, each segment and the cursor held to
-// their grammar. runAdapter holds every run to it, and so does
-// scripts/ingest/run.mjs.
+// { segments, cursor, stats, errors } and the optional gaps, each segment, the
+// cursor and the gaps held to their grammar (checkGaps of validate.ts).
+// runAdapter holds every run to it, and so does scripts/ingest/run.mjs.
 export function checkResult(result: unknown, what: string): RunResult {
   if (!isObject(result)) throw new ContractError("result", `${what}: run() did not return an object`);
-  const { segments, cursor, stats, errors } = result;
+  const { segments, cursor, stats, errors, gaps } = result;
+  checkGaps(gaps, what);
   if (!Array.isArray(segments)) throw new ContractError("result", `${what}: segments is not a list`);
   segments.forEach((s: unknown, i: number) => {
     validateSegment(s, `${what}: segments[${i}]`);
@@ -309,22 +315,30 @@ export function checkResult(result: unknown, what: string): RunResult {
 }
 
 // Nothing, or ContractError `source`: each segment names one of `sources`,
-// with its precision and one of its datasets. runAdapter holds every run to
-// it when given the sources, and so does scripts/ingest/run.mjs.
-export function checkSources(segments: readonly Segment[], sources: readonly Source[], what: string): void {
+// with its precision and one of its datasets, and each gap names one of
+// `sources` whose precision is `day` (a gap is a day the source lacks).
+// runAdapter holds every run to it when given the sources, and so does
+// scripts/ingest/run.mjs.
+export function checkSources(segments: readonly Segment[], sources: readonly Source[], what: string, gaps: readonly Gap[] = []): void {
   const byId = new Map(sources.map((s) => [s.id, s]));
+  const ids = [...byId.keys()].join(", ");
   segments.forEach((seg, i) => {
     const s = byId.get(seg.source);
-    if (s === undefined) throw new ContractError("source", `${what}: segments[${i}] is of ${seg.source}, which is not one of the adapter's sources (${[...byId.keys()].join(", ")})`);
+    if (s === undefined) throw new ContractError("source", `${what}: segments[${i}] is of ${seg.source}, which is not one of the adapter's sources (${ids})`);
     if (seg.precision !== s.precision) throw new ContractError("source", `${what}: segments[${i}] has precision ${seg.precision}; ${s.id} is ${s.precision}`);
     if (!s.datasets.includes(seg.dataset)) throw new ContractError("source", `${what}: segments[${i}] feeds ${seg.dataset}; ${s.id} feeds ${s.datasets.join(", ")}`);
+  });
+  gaps.forEach((g, i) => {
+    const s = byId.get(g.source);
+    if (s === undefined) throw new ContractError("source", `${what}: gaps[${i}] is of ${g.source}, which is not one of the adapter's sources (${ids})`);
+    if (s.precision !== "day") throw new ContractError("source", `${what}: gaps[${i}] declares ${g.day} lacking for ${s.id}, which is ${s.precision}: only a day source lacks a day (ruling 24)`);
   });
 }
 
 async function runOnce(adapter: AdapterModule, cursor: Cursor, options: HarnessOptions, userAgent: string, globalCalls: string[], what: string): Promise<HarnessRun> {
   const replay = replayFetch(options.recordings);
   const sockets = replayConnect(options.tcp ?? []);
-  const writer = memoryWriter();
+  const writer = memoryWriter(options.sources === undefined ? {} : { sources: options.sources });
   const ctx: AdapterContext = Object.freeze({ fetch: replay.fetch, connect: sockets.connect, psl: options.psl, now: options.now, userAgent, writer });
   const before = globalCalls.length;
   let result: unknown;
@@ -345,11 +359,12 @@ async function runOnce(adapter: AdapterModule, cursor: Cursor, options: HarnessO
   const checked = checkResult(result, what);
   const wrote = writer.written.map((w) => w.segment);
   if (!jsonEqual(checked.segments, wrote)) throw new ContractError("reported", `${what}: run() returned ${checked.segments.length} segments and wrote ${wrote.length}, or not the same ones`);
-  if (options.sources !== undefined) checkSources(checked.segments, options.sources, what);
+  if (options.sources !== undefined) checkSources(checked.segments, options.sources, what, checked.gaps ?? []);
   return { result: checked, requests: replay.requests, connections: sockets.connections, written: writer.written };
 }
 
 const windowOf = (s: Segment): string => canonicalJson([s.source, s.dataset, s.window]);
+const gapOf = (g: Gap): string => `${g.source} ${g.day}`;
 
 export async function runAdapter(adapter: AdapterModule, options: HarnessOptions): Promise<HarnessResult> {
   if (typeof adapter?.run !== "function") throw new ContractError("options", "the adapter module has no run function");
@@ -374,11 +389,19 @@ export async function runAdapter(adapter: AdapterModule, options: HarnessOptions
     }
     if (!jsonEqual(a.cursor, b.cursor))
       throw new ContractError("deterministic", `the cursor differs between two runs with the same inputs: ${canonicalJson(a.cursor)} then ${canonicalJson(b.cursor)}`);
+    if (!jsonEqual(a.gaps ?? [], b.gaps ?? []))
+      throw new ContractError("deterministic", `the gaps differ between two runs with the same inputs: ${canonicalJson(a.gaps ?? [])} then ${canonicalJson(b.gaps ?? [])}`);
     if (a.segments.length > 0 && jsonEqual(a.cursor, options.cursor)) throw new ContractError("continuation", "run 1 wrote segments and returned the cursor it started from");
+    // A declared day leaves the cursor, or every later run declares it again.
+    if ((a.gaps ?? []).length > 0 && jsonEqual(a.cursor, options.cursor)) throw new ContractError("continuation", "run 1 declared gaps and returned the cursor it started from");
     const next = await runOnce(adapter, a.cursor, options, userAgent, globalCalls, "run 3, from run 1's cursor");
     const seen = new Set(a.segments.map(windowOf));
     for (const s of next.result.segments) {
       if (seen.has(windowOf(s))) throw new ContractError("continuation", `run 3, from run 1's cursor, wrote ${s.source} ${s.dataset} ${s.window.start} to ${s.window.end} again`);
+    }
+    const declared = new Set((a.gaps ?? []).map(gapOf));
+    for (const g of next.result.gaps ?? []) {
+      if (declared.has(gapOf(g))) throw new ContractError("continuation", `run 3, from run 1's cursor, declared ${g.source} ${g.day} lacking again`);
     }
     return { first, again, next };
   });

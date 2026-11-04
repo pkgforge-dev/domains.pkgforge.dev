@@ -2,6 +2,7 @@
 // live set of a root (docs/architecture.md sections 4.5 and 4.6).
 //
 //   planTier(root, "names", "w", "2026-10-26T00:00:00Z")   ready, wait, present or skip, with the inputs
+//   planTier(root, "names", "d", "2026-10-31T00:00:00Z", { now, absorb: true })   the daily's: expected sources, absorb
 //
 // A unit is one span of a tier: a UTC day (d), an ISO week from Monday (w), a
 // calendar month (m) or a year (y), aligned, under the tag tierTag of
@@ -40,19 +41,39 @@
 //             stays four month packs. The verdict stays wait, its reason says
 //             the unit is never built, and the span before corpus_since is
 //             named as such.
+//             Expected sources (D15 of DOM-029): with `now`, a day of a dataset
+//             that a row of EXPECTED names waits on that row's source while
+//             the source has no live pack in the day and the root's gaps names
+//             no day of it there for that source, until `untilS` seconds after
+//             the day's start. planTier cannot see a source with no pack in the
+//             day otherwise, and a day pack built without it would never take
+//             it in. After that instant the day goes on, and `late` names the
+//             source. day.mjs plans with no `now`: the plan job decided.
 //   ready     the inputs, in the root's order, and every manifest the output replaces.
+//
+// Absorb (D17 of DOM-029). With `absorb`, a live day pack is not `present`
+// while live segments lie inside its day: they came after it, as a THC file
+// that lands after its day pack was built. The unit is ready with the day
+// pack and those segments as inputs, its output replaces all of them under the
+// next -rN of the day (ruling 25, tagDecision), and `absorb` is true. A day
+// pack with no segment inside stays present. A day of feed follows its day of
+// domains: a live feed day pack is ready, the one input its rebuild carries
+// and replaces, when the domains day absorbs a segment that is not quarantined,
+// since the exact join of the day changes then; a quarantined one adds no row
+// (ruling 23). A pack of a tier but seg beside a live day pack is refused
+// (CompactError plan): the root's live-set rule lets no such pack overlap.
 //
 // A live pack that crosses an edge of the unit is refused (CompactError
 // straddle): no pack of the unit can replace it. Ruling 23: a pack marked
-// quarantined (its entry's `quarantine` field, which DOM-029 adds; absent
-// today) is no input of feed or new-name, whose rows are new names. The output
-// still replaces it, so its rows leave the feed. In names, domains and rev it
-// is an input like any other: its names are served.
+// quarantined (its entry's `quarantine` field, true, of a segment: DOM-029) is
+// no input of feed or new-name, whose rows are new names. The output still
+// replaces it, so its rows leave the feed. In names, domains and rev it is an
+// input like any other: its names are served.
 //
 // It imports nothing from `node:` and is type-checked as Worker code
 // (tsconfig.worker.json); no test runs it in workerd.
 import { LayoutError, type TierDataset, tierTag } from "@domains/ghcr";
-import { isoOf, msOf, type PackEntry, type RootTier, rankOf, tierEnd } from "@domains/root";
+import { isoOf, msOf, type PackEntry, QUARANTINE_FIELD, RootError, type RootTier, rankOf, tierEnd } from "@domains/root";
 import { CompactError } from "./errors.ts";
 
 // The tiers a compaction builds; an hour pack is built from the segments of
@@ -73,11 +94,39 @@ export const SLOT_TIERS: Readonly<Record<CompactTier, readonly RootTier[]>> = Ob
 
 // The datasets whose rows are new names: a quarantined pack is none of their inputs (ruling 23).
 export const NEW_DATASETS: readonly TierDataset[] = Object.freeze(["feed", "new-name"] as const);
-// The field of a pack entry that marks it quarantined (ruling 23). DOM-029
-// adds it to root.json; until then no entry holds it.
-export const QUARANTINE_FIELD = "quarantine";
+// The field of a pack entry that marks it quarantined (ruling 23): root.json's
+// own (QUARANTINE_FIELD of @domains/root, DOM-029), one value in one place.
+export { QUARANTINE_FIELD };
 
 const DAY_MS = 86_400_000;
+
+// A source a day of `datasets` waits for until `untilS` seconds after the
+// day's start (D15 of DOM-029).
+export interface Expected {
+  readonly source: string;
+  readonly datasets: readonly TierDataset[];
+  readonly untilS: number;
+}
+
+// thc-ct, until D+1 06:00Z: 108,000 s after the day's start is 21,600 s
+// after its end, the lateAfterS of adapters/thc-ct, from which its cursor
+// holds the day open and reads the next days. Its file lands at 00:02 to
+// 00:05 of D+1 (DOM-029's design M1 and M2).
+export const EXPECTED: readonly Expected[] = Object.freeze([Object.freeze({ source: "thc-ct", datasets: Object.freeze(["names", "domains"] as const), untilS: 108_000 })]);
+
+export interface PlanOptions {
+  // The instant the plan is made, YYYY-MM-DDTHH:MM:SSZ: with it, the expected
+  // rule runs for a day unit (scripts/compact/plan.mjs gives its clock).
+  readonly now?: string;
+  // The sources a day waits for, EXPECTED unless given.
+  readonly expected?: readonly Expected[];
+  // A live day pack with live segments inside its day is ready with them (D17).
+  readonly absorb?: boolean;
+}
+
+// The dataset whose day decides the absorb of another's: the rows of feed are
+// the exact join of the day of domains.
+const ABSORB_FOLLOWS: Readonly<Partial<Record<TierDataset, TierDataset>>> = Object.freeze({ feed: "domains" });
 
 export type TierVerdict = "ready" | "wait" | "present" | "skip";
 
@@ -133,6 +182,11 @@ export interface TierPlan {
   readonly psl: readonly string[];
   // The records of the inputs, summed: an upper bound of the output's.
   readonly records: number;
+  // The expected sources the day goes on without, past their instant (D15), sorted.
+  readonly late: readonly string[];
+  // True when the unit absorbs segments into a live day pack, or rebuilds the
+  // feed day of a domains day that does (D17): its output takes the next -rN.
+  readonly absorb: boolean;
 }
 
 interface Interval {
@@ -141,11 +195,9 @@ interface Interval {
 }
 
 // True when the root marks the pack entry quarantined (ruling 23): the field
-// QUARANTINE_FIELD, true, 1 or "1". planTier and the day job read it alike.
-export const isQuarantined = (p: PackEntry): boolean => {
-  const v = (p as unknown as Record<string, unknown>)[QUARANTINE_FIELD];
-  return v === true || v === 1 || v === "1";
-};
+// QUARANTINE_FIELD, true. validatePack of @domains/root takes no other value,
+// so no other is read. planTier and the day job read it alike.
+export const isQuarantined = (p: PackEntry): boolean => (p as unknown as Record<string, unknown>)[QUARANTINE_FIELD] === true;
 
 const pkgTag = (p: PackEntry): string => `${p.repo.slice(p.repo.lastIndexOf("/") + 1)}:${p.tag}`;
 
@@ -203,12 +255,36 @@ const daysIn = (days: ReadonlySet<string>, a: number, b: number): string[] => {
   return out;
 };
 
-export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTier, start: string): TierPlan {
+// The segments the day of `dataset` takes in by absorb, PACKAGE:TAG, when a
+// live day pack of it spans [U.a, U.b): the segments inside the day that are
+// not quarantined. None when no day pack of it is live.
+function absorbedOf(live: LiveInput, dataset: TierDataset, U: Interval): string[] {
+  const packs = live.datasets[dataset] ?? [];
+  const day = packs.some((p) => p.tier === "d" && spanOf(p).a === U.a && spanOf(p).b === U.b);
+  if (!day) return [];
+  return packs.filter((p) => p.tier === "seg" && spanOf(p).a >= U.a && spanOf(p).b <= U.b && !isQuarantined(p)).map(pkgTag);
+}
+
+export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTier, start: string, options: PlanOptions = {}): TierPlan {
   const unit = unitOf(dataset, tier, start);
   const U: Interval = { a: unit.startMs, b: unit.endMs };
   const span = { start: isoOf(U.a), end: isoOf(U.b) };
   const base = { dataset, tier, span, tag: unit.tag };
-  const empty = { inputs: [], replaces: [], excluded: [], missing: [], gapDays: [], present: null, sources: [], psl: [], records: 0 };
+  const empty = { inputs: [], replaces: [], excluded: [], missing: [], gapDays: [], present: null, sources: [], psl: [], records: 0, late: [], absorb: false };
+  let nowMs: number | null = null;
+  if (options.now !== undefined) {
+    try {
+      nowMs = msOf(options.now, "now");
+    } catch (e) {
+      if (e instanceof RootError) throw new CompactError("usage", e.message);
+      throw e;
+    }
+  }
+  const expected = options.expected ?? EXPECTED;
+  for (const e of expected)
+    if (!Number.isSafeInteger(e.untilS) || e.untilS < 0)
+      throw new CompactError("usage", `the expected source ${JSON.stringify(e.source)} waits ${JSON.stringify(e.untilS)} s, not a whole number of seconds`);
+  const absorbing = options.absorb === true && tier === "d";
 
   if (tier === "w" && dayOf(U.a).slice(0, 7) !== dayOf(U.b - 1).slice(0, 7)) {
     return { ...base, ...empty, verdict: "skip", reason: `the week ${span.start} to ${span.end} crosses the first of a month: its days stay day packs until each month is compacted` };
@@ -216,11 +292,18 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
 
   const packs = live.datasets[dataset] ?? [];
   const inside: PackEntry[] = [];
+  let dayPack: PackEntry | null = null;
   for (const p of packs) {
     const s = spanOf(p);
     if (s.b <= U.a || s.a >= U.b) continue;
     const within = s.a >= U.a && s.b <= U.b;
-    if (within && p.tier === tier && s.a === U.a && s.b === U.b) return { ...base, ...empty, verdict: "present", present: p, reason: `${pkgTag(p)} is live and spans the unit` };
+    if (within && p.tier === tier && s.a === U.a && s.b === U.b) {
+      const presentPlan: TierPlan = { ...base, ...empty, verdict: "present", present: p, reason: `${pkgTag(p)} is live and spans the unit` };
+      if (!absorbing) return presentPlan;
+      dayPack = p;
+      inside.push(p);
+      continue;
+    }
     if (within) {
       inside.push(p);
       continue;
@@ -229,6 +312,27 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
       return { ...base, ...empty, verdict: "present", present: p, reason: `${pkgTag(p)} (tier ${p.tier}) is live and covers the unit` };
     }
     throw new CompactError("straddle", `${pkgTag(p)} (tier ${p.tier}, ${p.span.start} to ${p.span.end}) crosses an edge of the unit ${span.start} to ${span.end}: no pack of the unit can replace it`);
+  }
+
+  // D17: the live day pack takes in the segments beside it, or the feed day
+  // follows a domains day that does. With neither, it is present.
+  let absorbReason: string | null = null;
+  if (dayPack !== null) {
+    const live0 = dayPack;
+    const beside = inside.filter((p) => p !== live0);
+    const odd = beside.find((p) => p.tier !== "seg");
+    if (odd !== undefined)
+      throw new CompactError("plan", `${pkgTag(odd)} (tier ${odd.tier}) lies inside the day of the live day pack ${pkgTag(live0)}: only a segment may overlap a pack (the root's live-set rule)`);
+    const follows = ABSORB_FOLLOWS[dataset];
+    const followed = follows === undefined ? [] : absorbedOf(live, follows, U);
+    if (beside.length === 0 && followed.length === 0) return { ...base, ...empty, verdict: "present", present: live0, reason: `${pkgTag(live0)} is live and spans the unit` };
+    const parts: string[] = [];
+    if (beside.length > 0) parts.push(`${pkgTag(live0)} takes in ${beside.length} segment(s) that came after it: ${beside.map(pkgTag).join(" ")}`);
+    if (followed.length > 0)
+      parts.push(
+        `the day of ${follows} takes in ${followed.length} segment(s) that are not quarantined (${followed.join(" ")}), so ${pkgTag(live0)} is built again from its exact join, its rows carried`,
+      );
+    absorbReason = `absorb: ${parts.join("; ")}`;
   }
 
   // The root derives corpus_since from the first span start of the dataset's
@@ -270,9 +374,10 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
   // the output replaces it, so it covers its span as a pack of the slot tiers
   // does. A day whose every pack is quarantined writes no day pack (skip), and
   // its week takes its hour packs out of the live set instead of waiting on
-  // them forever.
+  // them forever. The live day pack an absorb takes in covers its day.
   const excludedCover = inside.filter((p) => excluded.some((e) => e.manifest === p.manifest)).map(spanOf);
-  for (const hole of uncovered(U, [...slotCover, ...excludedCover, ...gapCover, ...beforeCorpus])) {
+  const dayCover = dayPack === null ? [] : [spanOf(dayPack)];
+  for (const hole of uncovered(U, [...slotCover, ...excludedCover, ...dayCover, ...gapCover, ...beforeCorpus])) {
     const found = inside.filter((p) => !slots.includes(p.tier) && spanOf(p).a < hole.b && spanOf(p).b > hole.a).map(pkgTag);
     missing.push({ start: isoOf(hole.a), end: isoOf(hole.b), why: `no ${slots.join(" or ")} pack covers it`, found });
   }
@@ -281,6 +386,7 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
   // has yet to add would overlap the day pack. Only the days the root's gaps
   // names for that source excuse its tail: a gap of another source does not
   // tell whether this lane is late.
+  const late: string[] = [];
   if (tier === "d") {
     const sources = [...new Set(inside.flatMap((p) => p.sources))].sort();
     for (const s of sources) {
@@ -290,13 +396,26 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
         for (const hole of uncovered({ a: reach, b: U.b }, own)) missing.push({ start: isoOf(hole.a), end: isoOf(hole.b), why: `the source ${s} has no live pack past ${isoOf(reach)}`, found: [] });
       }
     }
+    // D15: an expected source with no pack in the day, and no gap day of its
+    // own there, holds the day until its instant; past it the day goes on.
+    if (nowMs !== null) {
+      const date = dayOf(U.a);
+      for (const e of expected) {
+        if (!e.datasets.includes(dataset) || inside.some((p) => p.sources.includes(e.source)) || (live.gaps?.[e.source] ?? []).includes(date)) continue;
+        const until = U.a + e.untilS * 1000;
+        if (nowMs < until)
+          missing.push({ start: span.start, end: span.end, why: `the source ${e.source} is expected in ${dataset} until ${isoOf(until)}, and no live pack of it lies in the day`, found: [] });
+        else late.push(e.source);
+      }
+      late.sort();
+    }
   }
 
   const sources = [...new Set(inputs.flatMap((p) => p.sources))].sort();
   const psl = [...new Set(inputs.map((p) => p.psl))].sort();
   const records = inputs.reduce((n, p) => n + p.count, 0);
   const replaces = [...inputs.map((p) => p.manifest), ...excluded.map((e) => e.manifest)];
-  const facts = { inputs, replaces, excluded, gapDays, present: null, sources, psl, records };
+  const facts = { inputs, replaces, excluded, gapDays, present: null, sources, psl, records, late, absorb: absorbReason !== null };
   if (beforeCorpus.length > 0) {
     const reason = `the unit is never built: it starts at ${span.start}, before the corpus of ${dataset} starts at ${since} (corpus_since), and a pack of it would move corpus_since back to its start, a coverage no source gives; its packs stay at the tier below`;
     return { ...base, ...facts, missing, verdict: "wait", reason };
@@ -308,5 +427,6 @@ export function planTier(live: LiveInput, dataset: TierDataset, tier: CompactTie
     const why = excluded.length > 0 ? "every pack of the unit is quarantined" : "every day of the unit is a gap the root names";
     return { ...base, ...facts, missing, verdict: "skip", reason: `${why}: no pack is written (ruling ${excluded.length > 0 ? "23" : "24"})` };
   }
-  return { ...base, ...facts, missing, verdict: "ready", reason: `${inputs.length} input pack(s) make the unit whole` };
+  const lateNote = late.length === 0 ? "" : `; without ${late.join(", ")}, late past its instant`;
+  return { ...base, ...facts, missing, verdict: "ready", reason: `${absorbReason ?? `${inputs.length} input pack(s) make the unit whole`}${lateNote}` };
 }

@@ -2,9 +2,9 @@
 // the adapters' tests use. DOM-017's pack writer and DOM-019's push tool supply
 // the one that stores segments; nothing in a production path constructs this.
 //
-//   const w = memoryWriter();
+//   const w = memoryWriter();                         // or memoryWriter({ sources }): urls held to the rows
 //   const seg = await w.write(draft, records, raw);   // a Segment
-//   w.written;                                        // [{ segment, records, raw, rawMember, facts }]
+//   w.written;                                        // [{ segment, records, raw, rawMember, facts, url }]
 //
 // It holds the writer contract a real writer holds: the draft is a valid
 // segment identity, records arrive in strictly increasing key order with one
@@ -13,18 +13,20 @@
 // `bytes` is the length of that stream. The same records give the same digest
 // whatever order a record's fields were built in.
 //
-// The draft's raw lane member fields and facts are held to the rules the disk
-// writer of scripts/ingest holds them to (checkRawMember, checkRawMemberBytes,
-// factsProblem, factKeysWalk of validate.ts), each refusal ContractError
-// `draft`, and recorded as given. Segment.facts is factsRef of facts.ts, as the
+// The draft's raw lane member fields, facts and url are held to the rules the
+// disk writer of scripts/ingest holds them to (checkRawMember,
+// checkRawMemberBytes, factsProblem, factKeysWalk, checkDraftUrl of
+// validate.ts), each refusal ContractError `draft`, and recorded as given. The
+// url is held to its source row's urls when the writer is given the sources
+// (the harness passes the adapter's), else to the URL rules alone. Segment.facts is factsRef of facts.ts, as the
 // disk writer computes it. The layer facts.json is keyed by a source bit, which
 // this writer does not know: it holds the facts to FACTS_MAX_BYTES as the layer
 // of the widest bit (MAX_BIT, two digits) would be, so a draft it takes is a
 // draft the disk writer takes.
 import { encodeFacts, FactsError, factsOfRows, factsRef } from "./facts.ts";
 import { canonicalJson, JsonError, sha256Hex, utf8 } from "./json.ts";
-import { DATASETS, type FactRow, PRECISIONS, type RawInput, type Segment, type SegmentDraft, type SegmentRecord, type SegmentWriter } from "./types.ts";
-import { ContractError, checkCursor, checkRawMember, checkRawMemberBytes, checkWindow, factKeysWalk, factsProblem, ID_GRAMMAR, MAX_BIT, validateSegment } from "./validate.ts";
+import { DATASETS, type FactRow, PRECISIONS, type RawInput, type Segment, type SegmentDraft, type SegmentRecord, type SegmentWriter, type Source } from "./types.ts";
+import { ContractError, checkCursor, checkDraftUrl, checkRawMember, checkRawMemberBytes, checkWindow, factKeysWalk, factsProblem, ID_GRAMMAR, MAX_BIT, validateSegment } from "./validate.ts";
 
 export interface Written {
   readonly segment: Segment;
@@ -33,6 +35,13 @@ export interface Written {
   // The draft's rawMember and facts as JSON copies, or null when it gave none.
   readonly rawMember: Readonly<Record<string, string | number>> | null;
   readonly facts: readonly FactRow[] | null;
+  // The draft's url, or null when it gave none.
+  readonly url: string | null;
+}
+
+export interface MemoryWriterOptions {
+  // The adapter's sources: a draft's url is then held to its row's urls.
+  readonly sources?: readonly Source[];
 }
 
 export interface MemoryWriter extends SegmentWriter {
@@ -57,10 +66,16 @@ async function collect(raw: RawInput): Promise<Uint8Array> {
   return out;
 }
 
-function checkDraft(draft: SegmentDraft): void {
+function checkDraft(draft: SegmentDraft, sources: readonly Source[] | null): void {
   const what = `segment ${JSON.stringify(draft?.source)}`;
   if (typeof draft !== "object" || draft === null) throw new ContractError("draft", "the draft is not an object");
   if (typeof draft.source !== "string" || !ID_GRAMMAR.test(draft.source)) throw new ContractError("draft", `${what}: source is not an id`);
+  if (draft.url !== undefined) {
+    const row = sources === null ? null : (sources.find((s) => s.id === draft.source) ?? null);
+    if (sources !== null && row === null)
+      throw new ContractError("draft", `${what}: the source is not one of the adapter's (${sources.map((s) => s.id).join(", ")}), so its url has no row to lie under`);
+    checkDraftUrl(draft.url, row === null ? null : row.urls, what);
+  }
   if (!(DATASETS as readonly unknown[]).includes(draft.dataset)) throw new ContractError("draft", `${what}: dataset ${JSON.stringify(draft.dataset)} is not one of ${DATASETS.join(", ")}`);
   if (!(PRECISIONS as readonly unknown[]).includes(draft.precision)) throw new ContractError("draft", `${what}: precision ${JSON.stringify(draft.precision)} is not one of ${PRECISIONS.join(", ")}`);
   checkWindow(draft.window, draft.precision, what);
@@ -79,16 +94,18 @@ function checkDraft(draft: SegmentDraft): void {
   }
 }
 
-export function memoryWriter(): MemoryWriter {
+export function memoryWriter(options: MemoryWriterOptions = {}): MemoryWriter {
   const written: Written[] = [];
+  const sources = options.sources ?? null;
   return {
     written,
     async write(draft, records, raw) {
-      checkDraft(draft);
+      checkDraft(draft, sources);
       const what = `segment ${JSON.stringify(draft.source)}`;
       // Copied once the draft is checked, before the first await: what is recorded is what was checked.
       const facts = draft.facts === undefined ? null : (JSON.parse(canonicalJson(draft.facts)) as FactRow[]);
       const rawMember = draft.rawMember === undefined ? null : (JSON.parse(canonicalJson(draft.rawMember)) as Record<string, string | number>);
+      const url = draft.url ?? null;
       const walk = factKeysWalk(facts ?? []);
       const kept: SegmentRecord[] = [];
       const lines: string[] = [];
@@ -128,7 +145,7 @@ export function memoryWriter(): MemoryWriter {
       if (rawBytes !== null) json.raw = { bytes: rawBytes.byteLength, sha256: await sha256Hex(rawBytes) };
       if (facts !== null && facts.length > 0) json.facts = await factsRef(facts);
       const segment = validateSegment(json, `segment of ${draft.source}`);
-      written.push({ segment, records: kept, raw: rawBytes, rawMember, facts });
+      written.push({ segment, records: kept, raw: rawBytes, rawMember, facts, url });
       return segment;
     },
   };

@@ -1,0 +1,13 @@
+local keys format,day,started,runner,settings,psl,stages,disk,download,gz_bytes,normalise,counts,groups,suffixes,pack,verify,files,peak_rss_kib,finished,wall_seconds
+local stages {"download":{"seconds":0,"skipped":"local input"},"normalise":{"seconds":43.955,"peak_rss_kib":162488,"cpu_user_s":30.5,"cpu_system_s":4.609},"sort":{"seconds":25.093,"peak_rss_kib":null,"rss_source":"none: no /usr/bin/time"},"split":{"seconds":57.82,"peak_rss_kib":667896,"cpu_user_s":48.718,"cpu_system_s":7.515},"encode":{"seconds":51.776,"peak_rss_kib":180780,"cpu_user_s":41.515,"cpu_system_s":7 wall 216.063
+runner us/name (non-download stages), min..max:
+2026-09-25 2.26 sum 233.3 names 103199550
+2026-10-16 2.27 sum 65.0 names 28572655
+2026-09-15 3.36 sum 312.4 names 93108407
+2026-10-23 3.60 sum 114.2 names 31675969
+2026-09-18 3.63 sum 362.3 names 99788111
+local sum [object Object][object Object][object Object][object Object][object Object] local us/name NaN
+matrix leg 10-26 non-dl 74.2 one-day run non-dl 114.4
+ratio matrix NaN ratio one-day NaN
+sept legs 30 non-dl s min/median/max 231 348 392
+conditions {"instrument":"docs/research/2026-11-01-thc-ct/08-ratio.mjs","at":"2026-11-03T15:00:41.017Z","exit":0,"node":"v26.7.0","os":"win32 10.0.26300","cpu":"12th Gen Intel(R) Core(TM) i7-12700H","cpus":20,"memory_bytes":68321587200,"argv":[]}

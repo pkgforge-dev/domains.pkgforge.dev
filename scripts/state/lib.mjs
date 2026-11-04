@@ -5,6 +5,7 @@
 //   liveState(reader, withToken, deps)   state:latest read with no credential, the token telling absent from private (D21 of DOM-024)
 //   readStateAt(reader, ref, deps)       one state object: its manifest, its layer state.json held to its digest, parsed
 //   heldBy(root, replaced)               the `held` of settle from the live root (docs/architecture.md section 5.4, Owed packs)
+//   gapHeldBy(root)                      the `gapHeld` of settle from the live root: a pending gap day it lists or a live segment covers (D9 of DOM-029)
 //   replacedOnChain(live, owed, readOlder, options)   DOM-063: the owed segments that a root on the chain of
 //                                        previous named and a compaction replaced; chainLine(live, walk) its line
 //   newestFilterTag(tags)                the newest ledger-filter-YYYYMMDD of a tag list
@@ -38,7 +39,7 @@ import { join } from 'node:path';
 import { DELTA_TITLE } from '@domains/compact';
 import { artifactType, GhcrError, LATEST, LEDGER_DELTA_TAG, ledgerDeltaRunTag, ledgerFilterTag, MANIFEST_LIMIT_BYTES, REGISTRY_HOST, repoOf, segmentSource } from '@domains/ghcr';
 import { EPOCH_MS, HashDelta } from '@domains/ledger';
-import { packNamed, packSpanning } from '@domains/root';
+import { packNamed, packSpanning, segmentOfDay } from '@domains/root';
 import { guard, OWED_DAYS, parseState, STATE_MAX_BYTES, STATE_TITLE, StateError } from '@domains/state';
 import { isNotPublic } from '../ghcr/check-public.mjs';
 import { READBACK_ATTEMPTS, RETRY_PAUSE_S } from '../ghcr/push.mjs';
@@ -55,8 +56,13 @@ export const FILTER_TAG = /^ledger-filter-([0-9]{8})$/;
 const TITLE = 'org.opencontainers.image.title';
 const HIGHER_TIERS = new Set(['d', 'w', 'm', 'y']);
 const DAY_MS = 86_400_000;
-// A filter is about 1.2 MB a million domains at 10 bits a key [E]; the
-// table's 300 million would be about 375 MB.
+// A filter is about 1.2 MB a million domains at 10 bits a key [E]. buildFilter
+// of packages/ledger sizes it by the sum of the domains packs' records, then
+// folds it toward the distinct keys (D28 of DOM-029): after THC's backfill the
+// sum is about 1.5 billion records over about 300 million distinct keys, a
+// 1.88 GB filter unfolded (MEASURED 2026-11-01T10:12Z, DOM-029's design M18)
+// and about 470 MB after two folds [E]. A filter over this is refused here and
+// by the daily build, which folds below it.
 export const LEDGER_MAX_BYTES = 1024 * 1024 * 1024;
 
 // A move refused because of what the tag holds: the guard's, or a delta of a
@@ -153,6 +159,23 @@ export function heldBy(root, replaced = null) {
       if (over !== undefined) return { code: 'covered', detail: `feed:${over.tag} of tier ${over.tier} spans ${item.start} to ${item.end}` };
     }
     if (replaced?.has(item.ref)) return { code: 'held', detail: replaced.get(item.ref) };
+    return null;
+  };
+}
+
+// The `gapHeld` of settle (@domains/state) from the live root.json (null: no
+// root yet, nothing is held). A pending gap day is `held` when the root's gaps
+// lists it for its source, or when a live segment that carries the source
+// spans the whole day (segmentOfDay of @domains/root): the promotion dropped
+// the day from gaps because that segment covers it (D31 of DOM-029). A
+// compacted pack ends no gap day: a month pack that carries the source spans
+// the day it lacks.
+export function gapHeldBy(root) {
+  return (source, day) => {
+    if (root === null) return null;
+    if (Object.hasOwn(root.gaps, source) && root.gaps[source].includes(day)) return { code: 'held', detail: `root_seq ${root.root_seq} lists ${day} in gaps.${source}` };
+    const seg = segmentOfDay(root, source, day);
+    if (seg !== null) return { code: 'held', detail: `root_seq ${root.root_seq} names obs:${seg.pack.tag}, a segment of ${source} over ${day}` };
     return null;
   };
 }

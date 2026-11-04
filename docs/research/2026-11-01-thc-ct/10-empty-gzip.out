@@ -1,0 +1,4 @@
+0 bytes in           : read TypeError: ""; writer TypeError; 0 bytes out
+10-byte header only  : read TypeError: ""; writer TypeError; 0 bytes out
+valid empty gzip (20): 20 B read ok; writer ok; 0 bytes out
+html maintenance page: read TypeError: ""; writer TypeError; 0 bytes out

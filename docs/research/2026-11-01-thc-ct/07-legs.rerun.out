@@ -1,0 +1,21 @@
+2026-09-12 desktop seconds by part: {
+  norm: 978,
+  reg: 345,
+  runs: 397,
+  merge: 305,
+  regRuns: 102,
+  namesPack: 1127,
+  domainsPack: 312,
+  verifyN: 1313,
+  verifyD: 469,
+  total: 5349
+} total min 89.1
+ratio 0.344: 09-12 compute 30.7 min; leg wall 35.0 (cs2) to 38.1 (HF slow) min
+ratio 0.531: 09-12 compute 47.3 min; leg wall 51.7 (cs2) to 54.8 (HF slow) min
+ratio 0.55: 09-12 compute 49.0 min; leg wall 53.4 (cs2) to 56.5 (HF slow) min
+ratio 0.69: 09-12 compute 61.5 min; leg wall 65.9 (cs2) to 69.0 (HF slow) min
+ratio 0.344: 54 legs, 1416 leg-min, wall at 6 wide 241 min (4.0 h), longest leg 38 min
+ratio 0.531: 54 legs, 2014 leg-min, wall at 6 wide 344 min (5.7 h), longest leg 55 min
+ratio 0.55: 54 legs, 2075 leg-min, wall at 6 wide 355 min (5.9 h), longest leg 56 min
+ratio 0.69: 54 legs, 2522 leg-min, wall at 6 wide 432 min (7.2 h), longest leg 69 min
+conditions {"instrument":"docs/research/2026-11-01-thc-ct/07-legs.mjs","at":"2026-11-03T15:00:40.846Z","exit":0,"node":"v26.7.0","os":"win32 10.0.26300","cpu":"12th Gen Intel(R) Core(TM) i7-12700H","cpus":20,"memory_bytes":68321587200,"argv":[]}

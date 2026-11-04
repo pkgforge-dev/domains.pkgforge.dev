@@ -25,7 +25,7 @@ import { BITS } from '../verify-pack.mjs';
 import { loadPsl } from '@domains/names';
 import { ADAPTERS, call, copied, inRegistry, inTmp, LANES_FILE, PSL, PSL_BYTES, PSL_FILE, RECORDINGS, SOURCES, seedRoot, stateFile } from './fixture.mjs';
 import { EXIT, main } from './run.mjs';
-import { diskWriter, RAW_PART_BYTES, WriteFault, writeRaw } from './writer.mjs';
+import { diskWriter, FILE_RAW_BYTES, RAW_PART_BYTES, WriteFault, writeRaw } from './writer.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./run.mjs', import.meta.url));
 const NOW = '2026-10-30T08:35:00Z';
@@ -239,17 +239,145 @@ test('run: a quarantine verdict pushes the segment with dev.pkgforge.domains.qua
     );
   }));
 
-test('run: a hold verdict pushes nothing, writes no proposal and exits 1', () =>
+test('run: a day above the ceiling of a day source is quarantined, pushed and proposed so, where it held before (D26 of DOM-029)', () =>
   inRegistry(async (reg, tmp) => {
+    // 79 B over a median of 20 B is above 2.5 times it; 42 B is within.
     const state = historyState(tmp, 20);
     const out = join(tmp, 'out');
     const r = await call(main, argsOf('fixture-file', out, ['--state', state, '--psl', PSL_FILE]), { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.match(r.text, /^segment obs:isc-new\.20261028\.[0-9a-f]{12}-d isc-new domains \S+ \S+ records 3 verdict quarantine$/m);
+    assert.match(r.text, /^segment obs:isc-new\.20261029\.[0-9a-f]{12}-d isc-new domains \S+ \S+ records \d+ verdict ok$/m);
+    const p = parseProposal(readFileSync(proposalAt(out, 'fixture-file')));
+    assert.deepEqual(
+      p.history.map((h) => [h.day, h.quarantined]),
+      [
+        ['2026-10-28', true],
+        ['2026-10-29', false],
+      ],
+    );
+  }));
+
+test('run: a hold verdict pushes nothing, writes no proposal and exits 1', () =>
+  inRegistry(async (reg, tmp) => {
+    // Only a second source holds now: the verifier's verdict is planted.
+    const state = stateFile(tmp, emptyState(NOW));
+    const hold = async (_argv, io) => {
+      io.write(`${JSON.stringify({ verdict: 'hold', errors: [{ check: 'volume', detail: 'planted: above the band' }], unverified: [] })}\n`);
+      return 1;
+    };
+    const out = join(tmp, 'out');
+    const r = await call(main, argsOf('fixture-stream', out, ['--state', state, '--psl', PSL_FILE]), { reg, now: NOW, extra: { verify: hold } });
     assert.equal(r.code, EXIT.fault, r.text);
-    assert.match(r.text, /^segment obs:isc-new\.20261028\.[0-9a-f]{12}-d isc-new domains \S+ \S+ records 3 verdict hold$/m);
-    assert.match(r.text, /verdict ok$/m);
+    assert.match(r.text, /^segment obs:oi-cs\.\S+ oi-cs names \S+ \S+ records 4 verdict hold$/m);
+    assert.match(r.text, /FAIL volume planted: above the band/);
     assert.match(r.text, /nothing of this adapter run is pushed, and no proposal is written \(D18 of DOM-024\)/);
     assert.deepEqual(reg.calls, [], 'no oras call: nothing pushed, no login');
     assert.equal(existsSync(join(out, 'proposals')), false);
+  }));
+
+test('run: the band history of a day is the state history strictly before it, so a backfill state holding later days leaves them out of the baseline (D14 of DOM-029)', () =>
+  inRegistry(async (reg, tmp) => {
+    // Seven days of 60 B before the fixture's days, and four of 1000 B after them, as a backfill's planned history holds.
+    const before = ['21', '22', '23', '24', '25', '26', '27'].map((d) => ({ day: `2026-10-${d}`, count: 60, quarantined: false }));
+    const after = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'].map((day) => ({ day, count: 1000, quarantined: false }));
+    const state = stateFile(tmp, { ...emptyState('2026-10-28T00:00:00Z'), history: { 'isc-new': [...before, ...after] } });
+    const r = await call(main, argsOf('fixture-file', join(tmp, 'out'), ['--state', state, '--psl', PSL_FILE, '--no-push']), { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    // Against the 60 B days alone, 79 B and 42 B are within the band; with the later 1000 B days in the baseline both would quarantine.
+    assert.deepEqual(
+      r.out.filter((l) => l.startsWith('segment ')).map((l) => l.split(' ').at(-1)),
+      ['ok', 'ok'],
+    );
+  }));
+
+// A copy of the file fixture whose module declares a gap: a live run declares
+// 2026-10-27 and steps its cursor to it (`body` replaces the run's result),
+// and a backfill declares the day of its window.
+let gapCopies = 0;
+function gapAdapter(tmp, body = 'return { segments: [], cursor: { last_day: "2026-10-27" }, stats: {}, errors: [], gaps: [{ source: "isc-new", day: "2026-10-27" }] };') {
+  const dir = join(tmp, `gap-${++gapCopies}`);
+  cpSync(join(ADAPTERS, 'fixture-file'), join(dir, 'fixture-file'), { recursive: true });
+  writeFileSync(
+    join(dir, 'fixture-file', 'src', 'index.ts'),
+    [
+      '// A planted copy of fixture-file that declares gaps (scripts/ingest/run.test.mjs).',
+      'export async function run(_cursor: unknown, _ctx: unknown) {',
+      `  ${body}`,
+      '}',
+      'export async function backfill(window: { start: string; end: string }, _ctx: unknown) {',
+      '  return { segments: [], cursor: null, stats: {}, errors: [], gaps: [{ source: "isc-new", day: window.start.slice(0, 10) }] };',
+      '}',
+      '',
+    ].join('\n'),
+  );
+  return dir;
+}
+
+test("run: a live run that declares a gap prints a gap line and proposes it with its moved cursor; a gap with the cursor kept, or of a source not the adapter's, fails", () =>
+  inRegistry(async (reg, tmp) => {
+    const out = join(tmp, 'out');
+    const r = await call(main, argsOf('fixture-file', out, ['--psl', PSL_FILE], gapAdapter(tmp)), { reg, now: NOW });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.ok(r.out.includes('gap isc-new 2026-10-27'), r.text);
+    const p = parseProposal(readFileSync(proposalAt(out, 'fixture-file')));
+    assert.deepEqual([p.before, p.after, p.segments, p.gaps], [null, { last_day: '2026-10-27' }, [], [{ source: 'isc-new', day: '2026-10-27' }]]);
+    assert.equal(r.out.at(-1), `proposal ${proposalAt(out, 'fixture-file')} segments 0 raw 0 history 0 cursor moved`);
+    const kept = await call(
+      main,
+      argsOf(
+        'fixture-file',
+        join(tmp, 'kept'),
+        ['--psl', PSL_FILE],
+        gapAdapter(tmp, 'return { segments: [], cursor: null, stats: {}, errors: [], gaps: [{ source: "isc-new", day: "2026-10-27" }] };'),
+      ),
+      {
+        reg,
+        now: NOW,
+      },
+    );
+    assert.equal(kept.code, EXIT.fault, kept.text);
+    assert.match(kept.text, /FAIL continuation: fixture-file declared gaps and returned the cursor it started from/);
+    const foreign = await call(
+      main,
+      argsOf(
+        'fixture-file',
+        join(tmp, 'foreign'),
+        ['--psl', PSL_FILE],
+        gapAdapter(tmp, 'return { segments: [], cursor: { last_day: "2026-10-27" }, stats: {}, errors: [], gaps: [{ source: "oi-cs", day: "2026-10-27" }] };'),
+      ),
+      {
+        reg,
+        now: NOW,
+      },
+    );
+    assert.equal(foreign.code, EXIT.fault, foreign.text);
+    assert.match(foreign.text, /FAIL source: fixture-file: gaps\[0\] is of oi-cs, which is not one of the adapter's sources/);
+  }));
+
+test('run: a backfill window that writes no segment and declares a gap writes its proposal, named by the window, keeping the live cursor (D13 of DOM-029)', () =>
+  inRegistry(async (reg, tmp) => {
+    const live = { ...emptyState(NOW), cursors: { 'fixture-file': { last_day: '2026-10-29' } }, moved: { 'fixture-file': { at: NOW, run: RUN } } };
+    const state = stateFile(tmp, live);
+    const out = join(tmp, 'out');
+    const r = await call(main, argsOf('fixture-file', out, ['--state', state, '--psl', PSL_FILE, '--from', '2026-10-27T00:00:00Z', '--to', '2026-10-28T00:00:00Z'], gapAdapter(tmp)), {
+      reg,
+      now: NOW,
+    });
+    assert.equal(r.code, EXIT.ok, r.text);
+    const file = join(out, 'proposals', 'proposal.fixture-file.20261027.json');
+    assert.equal(file, join(out, 'proposals', proposalFile('fixture-file', '2026-10-27T00:00:00Z')));
+    const p = parseProposal(readFileSync(file));
+    assert.deepEqual([p.before, p.after, p.segments.length, p.gaps], [{ last_day: '2026-10-29' }, { last_day: '2026-10-29' }, 0, [{ source: 'isc-new', day: '2026-10-27' }]]);
+    assert.equal(r.out.at(-1), `proposal ${file} segments 0 raw 0 history 0 cursor kept`);
+    // A leg of another day, on its own runner, writes a file of another name, so the legs' artifacts merge into one directory.
+    const out2 = join(tmp, 'out2');
+    const r2 = await call(main, argsOf('fixture-file', out2, ['--state', state, '--psl', PSL_FILE, '--from', '2026-10-26T00:00:00Z', '--to', '2026-10-27T00:00:00Z'], gapAdapter(tmp)), {
+      reg,
+      now: NOW,
+    });
+    assert.equal(r2.code, EXIT.ok, r2.text);
+    assert.deepEqual(readdirSync(join(out2, 'proposals')), ['proposal.fixture-file.20261026.json']);
   }));
 
 test('run: a second-precision window across an hour edge and a second segment under one tag are refused, nothing pushed', () =>
@@ -366,9 +494,12 @@ test('run: a backfill writes the window it is given and proposes the live cursor
     const r = await call(main, argsOf('fixture-stream', out, ['--state', state, '--psl', PSL_FILE, '--from', W0[0], '--to', W0[1]]), { reg, now: NOW });
     assert.equal(r.code, EXIT.ok, r.text);
     assert.equal(r.out[0], `cursor fixture-stream {"next":2} (${state})`);
-    const p = parseProposal(readFileSync(proposalAt(out, 'fixture-stream')));
+    // A backfill's proposal file names its window's start (D13 of DOM-029).
+    const file = join(out, 'proposals', proposalFile('fixture-stream', W0[0]));
+    assert.equal(file, join(out, 'proposals', 'proposal.fixture-stream.20261030t080000z.json'));
+    const p = parseProposal(readFileSync(file));
     assert.deepEqual([p.before, p.after, p.segments.length, p.raw.length], [{ next: 2 }, { next: 2 }, 2, 1]);
-    assert.equal(r.out.at(-1), `proposal ${proposalAt(out, 'fixture-stream')} segments 2 raw 1 history 0 cursor kept`);
+    assert.equal(r.out.at(-1), `proposal ${file} segments 2 raw 1 history 0 cursor kept`);
     // An adapter with no backfill cannot take a window.
     const f = await call(main, argsOf('fixture-file', join(tmp, 'f'), ['--state', state, '--psl', PSL_FILE, '--from', '2026-10-28T00:00:00Z', '--to', '2026-10-29T00:00:00Z']), { reg, now: NOW });
     assert.equal(f.code, EXIT.usage, f.text);
@@ -426,4 +557,72 @@ test('run: the production defaults run an adapter from the command line with --n
     assert.equal(lines[0], `cursor fixture-file none (${state})`);
     assert.equal(lines[1], `psl ${PSL} (${PSL_FILE})`);
     assert.equal(lines.at(-1), 'no push: --no-push; 2 segment(s) and 0 raw object(s) verified');
+  }));
+
+test('run: a day file is one layer of at most FILE_RAW_BYTES (2 GiB, D27 of DOM-029), the raw lane parts stay at RAW_PART_BYTES, and a larger file is raw-size', () =>
+  inTmp(async (tmp) => {
+    assert.equal(FILE_RAW_BYTES, 2 * 1024 ** 3);
+    assert.equal(RAW_PART_BYTES, 1024 ** 3);
+    const row = { id: 'isc-new', precision: 'day', datasets: ['domains'], parser: 'x/1', urls: ['https://files.example.test/'] };
+    const draft = {
+      source: 'isc-new',
+      dataset: 'domains',
+      window: { start: '2026-10-28T00:00:00Z', end: '2026-10-29T00:00:00Z' },
+      cursorBefore: null,
+      cursorAfter: { last_day: '2026-10-28' },
+      precision: 'day',
+    };
+    const rec = [{ key: 'com.alpha-synthetic', flags: 0, sources: [{ bit: 8, first: 300, last: 300 }], evidence: [] }];
+    // A file of 12 B: one layer when fileBytes allows it, whatever partBytes says.
+    mkdirSync(join(tmp, 'a'));
+    const a = diskWriter({ dir: join(tmp, 'a'), adapter: 'fixture-file', sources: [row], psl: PSL, run: RUN, fetched: NOW, partBytes: 4, fileBytes: 12 });
+    const seg = await a.write(draft, rec, new Uint8Array(12).fill(7));
+    assert.equal(seg.raw.bytes, 12);
+    assert.equal(a.segments[0].rawLayer.size, 12);
+    mkdirSync(join(tmp, 'b'));
+    const b = diskWriter({ dir: join(tmp, 'b'), adapter: 'fixture-file', sources: [row], psl: PSL, run: RUN, fetched: NOW, partBytes: 64, fileBytes: 11 });
+    await assert.rejects(b.write(draft, rec, new Uint8Array(12).fill(7)), (e) => e instanceof WriteFault && e.code === 'raw-size');
+  }));
+
+test("run: a draft url under the row is the segment's url annotation, without one the row's urls; a url under no row is refused before anything is written", () =>
+  inTmp(async (tmp) => {
+    const row = { id: 'isc-new', precision: 'day', datasets: ['names', 'domains'], parser: 'x/1', urls: ['https://cs.example.test/', 'https://bucket.example.test/b'] };
+    const draft = {
+      source: 'isc-new',
+      window: { start: '2026-10-28T00:00:00Z', end: '2026-10-29T00:00:00Z' },
+      cursorBefore: { day: '2026-10-28' },
+      cursorAfter: { day: '2026-10-29' },
+      precision: 'day',
+    };
+    const names = [{ key: 'com.alpha-synthetic', flags: 1, sources: [{ bit: 8, first: 300, last: 300 }] }];
+    const domains = [{ key: 'com.alpha-synthetic', flags: 0, sources: [{ bit: 8, first: 300, last: 300 }], evidence: [{ tier: 3, basis: 4, source: 0, at: 300, confidence: 0 }] }];
+    const file = new TextEncoder().encode('alpha-synthetic.com\n');
+    mkdirSync(join(tmp, 'w'));
+    const w = diskWriter({ dir: join(tmp, 'w'), adapter: 'fixture-file', sources: [row], psl: PSL, run: RUN, fetched: NOW });
+    const url = 'https://bucket.example.test/b/resolve/2026/11/2026-10-28.txt.gz?download=true';
+    // D5 of DOM-029: both segments of one file take it as their layer raw, under fileTag and fileTag-d.
+    await w.write({ ...draft, dataset: 'names', url }, names, file);
+    await w.write({ ...draft, dataset: 'domains', url }, domains, file);
+    const [n, d] = w.segments;
+    assert.equal(d.tag, `${n.tag}-d`);
+    assert.match(n.tag, /^isc-new\.20261028\.[0-9a-f]{12}$/);
+    assert.equal(n.rawLayer.digest, d.rawLayer.digest);
+    for (const s of w.segments) {
+      assert.equal(s.manifest.json.annotations['dev.pkgforge.domains.url'], url);
+      assert.equal(s.manifest.json.layers.at(-1).annotations['org.opencontainers.image.title'], 'raw');
+    }
+    // Without a url: the row's urls, as before.
+    mkdirSync(join(tmp, 'v'));
+    const v = diskWriter({ dir: join(tmp, 'v'), adapter: 'fixture-file', sources: [row], psl: PSL, run: RUN, fetched: NOW });
+    await v.write({ ...draft, dataset: 'names' }, names, file);
+    assert.equal(v.segments[0].manifest.json.annotations['dev.pkgforge.domains.url'], 'https://cs.example.test/ https://bucket.example.test/b');
+    // A signed URL a redirect led to, and a neighbour of a row's URL, are refused as draft, and nothing is written.
+    mkdirSync(join(tmp, 'x'));
+    const x = diskWriter({ dir: join(tmp, 'x'), adapter: 'fixture-file', sources: [row], psl: PSL, run: RUN, fetched: NOW });
+    await assert.rejects(x.write({ ...draft, dataset: 'names', url: 'https://cdn.example.test/x?X-Amz-Signature=1' }, names, file), (e) => e instanceof ContractError && e.check === 'draft');
+    await assert.rejects(
+      x.write({ ...draft, dataset: 'names', url: 'https://bucket.example.test/b-other/x' }, names, file),
+      (e) => e instanceof ContractError && e.check === 'draft' && /nor under one/.test(e.message),
+    );
+    assert.deepEqual(readdirSync(join(tmp, 'x')), []);
   }));

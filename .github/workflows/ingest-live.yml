@@ -24,20 +24,26 @@
 #             proposal. scripts/state/advance.mjs reads the live state and the
 #             live root and writes the next state: it keeps a proposal whose
 #             tags hold their digests and whose before is the live cursor,
-#             owes each segment that is not quarantined, and settles each owed
-#             pack the live root holds. scripts/state/hours.mjs builds each
-#             closed hour of the last 6 that has a segment and no build, oldest
-#             first (scripts/compact/hour.mjs), pushes feed-h-HOUR, then moves
+#             owes each segment, quarantined or not (D7 of DOM-029), merges
+#             the gap days a proposal declares into state's pending gaps, and
+#             settles each owed pack and pending gap day the live root holds.
+#             scripts/state/hours.mjs builds each closed hour of the last 6
+#             that has a segment and no build, oldest first
+#             (scripts/compact/hour.mjs), pushes feed-h-HOUR, then moves
 #             ledger-delta under the guard, and owes the hour pack. An hour
 #             whose sources are behind their clock waits (exit 3), and the run
 #             stays green. scripts/state/move.mjs moves state:latest only while
 #             the live state is the one advance.mjs read, last in the job. Its
-#             output add is every pack the moved state owes.
-#   promote   only calls root-promote.yml with add and partial: true, and
-#             holds no group (ruling 18). The promotion adds the owed packs
-#             that the root's live-set rule allows and prints each other one as
-#             waiting (the input partial of root-promote.yml), so a pack across
-#             a hole, such as a day source's last day before a stream's first
+#             output add is every pack the moved state owes, and gap every
+#             gap day it holds pending, SOURCE=YYYY-MM-DD (D9 of DOM-029).
+#   promote   only calls root-promote.yml with add, gap and partial: true,
+#             when add or gap holds a word, and holds no group (ruling 18).
+#             gap names the days a source lacks, so the root's hole rule
+#             (ruling 24) takes a hole there (promote.mjs --gap). The
+#             promotion adds the owed packs that the root's live-set rule
+#             allows and prints each other one as waiting (the input partial
+#             of root-promote.yml), so a pack across a hole, such as a day
+#             source's last day before a stream's first
 #             window, holds back no other pack. A pack that waits, and every
 #             pack of a promotion that fails, stays owed: the next run adds it
 #             again, and its advance.mjs settles the packs the live root holds.
@@ -47,7 +53,8 @@
 #             the clock actions-chain it dispatches the next run of this
 #             workflow, which waits in the group ingest-live until this run
 #             ends. Then it dispatches each scheduled workflow of the table
-#             DUE of chain.mjs (the compactions and ref-refresh.yml) whose
+#             DUE of chain.mjs (the compactions, ref-refresh.yml and
+#             ingest-thc.yml, one row a cron) whose
 #             cron instant passed 20 minutes ago or more with no run of it
 #             after that instant: GitHub started the crons of
 #             compact-daily.yml and ref-refresh.yml hours late (DOM-023).
@@ -331,6 +338,7 @@ jobs:
       packages: write
     outputs:
       add: ${{ steps.move.outputs.add }}
+      gap: ${{ steps.move.outputs.gap }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -413,6 +421,8 @@ jobs:
       # says how many. add reaches root-promote.yml's step as one environment
       # string, and Linux refuses one over 128 KiB (E2BIG): about 2,550 refs of
       # 51.3 B (settled S9 of DOM-026). Each ref is checked, those past 500 too.
+      # The output gap is every day the state holds pending in gaps, SOURCE=DAY
+      # words (D9 of DOM-029), each checked; none while no gap is pending.
       - name: Move state:latest
         id: move
         if: ${{ !cancelled() && steps.advance.outcome == 'success' }}
@@ -473,19 +483,41 @@ jobs:
           if [ "$stay" -gt 0 ]; then
             echo "::warning::state owes ${#refs[@]} packs, past the $max one promotion takes: $stay stay owed, and the root falls behind its segments until the promotions catch up"
           fi
+          rc=0
+          pending="$(jq -r '.gaps // {} | to_entries[] | .key as $s | .value[] | "\($s)=\(.)"' "$next")" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::$next holds gaps that are not lists of days by source (jq exited $rc)"
+            exit 1
+          fi
+          gaps=()
+          if [ -n "$pending" ]; then
+            while IFS= read -r g; do
+              if ! [[ "$g" =~ ^[a-z0-9-]+=[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                echo "::error::next.json holds the gap $g, which is not SOURCE=YYYY-MM-DD"
+                exit 1
+              fi
+              gaps+=("$g")
+            done <<< "$pending"
+          fi
+          echo "gap=${gaps[*]}" >> "$GITHUB_OUTPUT"
+          if [ "${#gaps[@]}" -gt 0 ]; then
+            echo "state holds ${#gaps[@]} gap day(s) pending; gap passes them to the promotion: ${gaps[*]}"
+          fi
 
   # Ruling 18: this job only calls root-promote.yml, which holds the group
   # root-writer itself. partial: an owed pack the live-set rule refuses waits,
-  # owed, and the others are promoted.
+  # owed, and the others are promoted. gap: the days state holds pending (D9
+  # of DOM-029), so a promotion runs for a gap alone too.
   promote:
     needs: push
-    if: ${{ !cancelled() && needs.push.result == 'success' && needs.push.outputs.add != '' }}
+    if: ${{ !cancelled() && needs.push.result == 'success' && (needs.push.outputs.add != '' || needs.push.outputs.gap != '') }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/root-promote.yml
     with:
       add: ${{ needs.push.outputs.add }}
+      gap: ${{ needs.push.outputs.gap }}
       partial: true
 
   # The successor is dispatched at the start of the run, so a fault of any

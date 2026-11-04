@@ -7,7 +7,7 @@
 // `node scripts/test.mjs packages/state --name guard`). All synthetic.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { segTag, stateRunTag, tierTag } from "@domains/ghcr";
+import { fileTag, segTag, stateRunTag, tierTag } from "@domains/ghcr";
 import { advance, emptyState, encodeState, guard, HISTORY_DAYS, type Held, type OwedItem, OWED_DAYS, type Proposal, propose, type State, StateError, settle, validateState } from "../src/index.ts";
 import { LATEST, lane, MockRegistry, pushJob, sameWork } from "./registry.ts";
 
@@ -370,7 +370,7 @@ test("guard: two proposals of one adapter are both dropped duplicate, and the ot
     after: { tile: 4 },
   });
   const job = pushJob(reg, [one.proposal, tiles.proposal, two.proposal], { now: NOW1, run: RUN1 });
-  const detail = `oi-cs has 2 proposals (run ${RUN1} attempt 1 at ${NOW1}, run ${RUN1} attempt 2 at 2026-10-30T08:13:00Z); none is applied, and the adapter is read again from its live cursor`;
+  const detail = `oi-cs has 2 proposals (run ${RUN1} attempt 1 at ${NOW1}, run ${RUN1} attempt 2 at 2026-10-30T08:13:00Z), and run ${RUN1} moves the cursor from none to {"offset":100}; none is applied, and the adapter is read again from its live cursor`;
   assert.deepEqual(job.advanced.dropped, [
     { adapter: "oi-cs", code: "duplicate", detail },
     { adapter: "oi-cs", code: "duplicate", detail },
@@ -378,7 +378,7 @@ test("guard: two proposals of one adapter are both dropped duplicate, and the ot
   assert.deepEqual(reg.state()!.cursors, { "ct-le": { tile: 4 } });
 });
 
-test("guard: a quarantined segment is not owed, and its day enters the history as quarantined", () => {
+test("guard: a quarantined segment is owed like any other (D7 of DOM-029), and its day enters the history as quarantined", () => {
   const reg = new MockRegistry();
   const day = { source: "isc-new", dataset: "names" as const, start: "2026-10-29T00:00:00Z", end: "2026-10-30T00:00:00Z" };
   const feeds = lane(reg, {
@@ -397,11 +397,10 @@ test("guard: a quarantined segment is not owed, and its day enters the history a
   const kafka = lane(reg, { adapter: "oi-cs", lane: "kafka", run: RUN1, at: NOW1, live: null, segments: streamWindow(T0, T1).map((s, i) => ({ ...s, quarantined: i === 0 })), after: { offset: 100 } });
   pushJob(reg, [feeds.proposal, kafka.proposal], { now: NOW1, run: RUN1 });
   const next = reg.state()!;
-  // Only oi-cs's domains segment was not quarantined.
-  assert.deepEqual(
-    next.owed.map((o) => o.ref),
-    ["obs:oi-cs.20261030t080000z.20261030t081000z-d"],
-  );
+  // Ruling 23 serves a quarantined segment, so the root takes it marked: every segment is owed, three of them quarantined.
+  const named = [...feeds.proposal.segments, ...kafka.proposal.segments];
+  assert.deepEqual(named.filter((s) => s.quarantined).length, 3);
+  assert.deepEqual(next.owed.map((o) => o.ref).sort(), named.map((s) => s.ref).sort());
   assert.deepEqual(next.history, { "isc-new": [{ day: "2026-10-29", count: 1, quarantined: true }] });
   assert.deepEqual(next.cursors["isc-new"], { last_day: "2026-10-29" });
 });
@@ -605,9 +604,13 @@ test("guard: settle drops a replaced segment that held answers as held, keeps on
   refuses(() => settle(state, (item) => (item.ref === replaced.ref ? { code: "covered", detail } : null), now), "usage");
 });
 
-test("guard: a state this code writes holds only the fields a reader of commit 9b142c6 knows, and this code reads a state of those fields", () => {
-  // Copied from that commit's packages/state/src/state.ts: a run queued on it
-  // reads state:latest with them and refuses another field (DOM-063's Decision).
+test("guard: a state with no pending gap holds only the fields a reader of commit 137a220 knows, one with a pending gap adds gaps alone, and this code reads a state of those fields", () => {
+  // Copied from that commit's packages/state/src/state.ts (the lists of
+  // 9b142c6, unchanged by DOM-063): a run queued on it, or a re-run of one of
+  // its runs, reads state:latest with them and refuses another field (DOM-063's
+  // Decision of 2026-11-01T15:45Z). DOM-029 adds the optional `gaps`, written
+  // only while a gap is pending, so no state carries it until a run declares
+  // a gap (the backfill's 2026-10-04 and 2026-10-09).
   const known = {
     state: ["cursors", "format", "history", "moved", "owed", "updated"],
     moved: ["at", "run"],
@@ -632,8 +635,42 @@ test("guard: a state this code writes holds only the fields a reader of commit 9
   assert.deepEqual(Object.keys((written.moved as Record<string, object>)["oi-cs"]!).sort(), known.moved);
   assert.deepEqual(Object.keys((written.history as Record<string, object[]>)["isc-new"]![0]!).sort(), known.history);
   assert.deepEqual(Object.keys((written.owed as object[])[0]!).sort(), known.owed);
-  // The other way: a state written before DOM-063 holds these fields, and this code reads it.
+  // The other way: a state written before DOM-029 holds these fields, and this code reads it.
   assert.deepEqual(validateState(written).owed, [owed]);
+  assert.equal(Object.hasOwn(validateState(written), "gaps"), false);
+
+  // A run declares a gap: advance writes the key gaps, and nothing else beside the known fields.
+  const base = validateState(written);
+  const gapProposal = propose({
+    adapter: "thc-ct",
+    lane: null,
+    run: RUN1,
+    attempt: 1,
+    at: "2026-10-30T07:00:00Z",
+    before: null,
+    after: null,
+    segments: [],
+    raw: [],
+    history: [],
+    gaps: [{ source: "thc-ct", day: "2026-10-04" }],
+  });
+  const declared = advance(base, [gapProposal], () => null, { now: "2026-10-30T07:00:00Z", run: RUN1 });
+  assert.equal(declared.changed, true);
+  const withGap = JSON.parse(new TextDecoder().decode(encodeState(declared.state))) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(withGap).sort(), [...known.state, "gaps"].sort());
+  assert.deepEqual(withGap.gaps, { "thc-ct": ["2026-10-04"] });
+  // Once the root lists it, settle drops it, and the key with it: the state is of the known fields again.
+  const settledGap = settle(
+    declared.state,
+    () => null,
+    "2026-10-30T07:30:00Z",
+    (source, day) => (source === "thc-ct" && day === "2026-10-04" ? { code: "held", detail: "root_seq 9 lists it" } : null),
+  );
+  assert.deepEqual(settledGap.settledGaps, [{ source: "thc-ct", day: "2026-10-04", detail: "root_seq 9 lists it" }]);
+  const after = JSON.parse(new TextDecoder().decode(encodeState(settledGap.state))) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(after).sort(), known.state);
+  // An empty gaps object is refused: no pending gap is no key, one shape for none.
+  refuses(() => validateState({ ...base, gaps: {} }), "schema");
 });
 
 test("guard: a run with no proposal leaves the state as it is, and pushes no state, the first one included", () => {
@@ -650,4 +687,105 @@ test("guard: a run with no proposal leaves the state as it is, and pushes no sta
   assert.equal(idle.advanced.state.updated, live.updated);
   assert.deepEqual(idle.advanced.state, live);
   assert.deepEqual(reg.tags, tags);
+});
+
+// One backfill leg of a day source: its two segments and its history day,
+// before and after the live cursor (D13 of DOM-029).
+function backfillLeg(cursor: State["cursors"][string], day: string, sha: string, run = RUN2): Proposal {
+  const start = `${day}T00:00:00Z`;
+  const end = new Date(Date.parse(start) + 86_400_000).toISOString().replace(".000Z", "Z");
+  const seg = { source: "thc-ct", start, end, count: 10, quarantined: false };
+  return propose({
+    adapter: "thc-ct",
+    lane: null,
+    run,
+    attempt: 1,
+    at: NOW2,
+    before: cursor,
+    after: cursor,
+    segments: [
+      { ...seg, ref: `obs:${fileTag("thc-ct", start, sha)}`, digest: `sha256:${sha.slice(0, 4).repeat(16)}`, dataset: "names" },
+      { ...seg, ref: `obs:${fileTag("thc-ct", start, sha, "d")}`, digest: `sha256:${sha.slice(4, 8).repeat(16)}`, dataset: "domains" },
+    ],
+    raw: [],
+    history: [{ source: "thc-ct", day, count: 1000, quarantined: false }],
+  });
+}
+
+test("guard: the keeping proposals of one adapter's backfill legs are all accepted; with a moving one, or with a ref or a history day in two, all are dropped duplicate", () => {
+  const cursor = { next: "2026-11-01", open: [] };
+  const live = validateState({ ...emptyState(NOW1), cursors: { "thc-ct": cursor }, moved: { "thc-ct": { at: NOW1, run: RUN1 } } });
+  const digests = new Map<string, string>();
+  const legs = [backfillLeg(cursor, "2026-09-01", "1".repeat(64)), backfillLeg(cursor, "2026-09-02", "2".repeat(64)), backfillLeg(cursor, "2026-09-03", "3".repeat(64))];
+  for (const p of legs) for (const s of p.segments) digests.set(s.ref, s.digest);
+  const tagExists = (ref: string) => digests.get(ref) ?? null;
+  const ok = advance(live, legs, tagExists, { now: NOW2, run: RUN2 });
+  assert.deepEqual(ok.dropped, []);
+  assert.equal(ok.accepted.length, 3);
+  assert.deepEqual(ok.state.cursors["thc-ct"], cursor);
+  assert.deepEqual(ok.state.moved["thc-ct"], { at: NOW2, run: RUN2 });
+  assert.equal(ok.state.owed.length, 6);
+  assert.deepEqual(
+    ok.state.history["thc-ct"]!.map((h) => h.day),
+    ["2026-09-01", "2026-09-02", "2026-09-03"],
+  );
+  // A leg whose tag is absent is dropped alone; the others apply.
+  const lost = advance(live, legs, (ref) => (ref.includes(".20260902.") ? null : tagExists(ref)), { now: NOW2, run: RUN2 });
+  assert.deepEqual(
+    lost.dropped.map((d) => d.code),
+    ["missing-tag"],
+  );
+  assert.equal(lost.accepted.length, 2);
+  // A keeping and a moving proposal of one adapter: both dropped duplicate.
+  const moving = propose({ ...legs[0]!, segments: [], history: [], after: { next: "2026-11-02", open: [] } });
+  const mixed = advance(live, [legs[1]!, moving], tagExists, { now: NOW2, run: RUN2 });
+  assert.deepEqual(
+    mixed.dropped.map((d) => d.code),
+    ["duplicate", "duplicate"],
+  );
+  assert.match(mixed.dropped[0]!.detail, /moves the cursor from \{"next":"2026-11-01","open":\[\]\} to \{"next":"2026-11-02","open":\[\]\}/);
+  assert.equal(mixed.changed, false);
+  // Two legs of one day (a ref in two), or one history day in two: duplicate.
+  const twice = advance(live, [legs[0]!, backfillLeg(cursor, "2026-09-01", "1".repeat(64), "40000000003")], tagExists, { now: NOW2, run: RUN2 });
+  assert.match(twice.dropped[0]!.detail, /obs:thc-ct\.20260901\.111111111111 is in two of them/);
+  const sameDay = advance(live, [legs[0]!, backfillLeg(cursor, "2026-09-01", "9".repeat(64))], tagExists, { now: NOW2, run: RUN2 });
+  assert.match(sameDay.dropped[0]!.detail, /the history day thc-ct 2026-09-01 is in two of them/);
+});
+
+test("guard: an accepted proposal's gaps join the pending gaps, sorted, one each; settle drops a day gapHeld answers and keeps the rest, and refuses another answer", () => {
+  const cursor = { next: "2026-11-01", open: [] };
+  const live = validateState({ ...emptyState(NOW1), cursors: { "thc-ct": cursor }, moved: { "thc-ct": { at: NOW1, run: RUN1 } }, gaps: { "thc-ct": ["2026-10-09"] } });
+  const gap = (day: string) =>
+    propose({ adapter: "thc-ct", lane: null, run: RUN2, attempt: 1, at: NOW2, before: cursor, after: cursor, segments: [], raw: [], history: [], gaps: [{ source: "thc-ct", day }] });
+  const a = advance(live, [gap("2026-10-04"), gap("2026-10-09")], () => null, { now: NOW2, run: RUN2 });
+  assert.deepEqual(a.dropped, []);
+  assert.deepEqual(a.state.gaps, { "thc-ct": ["2026-10-04", "2026-10-09"] });
+  assert.equal(a.changed, true);
+  // The same gap again changes nothing: no move but `moved`.
+  const again = advance(a.state, [gap("2026-10-04")], () => null, { now: NOW2, run: RUN2 });
+  assert.deepEqual(again.state.gaps, a.state.gaps);
+  const s = settle(
+    a.state,
+    () => null,
+    NOW2,
+    (_source, day) => (day === "2026-10-04" ? { code: "held", detail: "root_seq 61 lists it" } : null),
+  );
+  assert.deepEqual(s.settledGaps, [{ source: "thc-ct", day: "2026-10-04", detail: "root_seq 61 lists it" }]);
+  assert.deepEqual(s.state.gaps, { "thc-ct": ["2026-10-09"] });
+  assert.equal(s.state.updated, NOW2);
+  // With no answer settle keeps the state as it is; a pending gap never expires.
+  const later = new Date(Date.parse(NOW2) + 60 * 86_400_000).toISOString().replace(".000Z", "Z");
+  const none = settle(a.state, () => null, later);
+  assert.deepEqual([none.settledGaps, none.state], [[], a.state]);
+  refuses(
+    () =>
+      settle(
+        a.state,
+        () => null,
+        NOW2,
+        () => ({ code: "covered", detail: "x" }) as unknown as null,
+      ),
+    "usage",
+  );
+  refuses(() => settle(a.state, () => null, NOW2, "x" as unknown as () => null), "usage");
 });

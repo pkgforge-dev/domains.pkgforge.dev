@@ -14,6 +14,8 @@
 //   checkRawMemberBytes(value, bytes, what)  ... named only on a write with raw bytes
 //   factsProblem(facts)                    a draft's facts: a list of { key, cert_age }, ascending
 //   factKeysWalk(facts)                    ... each fact's key a key the writer wrote
+//   checkDraftUrl(url, urls, what)         a draft's url: under one of its source row's urls
+//   checkGaps(gaps, what)                  a run's gaps: { source, day }, sorted, one each
 //
 // A registry fault throws SourceError, which lists every problem found, each
 // with a stable `code`. A fault of a cursor, a segment or a run throws
@@ -586,6 +588,11 @@ export function checkCursor(value: unknown, what: string): Cursor {
 const SEGMENT_FIELDS = Object.freeze(["source", "dataset", "window", "cursorBefore", "cursorAfter", "count", "precision", "bytes", "sha256", "raw", "facts"] as const);
 // The fields a segment carries only when it has them.
 const OPTIONAL_SEGMENT_FIELDS: readonly string[] = Object.freeze(["raw", "facts"]);
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const GAP_FIELDS = "day,source";
+// The most days one run declares lacking: a year of one source. A run of a
+// day source declares at most the days it tried (adapters/thc-ct: one a run).
+export const MAX_GAPS = 366;
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 // { bytes, sha256 }: a size of at least 0 and 64 lowercase hex digits.
 const isBytesRef = (v: unknown): boolean => isObject(v) && Object.keys(v).sort().join(",") === "bytes,sha256" && isCount(v.bytes) && typeof v.sha256 === "string" && SHA256.test(v.sha256);
@@ -620,6 +627,58 @@ export function validateSegment(json: unknown, what: string): Segment {
   if (has(s, "raw") && !isBytesRef(s.raw)) throw new ContractError("segment", `${what}: raw is not { bytes, sha256 }`);
   if (has(s, "facts") && !isBytesRef(s.facts)) throw new ContractError("segment", `${what}: facts is not { bytes, sha256 }`);
   return s as unknown as Segment;
+}
+
+// True when `url` is `base` or lies under it: `base` ends with "/", or the
+// character after it in `url` is "/" or "?". So a row's
+// https://host/bucket names https://host/bucket/resolve/x and not
+// https://host/bucket-other/x.
+function under(url: string, base: string): boolean {
+  if (url === base) return true;
+  if (!url.startsWith(base)) return false;
+  return base.endsWith("/") || url[base.length] === "/" || url[base.length] === "?";
+}
+
+// Throws ContractError("draft") unless `url` is absent, or a URL the
+// registry's URL rules take (a scheme of URL_SCHEMES, no user, password,
+// fragment or credential parameter), of at most MAX_URLS_CHARS characters, and,
+// when `urls` (the draft's source row's) is given, one of them or under one.
+// It names where the raw bytes came from (AGENTS.md absolute 11), as the
+// segment's annotation dev.pkgforge.domains.url: a signed URL a redirect led
+// to lies under no row's URL, and its signature is a credential parameter.
+export function checkDraftUrl(url: unknown, urls: readonly string[] | null, what: string): void {
+  if (url === undefined) return;
+  if (typeof url !== "string") throw new ContractError("draft", `${what}: url is not a string`);
+  // The URL parser drops tabs and line breaks, so they are refused before it: an annotation holds no control character.
+  if (/[\s\u0000-\u001f\u007f]/.test(url)) throw new ContractError("draft", `${what}: url ${JSON.stringify(url)} holds a space or a control character`);
+  const c = new Collector("url");
+  checkUrl(c, "", url);
+  if (c.problems.length > 0) throw new ContractError("draft", `${what}: ${c.problems.map((p) => `${p.code}: ${p.detail}`).join("; ")}`);
+  if (url.length > MAX_URLS_CHARS) throw new ContractError("draft", `${what}: url is ${url.length} characters, over ${MAX_URLS_CHARS}: a segment carries it as one annotation`);
+  if (urls !== null && !urls.some((base) => under(url, base)))
+    throw new ContractError("draft", `${what}: url ${JSON.stringify(url)} is not one of the source's urls nor under one (${urls.join(" ")})`);
+}
+
+// Throws ContractError("result") unless `gaps` is absent, or a list of at most
+// MAX_GAPS { source, day }: source an id, day a calendar day YYYY-MM-DD,
+// sorted by source, then day, none twice. checkResult of harness.ts holds a
+// run's gaps to it; checkSources holds each source to the adapter's rows.
+export function checkGaps(gaps: unknown, what: string): void {
+  if (gaps === undefined) return;
+  if (!Array.isArray(gaps)) throw new ContractError("result", `${what}: gaps is not a list`);
+  if (gaps.length > MAX_GAPS) throw new ContractError("result", `${what}: gaps lists ${gaps.length} days, over ${MAX_GAPS}`);
+  let prev: string | null = null;
+  gaps.forEach((g: unknown, i: number) => {
+    if (!isObject(g) || Object.keys(g).sort().join(",") !== GAP_FIELDS) throw new ContractError("result", `${what}: gaps[${i}] is not { source, day }`);
+    if (typeof g.source !== "string" || !ID_GRAMMAR.test(g.source) || g.source.length > MAX_ID)
+      throw new ContractError("result", `${what}: gaps[${i}].source ${JSON.stringify(g.source)} is not a source id`);
+    if (typeof g.day !== "string" || !ISO_DAY.test(g.day) || !isIsoUtc(`${g.day}T00:00:00Z`))
+      throw new ContractError("result", `${what}: gaps[${i}].day ${JSON.stringify(g.day)} is not a calendar day YYYY-MM-DD`);
+    // Ids hold no space, and a space sorts before every id character, so the joined text sorts as (source, day).
+    const key = `${g.source} ${g.day}`;
+    if (prev !== null && key <= prev) throw new ContractError("result", `${what}: gaps[${i}] ${key} does not sort after ${prev}: gaps are sorted by source, then day, one each`);
+    prev = key;
+  });
 }
 
 // The most bytes of a raw lane member's own fields as canonical JSON. A Kafka

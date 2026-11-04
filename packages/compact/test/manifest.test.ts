@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { packFromManifest } from "@domains/root";
 import { FEED_CODEC, FEED_TIME_CODEC, NAMES_CODEC } from "@domains/pack";
 import { writerId } from "@domains/pack/node";
-import { CompactError, EMPTY_CONFIG, type ExtraLayer, type ManifestInput, packManifest, tagDecision, WORKFLOW_RUN_ID } from "../src/index.ts";
+import { CompactError, EMPTY_CONFIG, type ExtraLayer, type ManifestInput, packManifest, QUARANTINED_INPUTS_ANNOTATION, tagDecision, WORKFLOW_RUN_ID } from "../src/index.ts";
 import { feedPack, feedRows, keys, memPack, nameRecords } from "./helpers.ts";
 
 const PSL = "1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9";
@@ -357,4 +357,33 @@ test("manifest: the run annotation is a workflow run id, digits with no leading 
       run,
     );
   }
+});
+
+// L8 of DOM-029's design: a day pack built with a quarantined input names its
+// sources, and a rebuild of the day carries them forward.
+test("manifest: quarantined-inputs is taken on a pack of tier d to y, as sorted distinct source ids one space apart, and refused on a segment, an hour pack or another value", async () => {
+  const day = await namesInput();
+  const m = packManifest({ ...day, annotations: { [QUARANTINED_INPUTS_ANNOTATION]: "isc-new thc-ct" } });
+  assert.equal(QUARANTINED_INPUTS_ANNOTATION, "dev.pkgforge.domains.quarantined-inputs");
+  assert.equal(m.annotations[QUARANTINED_INPUTS_ANNOTATION], "isc-new thc-ct");
+  // The promotion reads such a manifest as it reads any day pack: no field of the root marks it.
+  const head = { dataset: 1, records: day.summary.records, keyMin: day.summary.keyMin, keyMax: day.summary.keyMax, parts: day.summary.parts.map((p) => p.bytes) };
+  const entry = packFromManifest({ repo: "pkgforge-dev/domains.pkgforge.dev/names", tag: day.tag, digest: m.digest, json: m.json, head });
+  assert.equal(Object.hasOwn(entry.pack, "quarantine"), false);
+  const refused = (input: ManifestInput, value: string, why: RegExp) =>
+    assert.throws(
+      () => packManifest({ ...input, annotations: { [QUARANTINED_INPUTS_ANNOTATION]: value } }),
+      (e: unknown) => e instanceof CompactError && e.code === "usage" && why.test(e.message),
+      value,
+    );
+  const VALUE = /^dev\.pkgforge\.domains\.quarantined-inputs is .*, not source ids sorted and distinct, one space between them$/;
+  for (const v of ["thc-ct isc-new", "thc-ct thc-ct", "thc-ct  isc-new", " thc-ct", "thc-ct ", "THC-CT", "thc_ct", "thc-ct,isc-new", `${"a".repeat(64)}`]) refused(day, v, VALUE);
+  refused(await segmentInput(), "oi-cs", /belongs to a pack of tier d, w, m or y, not seg/);
+  refused({ ...day, tier: "h", span: { start: "2026-10-26T05:00:00Z", end: "2026-10-26T06:00:00Z" }, tag: "names-h-2026102605" }, "thc-ct", /belongs to a pack of tier d, w, m or y, not h/);
+  // A week carries it as a day does.
+  assert.equal(
+    packManifest({ ...day, tier: "w", span: { start: "2026-10-19T00:00:00Z", end: "2026-10-26T00:00:00Z" }, tag: "names-w-2026w43", annotations: { [QUARANTINED_INPUTS_ANNOTATION]: "thc-ct" } })
+      .annotations[QUARANTINED_INPUTS_ANNOTATION],
+    "thc-ct",
+  );
 });

@@ -22,7 +22,7 @@ import { anonymousReader } from '../ghcr/check-public.mjs';
 import { DEFAULT_SOURCES, loadRegistry } from '../verify-pack.mjs';
 import { depsFor, PSL_LIVE, PSL_TAG, registry, runFixture, sha } from './fixture.mjs';
 import { Fault, guardLatest, readRoot, readRootJson } from './lib.mjs';
-import { EXIT, keepLiveSet, main, parsePromoteArgs } from './promote.mjs';
+import { dropCoveredGaps, EXIT, keepLiveSet, main, parsePromoteArgs } from './promote.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./promote.mjs', import.meta.url));
 // The synthetic registry of the verifier's fixtures: thc-ct (bit 0) and ct-le (bit 5).
@@ -333,12 +333,14 @@ test('promote: --partial adds the packs the live-set rule allows, before and aft
     const two = rootAt(reg, 'latest');
     const tags = () => verbs(reg).filter((v) => v === 'tag').length;
     const [d24, d25, d27, d28, d29] = [await day('24'), await day('25'), await day('27'), await day('28'), await day('29')];
-    const hole = (from, to) => `datasets.names: a hole from 2026-10-${from}T00:00:00Z to 2026-10-${to}T00:00:00Z: no pack covers it`;
+    // Both sides carry thc-ct, so the message names the days gaps does not list (ruling 24).
+    const hole = (from, to, days) =>
+      `datasets.names: a hole from 2026-10-${from}T00:00:00Z to 2026-10-${to}T00:00:00Z: no pack covers it, and gaps lists not every day it touches for a source carried on both sides (ruling 24): thc-ct lacks ${days}`;
 
     // Without --partial a pack across a hole refuses the whole promotion.
     const whole = await promote(reg, tmp, ['--add', d28, '--add', d29, '--sources', REG], { now: '2026-10-29T09:20:00Z' });
     assert.equal(whole.code, EXIT.fault, whole.text);
-    assert.ok(whole.text.includes(hole('27', '28')), whole.text);
+    assert.ok(whole.text.includes(hole('27', '28', '2026-10-27')), whole.text);
     assert.doesNotMatch(whole.text, /^waiting /m);
     assert.equal(rootAt(reg, 'latest').digest, two.digest);
 
@@ -348,7 +350,7 @@ test('promote: --partial adds the packs the live-set rule allows, before and aft
     assert.equal(wait.code, EXIT.ok, wait.text);
     assert.deepEqual(
       wait.out.filter((l) => l.startsWith('waiting ')),
-      [`waiting ${d28}: ${hole('27', '28')}`, `waiting ${d29}: ${hole('27', '29')}`],
+      [`waiting ${d28}: ${hole('27', '28', '2026-10-27')}`, `waiting ${d29}: ${hole('27', '29', '2026-10-27 2026-10-28')}`],
     );
     assert.match(wait.out.at(-1), /^unchanged root:latest sha256:[0-9a-f]{64} root_seq 2: nothing to promote, nothing written$/);
     assert.equal(rootAt(reg, 'latest').digest, two.digest);
@@ -379,7 +381,7 @@ test('promote: --partial adds the packs the live-set rule allows, before and aft
     assert.equal(three.root.as_of, '2026-10-30T00:00:00Z');
   }));
 
-test('promote: --partial defers only the live-set refusal: a quarantined pack, a pack GHCR does not hold and a refused replacement still exit 1, and a promotion the rule allows whole is the one without it', () =>
+test('promote: --partial defers only the live-set refusal: a quarantined compacted pack, a pack GHCR does not hold and a refused replacement still exit 1, and a promotion the rule allows whole is the one without it', () =>
   inRegistry(async (reg, tmp) => {
     reg.seedPsl();
     assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
@@ -394,12 +396,12 @@ test('promote: --partial defers only the live-set refusal: a quarantined pack, a
       ['names-d-20261019', 'names-d-20261020'],
     );
     const live = rootAt(reg, 'latest').digest;
-    // A quarantined manifest, beside a pack that would wait.
+    // A quarantined manifest of a day pack, beside a pack that would wait: only a segment is quarantined (ruling 23).
     const q = await seedDay('22', { 'dev.pkgforge.domains.quarantine': '1' });
     const d23 = await seedDay('23');
     const quarantined = await promote(reg, tmp, ['--add', q.ref, '--add', d23.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:20:00Z' });
     assert.equal(quarantined.code, EXIT.fault, quarantined.text);
-    assert.match(quarantined.text, /carries dev\.pkgforge\.domains\.quarantine="1": a quarantined pack joins no root/);
+    assert.match(quarantined.text, /names:names-d-20261022: a pack of tier d lists quarantine; only a segment is quarantined \(ruling 23\)/);
     // A replacement the live-set rule refuses (the week of 19 overlaps the day
     // 20 it does not replace) is refused whole, not deferred.
     const week = await reg.seedPack('names', 'names-w-2026w43', { tier: 'w', start: '2026-10-19T00:00:00Z', end: '2026-10-26T00:00:00Z' });
@@ -417,7 +419,12 @@ test('promote: --partial defers only the live-set refusal: a quarantined pack, a
     const d21 = await seedDay('21');
     const missing = await promote(reg, tmp, ['--add', d21.ref, '--add', d23.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:40:00Z' });
     assert.equal(missing.code, EXIT.fault, missing.text);
-    assert.ok(missing.out.includes(`waiting ${d23.ref}: datasets.names: a hole from 2026-10-22T00:00:00Z to 2026-10-23T00:00:00Z: no pack covers it`), missing.text);
+    assert.ok(
+      missing.out.includes(
+        `waiting ${d23.ref}: datasets.names: a hole from 2026-10-22T00:00:00Z to 2026-10-23T00:00:00Z: no pack covers it, and gaps lists not every day it touches for a source carried on both sides (ruling 24): thc-ct lacks 2026-10-22`,
+      ),
+      missing.text,
+    );
     assert.match(missing.text, /the next root names 1 pack\(s\) GHCR does not hold, so latest is left as it is: names:names-d-20261020 sha256:[0-9a-f]{64}/);
     assert.equal(rootAt(reg, 'latest').digest, live);
   }));
@@ -437,7 +444,11 @@ test('promote: keepLiveSet returns the additions as given when the root with all
     ['names-d-20261028', 'names-d-20261024', 'names-d-20261025', 'names-d-20261027'],
   );
   assert.deepEqual(r.waiting, [
-    { ref: 'names:names-d-20261030', message: 'datasets.names: a hole from 2026-10-29T00:00:00Z to 2026-10-30T00:00:00Z: no pack covers it' },
+    {
+      ref: 'names:names-d-20261030',
+      message:
+        'datasets.names: a hole from 2026-10-29T00:00:00Z to 2026-10-30T00:00:00Z: no pack covers it, and gaps lists not every day it touches for a source carried on both sides (ruling 24): thc-ct lacks 2026-10-29',
+    },
     { ref: 'names:names-d-20261026', message: `datasets.names: names:names-d-20261026 names the manifest ${liveRoot.datasets.names[0].manifest}, which the root names already` },
   ]);
   // The root the caller builds with the kept ones passes whole.
@@ -877,4 +888,105 @@ test('promote: as a process, --fixture stale exits 1 and writes nothing to the n
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stdout, /^fixture stale: exit 1; root:latest holds the second writer's root; this run's dated tag r-20261029t082000z was not written$/m);
   assert.match(r.stderr, /fixture stale: a second writer moved root:latest from sha256:[0-9a-f]{64} \(root_seq 1\) to sha256:[0-9a-f]{64} \(root_seq 2\)/);
+});
+
+// A THC day segment of names in the double, as ingest-thc.yml pushes it.
+const thcDay = (reg, day, extra = {}) => {
+  const end = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().replace('.000Z', 'Z');
+  return reg.seedPack('obs', `thc-ct.${day.replaceAll('-', '')}.0232f4df0831`, { tier: 'seg', start: `${day}T00:00:00Z`, end, extra });
+};
+
+test('promote: --partial adds a quarantined segment, marked quarantine: true in its entry alone, and show prints it quarantined (ruling 23)', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const d14 = await thcDay(reg, '2026-10-14');
+    const d15 = await thcDay(reg, '2026-10-15', { 'dev.pkgforge.domains.quarantine': '1' });
+    const r = await promote(reg, tmp, ['--add', d14.ref, '--add', d15.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:10:00Z' });
+    assert.equal(r.code, EXIT.ok, r.text);
+    assert.doesNotMatch(r.text, /^waiting /m);
+    const names = rootAt(reg, 'latest').root.datasets.names;
+    assert.deepEqual(
+      names.map((p) => [p.tag, p.quarantine ?? null]),
+      [
+        ['thc-ct.20261014.0232f4df0831', null],
+        ['thc-ct.20261015.0232f4df0831', true],
+      ],
+    );
+    assert.equal(Object.hasOwn(names[0], 'quarantine'), false);
+    const { describe } = await import('./show.mjs');
+    const lines = describe(await readRoot(anonymousReader(), 'latest', {}, { strict: false }), 'latest');
+    assert.ok(
+      lines.some((l) => / obs:thc-ct\.20261015\.0232f4df0831 3 thc-ct quarantined$/.test(l)),
+      lines.join('\n'),
+    );
+    assert.ok(
+      lines.some((l) => / obs:thc-ct\.20261014\.0232f4df0831 3 thc-ct$/.test(l)),
+      lines.join('\n'),
+    );
+  }));
+
+test("promote: --gap with the additions closes THC's hole in one promotion; without it the segment across the hole waits (ruling 24)", () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const [d03, d05] = [await thcDay(reg, '2026-10-03'), await thcDay(reg, '2026-10-05')];
+    const wait = await promote(reg, tmp, ['--add', d03.ref, '--add', d05.ref, '--sources', REG, '--partial'], { now: '2026-10-29T09:10:00Z' });
+    assert.equal(wait.code, EXIT.ok, wait.text);
+    assert.ok(
+      wait.out.includes(
+        `waiting ${d05.ref}: datasets.names: a hole from 2026-10-04T00:00:00Z to 2026-10-05T00:00:00Z: no pack covers it, and gaps lists not every day it touches for a source carried on both sides (ruling 24): thc-ct lacks 2026-10-04`,
+      ),
+      wait.text,
+    );
+    // The first promotion kept 10-03, and 10-05 waits, owed: the next one adds it with the gap day.
+    assert.deepEqual(
+      rootAt(reg, 'latest').root.datasets.names.map((p) => p.tag),
+      ['thc-ct.20261003.0232f4df0831'],
+    );
+    const both = await promote(reg, tmp, ['--add', d05.ref, '--gap', 'thc-ct=2026-10-04', '--sources', REG, '--partial'], { now: '2026-10-29T09:20:00Z' });
+    assert.equal(both.code, EXIT.ok, both.text);
+    assert.doesNotMatch(both.text, /^waiting /m);
+    const root = rootAt(reg, 'latest').root;
+    assert.deepEqual(root.gaps, { 'thc-ct': ['2026-10-04'] });
+    assert.deepEqual(
+      root.datasets.names.map((p) => p.tag),
+      ['thc-ct.20261003.0232f4df0831', 'thc-ct.20261005.0232f4df0831'],
+    );
+    assert.equal(root.corpus_since.names, '2026-10-03T00:00:00Z');
+  }));
+
+test('promote: an added segment over a gap day the live root lists drops the day, and the other days stay (D31 of DOM-029)', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const [d03, d05] = [await thcDay(reg, '2026-10-03'), await thcDay(reg, '2026-10-05')];
+    assert.equal(
+      (await promote(reg, tmp, ['--add', d03.ref, '--add', d05.ref, '--gap', 'thc-ct=2026-10-04', '--gap', 'thc-ct=2026-10-09', '--sources', REG], { now: '2026-10-29T09:10:00Z' })).code,
+      EXIT.ok,
+    );
+    // The file of 10-04 came late, and a backfill of the day adds it: the gap of 10-04 ends, 10-09 stays.
+    const d04 = await thcDay(reg, '2026-10-04');
+    const late = await promote(reg, tmp, ['--add', d04.ref, '--gap', 'thc-ct=2026-10-04', '--sources', REG, '--partial'], { now: '2026-10-29T09:20:00Z' });
+    assert.equal(late.code, EXIT.ok, late.text);
+    assert.ok(late.out.includes(`gap dropped thc-ct 2026-10-04: ${d04.ref} spans it`), late.text);
+    const root = rootAt(reg, 'latest').root;
+    assert.deepEqual(root.gaps, { 'thc-ct': ['2026-10-09'] });
+    assert.equal(root.datasets.names.length, 3);
+  }));
+
+test("promote: dropCoveredGaps drops a day an added segment of its source spans whole, keeps it when the root without it does not fit, and leaves a part of a day, a compacted pack's day and another source alone", () => {
+  const seg = (start, end, sources = ['thc-ct']) => entry('names', 'seg', start, { sources, end });
+  const add = [seg('2026-10-04T00:00:00Z', '2026-10-05T00:00:00Z'), seg('2026-10-09T00:00:00Z', '2026-10-09T06:00:00Z'), entry('names', 'd', '2026-10-11T00:00:00Z')];
+  const gaps = { 'oi-nrd': ['2026-10-04'], 'thc-ct': ['2026-10-04', '2026-10-09', '2026-10-11'] };
+  const all = dropCoveredGaps(gaps, add);
+  assert.deepEqual(all.gaps, { 'oi-nrd': ['2026-10-04'], 'thc-ct': ['2026-10-09', '2026-10-11'] });
+  assert.deepEqual(all.dropped, [{ source: 'thc-ct', day: '2026-10-04', ref: 'obs:thc-ct.20261004t000000z.20261005t000000z' }]);
+  assert.deepEqual(all.kept, []);
+  // The domains segment of the day waits, so the hole of domains still needs the day: kept.
+  const kept = dropCoveredGaps(gaps, add, () => false);
+  assert.deepEqual(kept.gaps, gaps);
+  assert.deepEqual(kept.kept, [{ source: 'thc-ct', day: '2026-10-04', ref: 'obs:thc-ct.20261004t000000z.20261005t000000z' }]);
+  // A source whose last day goes leaves the object.
+  assert.deepEqual(dropCoveredGaps({ 'thc-ct': ['2026-10-04'] }, add).gaps, {});
 });
