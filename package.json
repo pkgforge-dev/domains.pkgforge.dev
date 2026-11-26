@@ -31,7 +31,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
     "@cloudflare/workers-types": "5.20261102.1",
-    "@types/node": "26.6.6",
+    "@types/node": "26.6.11",
     "esbuild": "0.28.2",
     "miniflare": "5.20261101.0-beta",
     "typescript": "7.0.2",
