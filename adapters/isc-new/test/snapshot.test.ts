@@ -6,6 +6,7 @@ import { gzipSync } from "node:zlib";
 import { type Fetch, memoryWriter, parseRecording, replayFetch, sha256Hex } from "@domains/adapter";
 import { runSandboxed } from "@domains/adapter/node";
 import { loadPsl } from "@domains/names";
+import { parseCursor } from "../src/cursor.ts";
 import { BIT, datedUrl, DPK1_EPOCH_DAY, fetchSnapshot, ISC_FEEDS, type IscFault, MAX_GZIP_BYTES, parseSnapshot, type SnapshotFile, SOURCE, writeIndexedSnapshot } from "../src/index.ts";
 
 const USER_AGENT = "domains.pkgforge.dev ISC adapter fixture";
@@ -62,11 +63,11 @@ test("isc snapshot: the curated ISC slice writes reproducible records and suppli
 test("isc snapshot: sandboxed replay holds raw bytes and the dated segment to the source definition", async () => {
   const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
   const replay = await runSandboxed({
-    module: path("../src/snapshot-test-entry.ts"),
+    module: path("../src/index.ts"),
     sourceFile: path("../source.json"),
     recordings: path("../fixtures/"),
     psl: path("../../../packages/names/test/fixtures/psl-2026-10-27.dat"),
-    cursor: null,
+    cursor: { ...parseCursor(null), next: DAY },
     now: "2026-12-01T12:00:00Z",
   });
   const gzip = fixture("slice").response.body;
@@ -79,8 +80,12 @@ test("isc snapshot: sandboxed replay holds raw bytes and the dated segment to th
   assert.deepEqual([written.segment.source, written.segment.precision, written.segment.window.start], [SOURCE, "day", `${DAY}T00:00:00Z`]);
   assert.deepEqual(
     replay.first.requests.map((r) => [r.method, r.url]),
-    [["GET", datedUrl(DAY)]],
+    [
+      ["HEAD", ALIAS],
+      ["GET", datedUrl(DAY)],
+    ],
   );
+  assert.equal(replay.first.result.stats.alias_last_modified_age_s, 3600);
   assert.deepEqual([replay.first.connections, replay.next.written, replay.next.requests], [[], [], []]);
 });
 

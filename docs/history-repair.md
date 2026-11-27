@@ -1,8 +1,9 @@
 # Rebuilding historical feed packs offline
 
-`scripts/compact/history.mjs` plans from immutable GHCR roots and builds
-replacement candidates from a local archive. It reconstructs the exact
-feed of each day against the observations available before that day.
+`scripts/compact/history.mjs` plans from immutable GHCR roots, collects
+verified inputs into a local archive, and builds replacement candidates.
+It reconstructs each day's exact feed against observations available
+before that day.
 An earlier sighting can retract a later feed record even when the later
 day has no usable THC input.
 
@@ -37,22 +38,47 @@ A read of the current root and three original publication edges does not
 walk every intervening root.
 
 The plan is written as `history-plan.json` in a new or empty output
-directory. Use its `earlier` and `replay` entries to assemble the local
-archive. Earlier domains inputs establish membership before each day.
+directory. Earlier domains inputs establish membership before each day.
 Each replay day uses the proved original domains day, an archived feed
 day as carry, and any live domains segments that fall inside that day.
 `downstream` lists later or provisional feed packs that still need
 reconciliation.
 
+## Collect the local archive
+
+Run preflight against the intended archive directory to verify the
+immutable manifests and count the missing layer bytes and logical Range
+reads of up to 4 MiB. Preflight checks existing files in place, reads
+missing manifests anonymously, and exits without fetching blobs or
+creating the output directory.
+
+```bash
+node scripts/compact/history.mjs collect \
+  --plan .tmp/history-plan/history-plan.json --out ARCHIVE_DIR --preflight
+node scripts/compact/history.mjs collect \
+  --plan .tmp/history-plan/history-plan.json --out ARCHIVE_DIR
+```
+
+Collection reads the same anonymous GHCR manifests by digest and
+downloads the layers the builder uses. It hashes each file before
+installing it under its final name. A retry reuses verified files and
+downloads the missing inputs. If an existing file has the wrong digest,
+collection stops with its path so the archive can be inspected. Use the
+same archive directory for the build. Collection writes only local files.
+
+The archive holds exact OCI manifest bytes at
+`ARCHIVE_DIR/<tag>/manifest.json` and the used layers beside them under
+their OCI titles. Collection installs the manifests of the original
+targets for candidate comparison, and `idx` and key parts for replay
+inputs, with `facts.json` where the join consumes it. Raw gzip, saved
+time copies and saved summaries are unnecessary for this replay.
+A manually assembled archive uses the same layout and preserves the
+received manifest bytes without reserializing the JSON.
+
 ## Build
 
-For each required reference, place the exact OCI manifest bytes at
-`ARCHIVE_DIR/<tag>/manifest.json` and the used layers beside it under
-their OCI titles. Save the received manifest bytes without reserializing
-the JSON. Supply `idx` and each key part for every input, and
-`facts.json` where the replay consumes it. Raw gzip, saved time copies
-and saved summaries are unnecessary for this replay. The builder checks
-the manifest digest, then the length and digest of every used layer.
+The builder checks the manifest digest, then the length and digest of
+every used layer.
 
 ```bash
 node scripts/compact/history.mjs build \
@@ -104,9 +130,14 @@ at 00:00 through 07:00 UTC.
 
 The nine published week digests match the pinned root. The 63 archived
 daily manifest digests match the original inputs read on the verified
-edges. Those checks establish membership and manifest readability.
-Production pack blobs and the full November replay remain unverified.
-Use the actual post-backfill root for a new plan. The original
+edges. The independent `collect --preflight` of this pre-backfill plan
+(`sha256:83c92d16cd6b8ab80f4ae304862939a8c9f9265cebfc3f9409a1dcfb7a9199f8`)
+exited 0 and checked 174 public manifests totaling 371,710 B. It counted
+531 total files holding 512,024,764 B, including 357 layer files holding
+511,653,054 B across 434 logical ranges. The output directory remained
+absent and the run read no pack blobs. Production pack blobs and the full
+November replay remain unverified. Use the actual post-backfill root for
+a new plan, then preflight, collect and build its inputs. The original
 publication runs were
 [w45](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/42562197270),
 [w46](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/43804507102)
@@ -122,9 +153,7 @@ publication root in the table with
 digest for the predecessor. Use the start of the original planning job
 in each linked run to identify the planning root. Preserve those immutable
 digests as `before`, `after` and `planAnchor` in the edge file. A later
-root or changed target span needs its own verified inputs. Retrieve the
-actual manifest, index, key part and required facts bytes separately
-before attempting a build.
+root or changed target span needs its own verified inputs.
 
 `node --test scripts/compact/history.test.mjs` exercises the local
 fixture and CLI, eight tests on Node v26.13.0. It covers earlier eligible

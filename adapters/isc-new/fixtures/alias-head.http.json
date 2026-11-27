@@ -1,0 +1,18 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "HEAD",
+    "url": "https://isc.sans.edu/feeds/domaindata.json.gz"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/x-gzip",
+      "content-length": "2939762",
+      "etag": "\"alias-fixture\"",
+      "last-modified": "Tue, 01 Dec 2026 11:00:00 GMT"
+    },
+    "body_base64": ""
+  }
+}

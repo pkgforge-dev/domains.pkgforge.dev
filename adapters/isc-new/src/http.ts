@@ -5,6 +5,7 @@ export const ISC_FEEDS = "https://isc.sans.edu/feeds/";
 // kept for hashing and the raw artifact when a response omits its length.
 export const MAX_GZIP_BYTES = 64 * 1024 ** 2;
 const READ_DEADLINE_MS = 120_000;
+const HEAD_DEADLINE_MS = 20_000;
 const BLOCK_BYTES = 1024 ** 2;
 
 export type FaultCode = "http" | "timeout" | "length" | "size" | "encoding" | "gzip" | "format" | "date";
@@ -47,6 +48,7 @@ export interface SnapshotFile extends SnapshotLocation {
 }
 
 export type Snapshot = SnapshotFile | (SnapshotLocation & { readonly kind: "unchanged" | "missing" });
+export type SnapshotHead = SnapshotLocation & { readonly kind: "present" | "unchanged" | "missing"; readonly bytes: number | null };
 
 export interface SnapshotRequest {
   readonly day?: string;
@@ -61,9 +63,9 @@ const readValidators = (headers: Headers): Validators => {
   return { ...(etag === null ? {} : { etag }), ...(lastModified === null ? {} : { lastModified }) };
 };
 
-function transportFault(url: string, signal: AbortSignal, cause: unknown): IscFault {
+function transportFault(url: string, signal: AbortSignal, cause: unknown, limit = READ_DEADLINE_MS): IscFault {
   return signal.aborted
-    ? new IscFault("timeout", `${url}: the response did not finish within ${READ_DEADLINE_MS / 1000} s`, { cause })
+    ? new IscFault("timeout", `${url}: the response did not finish within ${limit / 1000} s`, { cause })
     : new IscFault("http", `${url}: the request or body read failed`, { cause });
 }
 
@@ -140,7 +142,14 @@ async function readBody(response: Response, url: string, signal: AbortSignal): P
   return raw;
 }
 
-export async function fetchSnapshot(ctx: Pick<AdapterContext, "fetch" | "userAgent">, request: SnapshotRequest = {}): Promise<Snapshot> {
+type HttpContext = Pick<AdapterContext, "fetch" | "userAgent">;
+type ResponseRead = SnapshotLocation & {
+  readonly kind: "present" | "unchanged" | "missing";
+  readonly response: Response;
+  readonly signal: AbortSignal;
+};
+
+async function getResponse(ctx: HttpContext, request: SnapshotRequest, method: "GET" | "HEAD"): Promise<ResponseRead> {
   const pathDay = request.day ?? null;
   const url = pathDay === null ? `${ISC_FEEDS}domaindata.json.gz` : datedUrl(pathDay);
   const headers = new Headers({ "user-agent": ctx.userAgent, "accept-encoding": "identity" });
@@ -148,20 +157,32 @@ export async function fetchSnapshot(ctx: Pick<AdapterContext, "fetch" | "userAge
   if (previous?.etag !== undefined) headers.set("if-none-match", previous.etag);
   else if (previous?.lastModified !== undefined) headers.set("if-modified-since", previous.lastModified);
   const conditional = headers.has("if-none-match") || headers.has("if-modified-since");
-  const signal = AbortSignal.timeout(READ_DEADLINE_MS);
+  const limit = method === "HEAD" ? HEAD_DEADLINE_MS : READ_DEADLINE_MS;
+  const signal = AbortSignal.timeout(limit);
   let response: Response;
   try {
-    response = await ctx.fetch(url, { headers, signal, redirect: "error" });
+    response = await ctx.fetch(url, { method, headers, signal, redirect: "error" });
   } catch (error) {
-    throw transportFault(url, signal, error);
+    throw transportFault(url, signal, error, limit);
   }
   const validators = readValidators(response.headers);
-  if (response.status !== 200) {
-    await drop(response.body);
-    if (response.status === 304 && conditional) return { kind: "unchanged", url, pathDay, validators: { ...previous, ...validators } };
-    if (response.status === 404) return { kind: "missing", url, pathDay, validators };
-    throw new IscFault("http", `${url}: GET answered ${response.status}`);
-  }
+  const read = { url, pathDay, validators, response, signal };
+  if (response.status === 200) return { ...read, kind: "present" };
+  await drop(response.body);
+  if (response.status === 304 && conditional) return { ...read, kind: "unchanged", validators: { ...previous, ...validators } };
+  if (response.status === 404) return { ...read, kind: "missing" };
+  throw new IscFault("http", `${url}: ${method} answered ${response.status}`);
+}
+
+export async function fetchSnapshot(ctx: HttpContext, request: SnapshotRequest = {}): Promise<Snapshot> {
+  const { kind, url, pathDay, validators, response, signal } = await getResponse(ctx, request, "GET");
+  if (kind !== "present") return { kind, url, pathDay, validators };
   const raw = await readBody(response, url, signal);
   return { kind: "file", url, pathDay, validators, raw, sha256: await sha256Hex(raw) };
+}
+
+export async function headSnapshot(ctx: HttpContext, request: SnapshotRequest = {}): Promise<SnapshotHead> {
+  const { kind, url, pathDay, validators, response } = await getResponse(ctx, request, "HEAD");
+  await drop(response.body);
+  return { kind, url, pathDay, validators, bytes: kind === "present" ? declaredSize(response, url) : null };
 }
