@@ -421,6 +421,8 @@ async function dueAt(now, { lists = {}, dispatch = {}, env = ENV, clock = { cloc
 }
 
 const NOT_BEFORE = (file, instant) => `due ${file}: not before ${DUE_SINCE} (its last instant is ${instant})`;
+// The calls of a log that name compact-daily.yml.
+const dailyLog = (log) => log.filter((l) => l.includes(' compact-daily.yml '));
 
 test('chain: lastInstant gives the latest instant at or before now of each cron of DUE, across days, months, years and a leap day', () => {
   const cases = {
@@ -430,6 +432,12 @@ test('chain: lastInstant gives the latest instant at or before now of each cron 
       ['2027-01-01T01:34:59Z', '2026-12-31T01:35:00Z'],
       ['2026-03-01T00:00:00Z', '2026-02-28T01:35:00Z'],
       ['2028-03-01T00:00:00Z', '2028-02-29T01:35:00Z'],
+    ],
+    '35 6 * * *': [
+      ['2026-11-01T06:35:00Z', '2026-11-01T06:35:00Z'],
+      ['2026-11-01T06:34:59Z', '2026-10-31T06:35:00Z'],
+      ['2026-11-01T01:35:00Z', '2026-10-31T06:35:00Z'],
+      ['2028-03-01T06:34:59Z', '2028-02-29T06:35:00Z'],
     ],
     // 2026-11-02 and 2026-12-28 are Mondays.
     '50 3 * * 1': [
@@ -458,6 +466,15 @@ test('chain: lastInstant gives the latest instant at or before now of each cron 
       ['2028-02-29T05:13:00Z', '2028-02-29T05:13:00Z'],
       ['2028-03-01T05:12:59Z', '2028-02-29T05:13:00Z'],
     ],
+    // An hour of `*`: hour by hour back, across a day, a year and a leap day.
+    '5 * * * *': [
+      ['2026-11-01T10:04:00Z', '2026-11-01T09:05:00Z'],
+      ['2026-11-01T10:05:00Z', '2026-11-01T10:05:00Z'],
+      ['2026-11-01T10:59:59Z', '2026-11-01T10:05:00Z'],
+      ['2026-11-01T00:04:59Z', '2026-10-31T23:05:00Z'],
+      ['2027-01-01T00:00:00Z', '2026-12-31T23:05:00Z'],
+      ['2028-03-01T00:04:59Z', '2028-02-29T23:05:00Z'],
+    ],
   };
   assert.deepEqual(
     Object.keys(cases),
@@ -467,15 +484,22 @@ test('chain: lastInstant gives the latest instant at or before now of each cron 
   for (const [cron, list] of Object.entries(cases)) for (const [now, want] of list) assert.equal(new Date(lastInstant(cron, at(now))).toISOString().replace('.000', ''), want, `${cron} at ${now}`);
   // A now part of a second after the instant still gives the instant.
   assert.equal(lastInstant('35 1 * * *', at('2026-11-01T01:35:00Z') + 500), at('2026-11-01T01:35:00Z'));
+  assert.equal(lastInstant('5 * * * *', at('2026-11-01T10:05:00Z') + 500), at('2026-11-01T10:05:00Z'));
+  // An hour of `*` with a fixed day: the last hour of that day. 2026-11-01 is a Sunday, 2026-10-26 a Monday.
+  assert.equal(lastInstant('5 * * * 1', at('2026-11-01T12:00:00Z')), at('2026-10-26T23:05:00Z'));
+  assert.equal(lastInstant('5 * * * 1', at('2026-10-26T12:30:00Z')), at('2026-10-26T12:05:00Z'));
+  assert.equal(lastInstant('5 * 1 * *', at('2026-11-01T00:04:59Z')), at('2026-10-01T23:05:00Z'));
 });
 
 test('chain: lastInstant refuses a cron of a form outside the table, and one that names no instant in 367 days', () => {
   for (const [cron, re] of [
     ['*/5 * * * *', /the minute "\*\/5" is not a number of 0 to 59/],
     ['5,35 * * * *', /the minute "5,35" is not a number of 0 to 59/],
-    ['35 * * * *', /the hour "\*" is not a number of 0 to 23/],
+    ['35 */2 * * *', /the hour "\*\/2" is not \* or a number of 0 to 23/],
+    ['35 1,13 * * *', /the hour "1,13" is not \* or a number of 0 to 23/],
+    ['* 1 * * *', /the minute "\*" is not a number of 0 to 59/],
     ['60 1 * * *', /the minute "60" is not a number of 0 to 59/],
-    ['35 24 * * *', /the hour "24" is not a number of 0 to 23/],
+    ['35 24 * * *', /the hour "24" is not \* or a number of 0 to 23/],
     ['35 1 0 * *', /the day of the month "0" is not \* or a number of 1 to 31/],
     ['35 1 32 * *', /the day of the month "32"/],
     ['35 1 * 13 *', /the month "13" is not \* or a number of 1 to 12/],
@@ -493,6 +517,8 @@ test('chain: lastInstant refuses a cron of a form outside the table, and one tha
     ['35 1 1 * 1', /fixes both the day of the month and the day of the week/],
     ['0 0 30 2 *', /names no instant in the 367 days up to 2026-11-01T00:00:00Z/],
     ['0 0 31 4 *', /names no instant in the 367 days/],
+    ['5 * 30 2 *', /names no instant in the 367 days/],
+    ['5 * 1 * 1', /fixes both the day of the month and the day of the week/],
   ]) {
     assert.throws(() => lastInstant(cron, at('2026-11-01T00:00:00Z')), { name: 'UsageError', message: re }, cron);
   }
@@ -509,7 +535,7 @@ const NOT_DUE = {
 // A measurement's workflow keeps its own clock: it measures that clock, or runs beside one.
 const NOT_DUE_PREFIX = /^measure-/;
 
-test('chain: each row of DUE is the one cron of its workflow file, and every other scheduled workflow is a stated exclusion', () => {
+test('chain: the crons of each workflow file are the crons of its rows of DUE, in order, and every other scheduled workflow is a stated exclusion', () => {
   const dir = join(ROOT, '.github', 'workflows');
   const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
   const crons = {};
@@ -522,19 +548,23 @@ test('chain: each row of DUE is the one cron of its workflow file, and every oth
     assert.deepEqual(lines, parsed, `${f}: every cron line is a cron of on.schedule`);
     if (parsed.length > 0) crons[f] = parsed;
   }
-  assert.equal(new Set(DUE.map((r) => r.file)).size, DUE.length, 'a workflow is one row');
-  for (const row of DUE) {
-    assert.deepEqual(crons[row.file], [row.cron], `${row.file} has exactly the cron of its row`);
-    const wf = parse(readFileSync(join(dir, row.file), 'utf8'));
+  assert.equal(new Set(DUE.map((r) => `${r.file} ${r.cron}`)).size, DUE.length, 'a cron of a file is one row');
+  const dueFiles = [...new Set(DUE.map((r) => r.file))];
+  for (const file of dueFiles) {
+    const rows = DUE.filter((r) => r.file === file).map((r) => r.cron);
+    assert.deepEqual(crons[file], rows, `${file} has exactly the crons of its rows`);
+  }
+  for (const file of dueFiles) {
+    const wf = parse(readFileSync(join(dir, file), 'utf8'));
     // A dispatch with no input runs: each input of the workflow has a default and is not required.
-    assert.ok(wf.on.workflow_dispatch !== undefined, `${row.file} takes workflow_dispatch`);
+    assert.ok(wf.on.workflow_dispatch !== undefined, `${file} takes workflow_dispatch`);
     // Each job that needs no job runs on main alone, so a run on another branch builds nothing, and due lists main's runs alone.
     const firsts = Object.entries(wf.jobs).filter(([, j]) => j.needs === undefined);
-    assert.ok(firsts.length > 0, row.file);
-    for (const [id, j] of firsts) assert.equal(j.if, "github.ref == 'refs/heads/main'", `${row.file}: the job ${id}`);
+    assert.ok(firsts.length > 0, file);
+    for (const [id, j] of firsts) assert.equal(j.if, "github.ref == 'refs/heads/main'", `${file}: the job ${id}`);
     for (const [name, input] of Object.entries(wf.on.workflow_dispatch?.inputs ?? {})) {
-      assert.notEqual(input.required, true, `${row.file}: the input ${name} is not required`);
-      assert.ok(Object.hasOwn(input, 'default'), `${row.file}: the input ${name} has a default`);
+      assert.notEqual(input.required, true, `${file}: the input ${name} is not required`);
+      assert.ok(Object.hasOwn(input, 'default'), `${file}: the input ${name} has a default`);
     }
   }
   const others = Object.keys(crons).filter((f) => !DUE.some((r) => r.file === f));
@@ -548,27 +578,31 @@ test('chain: due dispatches a row whose instant and grace have passed with no ru
   assert.equal(r.code, EXIT.ok, r.text);
   assert.deepEqual(r.out, [
     'due compact-daily.yml: dispatched for 2026-11-01T01:35:00Z',
+    NOT_BEFORE('compact-daily.yml', '2026-10-31T06:35:00Z'),
     NOT_BEFORE('compact-weekly.yml', '2026-10-26T03:50:00Z'),
     NOT_BEFORE('compact-monthly.yml', '2026-10-01T04:50:00Z'),
     NOT_BEFORE('compact-yearly.yml', '2026-01-01T05:50:00Z'),
     NOT_BEFORE('ref-refresh.yml', '2026-10-31T05:13:00Z'),
+    'due ingest-thc.yml: dispatched for 2026-11-01T01:05:00Z',
   ]);
-  assert.deepEqual(r.log, [listCall('compact-daily.yml'), runCall('compact-daily.yml')]);
+  assert.deepEqual(r.log, [listCall('compact-daily.yml'), runCall('compact-daily.yml'), listCall('ingest-thc.yml'), runCall('ingest-thc.yml')]);
   // A run older than the instant, by a day or by a second, meets nothing.
   for (const createdAt of ['2026-10-31T07:27:09Z', '2026-11-01T01:34:59Z']) {
     const old = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': [run(41180651910, createdAt)] } });
     assert.equal(old.out[0], 'due compact-daily.yml: dispatched for 2026-11-01T01:35:00Z', createdAt);
-    assert.deepEqual(old.log, [listCall('compact-daily.yml'), runCall('compact-daily.yml')]);
+    assert.deepEqual(old.log.slice(0, 2), [listCall('compact-daily.yml'), runCall('compact-daily.yml')]);
   }
   // Every row due at once: 2027-01-01 at 06:30 follows each instant of the table.
   const all = await dueAt('2027-01-01T06:30:00Z');
   assert.equal(all.code, EXIT.ok, all.text);
   assert.deepEqual(all.out, [
     'due compact-daily.yml: dispatched for 2027-01-01T01:35:00Z',
+    'due compact-daily.yml: dispatched for 2026-12-31T06:35:00Z',
     'due compact-weekly.yml: dispatched for 2026-12-28T03:50:00Z',
     'due compact-monthly.yml: dispatched for 2027-01-01T04:50:00Z',
     'due compact-yearly.yml: dispatched for 2027-01-01T05:50:00Z',
     'due ref-refresh.yml: dispatched for 2027-01-01T05:13:00Z',
+    'due ingest-thc.yml: dispatched for 2027-01-01T06:05:00Z',
   ]);
   assert.deepEqual(
     all.log,
@@ -586,39 +620,88 @@ test('chain: due finds a row met by any run created at or after its instant, wha
     const r = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': runs } });
     assert.equal(r.code, EXIT.ok, r.text);
     assert.equal(r.out[0], `due compact-daily.yml: met by run ${runs[0].databaseId} (${runs[0].event}, ${runs[0].createdAt})`);
-    assert.deepEqual(r.log, [listCall('compact-daily.yml')], 'no dispatch');
+    assert.deepEqual(dailyLog(r.log), [listCall('compact-daily.yml')], 'no dispatch');
   }
   // Two runs since the instant: the first of them met it.
   const two = await dueAt('2026-11-01T08:00:00Z', { lists: { 'compact-daily.yml': [run(41300000006, '2026-11-01T07:27:09Z'), run(41300000005, '2026-11-01T01:55:12Z', 'workflow_dispatch')] } });
   assert.equal(two.out[0], 'due compact-daily.yml: met by run 41300000005 (workflow_dispatch, 2026-11-01T01:55:12Z)');
+  // The second row of the file is met alone, by the first run at or after its own instant.
+  assert.equal(two.out[1], 'due compact-daily.yml: met by run 41300000006 (schedule, 2026-11-01T07:27:09Z)');
+});
+
+test('chain: two rows of one file are met independently: the run of 02:00 meets the 01:35 row, not the 06:35 one', async () => {
+  const runs = [run(41300000010, '2026-11-02T02:00:10Z', 'workflow_dispatch')];
+  const r = await dueAt('2026-11-02T07:00:00Z', { lists: { 'compact-daily.yml': runs } });
+  assert.equal(r.code, EXIT.ok, r.text);
+  assert.deepEqual(r.out.slice(0, 2), ['due compact-daily.yml: met by run 41300000010 (workflow_dispatch, 2026-11-02T02:00:10Z)', 'due compact-daily.yml: dispatched for 2026-11-02T06:35:00Z']);
+  assert.deepEqual(dailyLog(r.log), [listCall('compact-daily.yml'), listCall('compact-daily.yml'), runCall('compact-daily.yml')]);
+  // Within the second row's grace, it waits, and the first is met.
+  const early = await dueAt('2026-11-02T06:54:59Z', { lists: { 'compact-daily.yml': runs } });
+  assert.deepEqual(early.out.slice(0, 2), [
+    'due compact-daily.yml: met by run 41300000010 (workflow_dispatch, 2026-11-02T02:00:10Z)',
+    `due compact-daily.yml: next 2026-11-02T06:55:00Z (the instant 2026-11-02T06:35:00Z and ${DUE_GRACE_S} s of grace)`,
+  ]);
+  // A run of 06:56 meets the second row, and the 02:00 run still meets the first.
+  const both = await dueAt('2026-11-02T07:30:00Z', { lists: { 'compact-daily.yml': [run(41300000011, '2026-11-02T06:56:00Z', 'workflow_dispatch'), ...runs] } });
+  assert.deepEqual(both.out.slice(0, 2), [
+    'due compact-daily.yml: met by run 41300000010 (workflow_dispatch, 2026-11-02T02:00:10Z)',
+    'due compact-daily.yml: met by run 41300000011 (workflow_dispatch, 2026-11-02T06:56:00Z)',
+  ]);
+  assert.deepEqual(dailyLog(both.log), [listCall('compact-daily.yml'), listCall('compact-daily.yml')], 'no dispatch');
+});
+
+test('chain: the hourly row of ingest-thc.yml is due from HH:25, met by a run since HH:05, and dispatched otherwise', async () => {
+  const thc = (r) => r.out.find((l) => l.startsWith('due ingest-thc.yml: '));
+  const thcLog = (r) => r.log.filter((l) => l.includes(' ingest-thc.yml '));
+  const before = await dueAt('2026-11-02T10:24:59Z');
+  assert.equal(thc(before), `due ingest-thc.yml: next 2026-11-02T10:25:00Z (the instant 2026-11-02T10:05:00Z and ${DUE_GRACE_S} s of grace)`);
+  assert.deepEqual(thcLog(before), []);
+  const on = await dueAt('2026-11-02T10:25:00Z');
+  assert.equal(thc(on), 'due ingest-thc.yml: dispatched for 2026-11-02T10:05:00Z');
+  assert.deepEqual(thcLog(on), [listCall('ingest-thc.yml'), runCall('ingest-thc.yml')]);
+  // Before HH:05 the instant is the hour before, and its grace has passed.
+  const early = await dueAt('2026-11-02T10:04:59Z');
+  assert.equal(thc(early), 'due ingest-thc.yml: dispatched for 2026-11-02T09:05:00Z');
+  // A backfill dispatched at 10:12 meets the row of 10:05, and not the next hour's.
+  const backfill = [run(41300000020, '2026-11-02T10:12:00Z', 'workflow_dispatch', 'in_progress')];
+  const met = await dueAt('2026-11-02T10:30:00Z', { lists: { 'ingest-thc.yml': backfill } });
+  assert.equal(thc(met), 'due ingest-thc.yml: met by run 41300000020 (workflow_dispatch, 2026-11-02T10:12:00Z)');
+  assert.deepEqual(thcLog(met), [listCall('ingest-thc.yml')]);
+  const next = await dueAt('2026-11-02T11:30:00Z', { lists: { 'ingest-thc.yml': backfill } });
+  assert.equal(thc(next), 'due ingest-thc.yml: dispatched for 2026-11-02T11:05:00Z');
 });
 
 test('chain: due waits within the grace after an instant, and never dispatches for an instant before DUE_SINCE', async () => {
   const early = await dueAt('2026-11-01T01:54:59Z');
   assert.equal(early.code, EXIT.ok, early.text);
   assert.equal(early.out[0], `due compact-daily.yml: next 2026-11-01T01:55:00Z (the instant 2026-11-01T01:35:00Z and ${DUE_GRACE_S} s of grace)`);
-  assert.deepEqual(early.log, [], 'a row within its grace lists nothing');
+  assert.deepEqual(dailyLog(early.log), [], 'a row within its grace lists nothing');
   // At the instant plus the grace, the row is due.
   const onTime = await dueAt('2026-11-01T01:55:00Z');
   assert.equal(onTime.out[0], 'due compact-daily.yml: dispatched for 2026-11-01T01:35:00Z');
   // Before DUE_SINCE's first instant every row is before it, and gh never runs.
-  const before = await dueAt('2026-11-01T00:30:00Z');
+  const before = await dueAt('2026-11-01T00:04:59Z');
   assert.equal(before.code, EXIT.ok, before.text);
   assert.deepEqual(before.out, [
     NOT_BEFORE('compact-daily.yml', '2026-10-31T01:35:00Z'),
+    NOT_BEFORE('compact-daily.yml', '2026-10-31T06:35:00Z'),
     NOT_BEFORE('compact-weekly.yml', '2026-10-26T03:50:00Z'),
     NOT_BEFORE('compact-monthly.yml', '2026-10-01T04:50:00Z'),
     NOT_BEFORE('compact-yearly.yml', '2026-01-01T05:50:00Z'),
     NOT_BEFORE('ref-refresh.yml', '2026-10-31T05:13:00Z'),
+    NOT_BEFORE('ingest-thc.yml', '2026-10-31T23:05:00Z'),
   ]);
   assert.deepEqual(before.log, []);
+  // The hourly row's first instant on or after DUE_SINCE is 00:05, due at 00:25.
+  const first = await dueAt('2026-11-01T00:25:00Z');
+  assert.equal(first.out.at(-1), 'due ingest-thc.yml: dispatched for 2026-11-01T00:05:00Z');
 });
 
 test('chain: due warns and dispatches nothing for a listing that fails or does not parse, and exits 0', async () => {
   const failed = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': 'fail' } });
   assert.equal(failed.code, EXIT.ok, failed.text);
   assert.equal(failed.out[0], 'due compact-daily.yml: warn the runs did not list (gh exited 1: HTTP 502: Bad Gateway); nothing is dispatched, and the next run of the chain lists them again');
-  assert.deepEqual(failed.log, [listCall('compact-daily.yml')], 'a failed listing that printed a run meets nothing and dispatches nothing');
+  assert.deepEqual(dailyLog(failed.log), [listCall('compact-daily.yml')], 'a failed listing that printed a run meets nothing and dispatches nothing');
   for (const listing of [
     'not json',
     JSON.stringify({ runs: [] }),
@@ -636,15 +719,15 @@ test('chain: due warns and dispatches nothing for a listing that fails or does n
     const r = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': listing } });
     assert.equal(r.code, EXIT.ok, listing);
     assert.equal(r.out[0], 'due compact-daily.yml: warn the runs did not list (the listing is not a list of runs); nothing is dispatched, and the next run of the chain lists them again', listing);
-    assert.deepEqual(r.log, [listCall('compact-daily.yml')], listing);
+    assert.deepEqual(dailyLog(r.log), [listCall('compact-daily.yml')], listing);
   }
   // One row's failed listing leaves the other rows as they are.
   const mixed = await dueAt('2027-01-01T06:30:00Z', { lists: { 'compact-weekly.yml': 'fail' } });
   assert.equal(mixed.code, EXIT.ok, mixed.text);
-  assert.match(mixed.out[1], /^due compact-weekly\.yml: warn the runs did not list/);
+  assert.match(mixed.out[2], /^due compact-weekly\.yml: warn the runs did not list/);
   assert.deepEqual(
     mixed.log.filter((l) => l.startsWith('gh workflow run')),
-    ['compact-daily.yml', 'compact-monthly.yml', 'compact-yearly.yml', 'ref-refresh.yml'].map(runCall),
+    ['compact-daily.yml', 'compact-daily.yml', 'compact-monthly.yml', 'compact-yearly.yml', 'ref-refresh.yml', 'ingest-thc.yml'].map(runCall),
   );
 });
 
@@ -652,9 +735,10 @@ test('chain: due tries a failed dispatch once, warns, goes on to the next row an
   const r = await dueAt('2027-01-01T06:30:00Z', { dispatch: { 'compact-daily.yml': 1 } });
   assert.equal(r.code, EXIT.ok, r.text);
   assert.equal(r.out[0], 'due compact-daily.yml: warn gh workflow run exited 1 (HTTP 500: Internal Server Error); the next run of the chain tries again');
-  assert.equal(r.out[1], 'due compact-weekly.yml: dispatched for 2026-12-28T03:50:00Z');
-  assert.deepEqual(r.err, ['chain: gh workflow run compact-daily.yml exited 1: HTTP 500: Internal Server Error']);
-  assert.equal(r.log.filter((l) => l === runCall('compact-daily.yml')).length, 1, 'one try');
+  assert.equal(r.out[1], 'due compact-daily.yml: warn gh workflow run exited 1 (HTTP 500: Internal Server Error); the next run of the chain tries again');
+  assert.equal(r.out[2], 'due compact-weekly.yml: dispatched for 2026-12-28T03:50:00Z');
+  assert.deepEqual(r.err, ['chain: gh workflow run compact-daily.yml exited 1: HTTP 500: Internal Server Error', 'chain: gh workflow run compact-daily.yml exited 1: HTTP 500: Internal Server Error']);
+  assert.equal(r.log.filter((l) => l === runCall('compact-daily.yml')).length, 2, 'one try a row, and the file has two rows');
   assert.equal(
     r.log.some((l) => l.startsWith('sleep')),
     false,
@@ -737,14 +821,19 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 test('chain: docs/architecture.md and the comment of ingest-live.yml give the rows of DUE, its grace and DUE_SINCE as chain.mjs holds them', () => {
   const arch = flatText('docs/architecture.md');
   const grace = `${DUE_GRACE_S / 60} minutes`;
-  const files = DUE.map((r) => `\`${r.file}\``);
-  const listed = `${files.slice(0, -1).join(', ')} and ${files.at(-1)}`;
-  // Section 5.2: the rows in the order of DUE, the grace and DUE_SINCE.
-  assert.ok(arch.includes(`holds the table \`DUE\` of \`scripts/ingest/chain.mjs\`: ${listed}, each with the one cron of its file`), 'section 5.2 lists the rows of DUE');
+  const rows = DUE.map((r) => `\`${r.file}\` at \`${r.cron}\``);
+  const listed = `${rows.slice(0, -1).join(', ')} and ${rows.at(-1)}`;
+  // Section 5.2: the rows in the order of DUE, each with its cron, the grace and DUE_SINCE.
+  assert.ok(arch.includes(`holds the table \`DUE\` of \`scripts/ingest/chain.mjs\`: ${listed}, one row for each cron of a file`), 'section 5.2 lists the rows of DUE');
   assert.ok(arch.includes(`A row is due ${grace} after its cron's last instant (\`DUE_GRACE_S\`)`), 'section 5.2 gives the grace');
   assert.ok(arch.includes(`An instant before \`DUE_SINCE\`, ${DUE_SINCE}, is never due`), 'section 5.2 gives DUE_SINCE');
-  // Section 5.3: each row's cron in the table of schedules, and the grace.
-  for (const row of DUE) assert.match(arch, new RegExp(`\\| \`${esc(row.file)}\` \\| \`${esc(row.cron)}\`, the chain when due \\(§5\\.2\\)`), row.file);
+  // Section 5.3: each file's crons in the table of schedules, joined by "and", and the grace.
+  for (const file of new Set(DUE.map((r) => r.file))) {
+    const crons = DUE.filter((r) => r.file === file)
+      .map((r) => `\`${esc(r.cron)}\``)
+      .join(' and ');
+    assert.match(arch, new RegExp(`\\| \`${esc(file)}\` \\| ${crons}, the chain when due \\(§5\\.2\\)`), file);
+  }
   assert.ok(arch.includes(`at its first run ${grace} or more after the cron's instant`), 'section 5.3 gives the grace');
   // Every other "N minutes" of the two paragraphs is the grace.
   const between = (from, to) => {
@@ -775,6 +864,7 @@ test('chain: lastInstant and due give the same instants whatever the time zone o
     ['50 4 1 * *', '2026-11-01T05:00:00Z', '2026-11-01T04:50:00Z'],
     ['50 5 1 1 *', '2027-01-01T06:30:00Z', '2027-01-01T05:50:00Z'],
     ['13 5 * * *', '2028-02-29T05:40:00Z', '2028-02-29T05:13:00Z'],
+    ['5 * * * *', '2027-01-01T00:04:00Z', '2026-12-31T23:05:00Z'],
     ['30 23 31 12 *', '2027-01-01T00:00:00Z', '2026-12-31T23:30:00Z'],
     // 2026-11-01 is a Sunday.
     ['30 23 * * 0', '2026-11-02T00:00:00Z', '2026-11-01T23:30:00Z'],
@@ -805,10 +895,12 @@ process.stdout.write(JSON.stringify({ offset: new Date(Date.parse('2027-01-01T00
       got.out,
       [
         'due compact-daily.yml: dispatched for 2027-01-01T01:35:00Z',
+        'due compact-daily.yml: dispatched for 2026-12-31T06:35:00Z',
         'due compact-weekly.yml: dispatched for 2026-12-28T03:50:00Z',
         'due compact-monthly.yml: dispatched for 2027-01-01T04:50:00Z',
         'due compact-yearly.yml: dispatched for 2027-01-01T05:50:00Z',
         'due ref-refresh.yml: dispatched for 2027-01-01T05:13:00Z',
+        'due ingest-thc.yml: dispatched for 2027-01-01T06:05:00Z',
       ],
       tz,
     );
@@ -863,7 +955,7 @@ test('chain: a guard that turns the chain off comes before the repository, and a
 test('chain: due refuses a createdAt with no zone, meets a run a part of a second after the instant, and names the last line of a long stderr', async () => {
   const zoneless = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': [run(1, '2026-11-01T01:40:00')] } });
   assert.equal(zoneless.out[0], 'due compact-daily.yml: warn the runs did not list (the listing is not a list of runs); nothing is dispatched, and the next run of the chain lists them again');
-  assert.deepEqual(zoneless.log, [listCall('compact-daily.yml')]);
+  assert.deepEqual(dailyLog(zoneless.log), [listCall('compact-daily.yml')]);
   // In the instant's own second: a time, not a string, compare.
   const frac = await dueAt('2026-11-01T02:00:00Z', { lists: { 'compact-daily.yml': [run(41300000007, '2026-11-01T01:35:00.250Z')] } });
   assert.equal(frac.out[0], 'due compact-daily.yml: met by run 41300000007 (schedule, 2026-11-01T01:35:00.250Z)');

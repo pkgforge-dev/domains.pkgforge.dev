@@ -18,6 +18,7 @@ Every number in an entry names the file and section it comes from.
 | `web-pkgforge-2026-10-27/2026-10-27-domain-and-ip.md` | A copy of the synthesis of the operator's other repository (the whole file, working tree at its commit). Its §7 is the CT part. | The wider landscape. Read §7 first. |
 | `web-pkgforge-2026-10-27/ct.md` | A copy of the CT research report: THC's routes and rate limit, CT volumes, names-tile sizes, crt.sh and Cert Spotter behaviour. | THC's API shapes (§1), the cost of reading CT (§4), the sources that fail (§3). |
 | `web-pkgforge-2026-10-27/landscape.md` | A copy of the landscape report: OpenINTEL's S3 layout, zone files, the `.sk` list, RDAP coverage and many other services. | Zone and RDAP sources (rows for OpenINTEL, CZDS, `.sk`, RDAP). |
+| `2026-11-01-thc-ct.md` | DOM-029's measurements of THC's daily dumps: the hosts and the bucket's listing, the head of a dump, the cost of each stage of the adapter, the band over 59 days, the ledger filter after the backfill, the root with the backfill, and a dry run of two real days with no push. Its instruments and their outputs, numbered 01 to 32, are in `2026-11-01-thc-ct/`. | The sizes and costs of a THC day, the leg times [E], what the report did not establish (its section 0). |
 | `reference/ghcr.ts` | A copy of a working anonymous GHCR reader in TypeScript. It does not build here. DOM-019 ports it. | The token flow and the tag paging. |
 
 Each copied file starts with a provenance line: `web.pkgforge.dev@<commit> <path>`.

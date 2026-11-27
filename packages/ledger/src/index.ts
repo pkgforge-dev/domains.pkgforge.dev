@@ -14,7 +14,7 @@ export type { LedgerErrorCode } from "./errors.ts";
 export { LedgerError } from "./errors.ts";
 export type { ExactOptions, ExactStats } from "./exact.ts";
 export { exactNew, newExactStats } from "./exact.ts";
-export type { FilterOptions, MembershipFilter } from "./filter.ts";
+export type { BuildFilterOptions, FilterOptions, MembershipFilter } from "./filter.ts";
 export {
   BloomFilter,
   buildFilter,
@@ -24,8 +24,10 @@ export {
   DELTA_MAGIC,
   FILTER_HEADER_BYTES,
   FILTER_MAGIC,
+  FOLD_UNIT,
   FORMAT_VERSION,
   HashDelta,
+  MAX_BUILD_KEYS,
   MAX_HASHES,
   MAX_PARTITION_BITS,
   ProvisionalFilter,

@@ -620,7 +620,11 @@ export function parseAwk(text) {
     return { line: Number(rest.slice(0, i)), text: rest.slice(i + 1) };
   };
   let closed = false;
-  for (const line of text.split('\n')) {
+  // The first line is a count, so a CR there is the producer's line ending.
+  // Using that separator preserves a literal CR in a sampled input line.
+  const firstLf = text.indexOf('\n');
+  const newline = text[firstLf - 1] === '\r' ? '\r\n' : '\n';
+  for (const line of text.split(newline)) {
     if (line === '') continue;
     const tab = line.indexOf('\t');
     const key = tab === -1 ? line : line.slice(0, tab);

@@ -444,6 +444,10 @@ Every workflow an entry writes passes `scripts/check-workflows.mjs` (DOM-014): t
   - The leg waited for a runner from 15:21:27Z to 18:23:27Z, which fits the queued runs of other repositories read at 15:07Z (the Found of 2026-11-01T15:08Z) [I]. No reading covers 15:07Z to 18:23Z. This entry's 48-hour reading counts such a gap.
 - **Found 2026-11-02T03:56Z (DOM-030, gate part (c)):** while GHCR fails and the isolate keeps a root, `/healthz` answers 200 `{"ok":true,...}` with `x-domains-degraded: 1` until that root is 6 hours old: the body alone reads as healthy. So the status run reads the header too and counts `x-domains-degraded: 1` as a failed probe (`docs/worker.md`, Monitoring). The Worker's answer does not change.
 
+- **Found 2026-11-27 (DOM-012, measured publication times):** the seven-day sample supports candidate thresholds of 04:00 UTC on D+1 for missing ISC dated data, six hours for an unchanged ISC latest alias, and 15:30 UTC on the path date for missing new WhoisDS ZIP identity. Six fully covered UTC days support candidate daily thresholds of 18:00 UTC for cenk and 09:00 UTC for hagezi. These are alert thresholds to try, with room for the 30-minute chain, based on the sample in `docs/research/measure/DOM-012/result.json`. They establish no publication deadline.
+- **Found 2026-11-27 (DOM-029, reasons for a reported gap):** include the THC adapter's `fault gap` reason alongside source lag. A gap can result from an unreadable file. A single-day backfill can repair a faulted day when the host later succeeds and the live pack layout still accepts the segments. A gap under a higher-tier THC pack needs rebuilt overlapping packs.
+- **Found 2026-11-27T08:05:00Z (read-only Actions sample):** among 60 recent ingest-live runs, 55 succeeded, 2 were active and 3 failed. Runs 45955495243 and 45901906661 failed at Move state:latest. Run 45911316027 failed at Move root:latest and reached the issue placeholder. The public logs did not establish a common cause. The sample shows why the watchdog needs to read failed steps as well as dispatch age.
+
 ## DOM-035 — The coverage table and cross-source agreement
 
 - **Status:** open

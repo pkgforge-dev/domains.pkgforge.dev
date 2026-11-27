@@ -1,0 +1,14 @@
+file .tmp/dom029/dl/head/2026-10-31.head.gz 67108864 B; magic 1f 8b method 8 flags 8 mtime 1793491502 xfl 2 os 3
+two-member gzip through DecompressionStream: "threw Trailing junk found after the end of the compressed stream"
+gunzip+normalise: 272903365 B text, 5979353 lines (last partial line dropped), upper 59200, wild 1527081, refused {"numeric-tld":1053}; stopped: 
+  wall 76.04 s: gunzip 7.28 s, split+normalise+key+reg 68.69 s; rss 1083 MiB heap 845 MiB ext 138 MiB
+  keys 5978300, regs 5978300
+A one sort of 5978300 keys: 6.06 s, dedupe 1.10 s, distinct 5151679; rss 1303 MiB heap 1031 MiB ext 136 MiB
+A one sort of 5978300 reg keys: 3.15 s, distinct 1333201
+B names: 65 runs of 92000: sort+encode 19.83 s, stored 53767348 B (8.99 B a key), merge 14.00 s, distinct 5151679; rss 1224 MiB heap 788 MiB ext 152 MiB
+B regs: 65 runs of 92000: sort+encode 4.85 s, stored 7596764 B (1.27 B a key), merge 3.02 s, distinct 1333201; rss 1153 MiB heap 844 MiB ext 243 MiB
+done rss 1153 MiB heap 844 MiB ext 243 MiB
+
+real	2m9.377s
+user	0m0.031s
+sys	0m0.046s

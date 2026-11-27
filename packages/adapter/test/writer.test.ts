@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { canonicalJson, JsonError, jsonEqual } from "../src/json.ts";
-import type { SegmentDraft } from "../src/types.ts";
+import type { SegmentDraft, Source } from "../src/types.ts";
 import { ContractError } from "../src/validate.ts";
 import { memoryWriter } from "../src/writer.ts";
 
@@ -165,4 +165,23 @@ test("adapter writer: facts out of order, of a key not written, or with an age t
   await rejects(w.write({ ...STREAM, facts: [{ key: "net.example.c", cert_age: 1 }] }, records), "draft", /facts: the fact of "net\.example\.c" names a key no record of the segment has/);
   await rejects(w.write({ ...STREAM, facts: [{ key: "org.example.z", cert_age: 1 }] }, records), "draft", /the fact of "org\.example\.z"/);
   assert.equal(w.written.length, 0);
+});
+
+test("adapter writer: a draft's url is recorded as given, held to its row's urls when the writer has the sources, and refused as draft otherwise", async () => {
+  const row = { id: "example-day", precision: "day", datasets: ["names"], urls: ["https://feed.example.test/"] } as unknown as Source;
+  const w = memoryWriter({ sources: [row] });
+  await w.write({ ...DRAFT, url: "https://feed.example.test/2026-10-26.txt" }, [{ key: "com.example.a" }], new Uint8Array([1]));
+  await w.write({ ...DRAFT, dataset: "domains" }, [{ key: "com.example" }], new Uint8Array([1]));
+  assert.deepEqual(
+    w.written.map((x) => x.url),
+    ["https://feed.example.test/2026-10-26.txt", null],
+  );
+  await rejects(w.write({ ...DRAFT, url: "https://other.example.test/x" }, []), "draft", /is not one of the source's urls nor under one \(https:\/\/feed\.example\.test\/\)/);
+  await rejects(w.write({ ...DRAFT, url: "https://feed.example.test/x?token=abc" }, []), "draft", /the query parameter token names a credential/);
+  await rejects(w.write({ ...DRAFT, source: "example-other", url: "https://feed.example.test/x" }, []), "draft", /the source is not one of the adapter's \(example-day\)/);
+  assert.equal(w.written.length, 2);
+  // Without the sources, the URL rules alone.
+  const bare = memoryWriter();
+  await bare.write({ ...DRAFT, url: "https://anywhere.example.test/x" }, []);
+  await rejects(bare.write({ ...DRAFT, url: "https://u:p@anywhere.example.test/x" }, []), "draft", /a user name or a password/);
 });

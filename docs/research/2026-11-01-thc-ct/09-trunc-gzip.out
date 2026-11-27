@@ -1,0 +1,8 @@
+full file 5478 B: read ok; writer ok; 2800000 bytes out
+truncated by 1 byte (trailer cut): read: TypeError: ; writer: TypeError: ; 2800000 bytes out
+truncated by 8 bytes (no trailer): read: TypeError: ; writer: TypeError: ; 2800000 bytes out
+truncated in half: read: TypeError: ; writer: TypeError: ; 1392183 bytes out
+trailing zero bytes (4 KiB tar-like padding): read: TypeError: Trailing junk found after the end of the compressed stream; writer: TypeError: Trailing junk found after the end of the compressed stream; 2800000 bytes out
+trailing one zero byte: read: TypeError: Trailing junk found after the end of the compressed stream; writer: TypeError: Trailing junk found after the end of the compressed stream; 2800000 bytes out
+real head (64 MiB of a 324 MB file): 67108864 B: read: TypeError: ; writer: TypeError: ; 272903365 bytes out
+node v26.7.0

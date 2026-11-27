@@ -1,0 +1,18 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "HEAD",
+    "url": "https://cs2.ip.thc.org/2026-10-31.txt.gz"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/octet-stream",
+      "content-length": "22571",
+      "last-modified": "Sun, 01 Nov 2026 00:05:02 GMT",
+      "accept-ranges": "bytes"
+    },
+    "body_base64": ""
+  }
+}

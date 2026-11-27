@@ -1,0 +1,3 @@
+Q1 estimate: 288M distinct: filter file 360028124 B (0.34 GiB): TypeError: reader.readRange is not a function
+sum of records after the backfill (M15 + 5 days + oi-nrd): filter file 1881225900 B (1.75 GiB): Fault: the blob sha256:0000000000000000000000000000000000000000000000000000000000000000 of pkgforge-dev/domains.pkgforge.dev/state is 1881225900 B; a layer here is 1 B to 1073741824 B
+LEDGER_MAX_BYTES = 1073741824; BloomFilter.forKeys sizing by sum of records, checked against the real allocator for 10M keys: 12500040 B vs formula 12500040 B

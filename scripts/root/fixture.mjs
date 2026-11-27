@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { artifactType, NAMESPACE, rootTag } from '@domains/ghcr';
 import { writeFeedPack } from '@domains/feed';
-import { FEED_CODEC, IDX_TITLE, MemorySink, NAMES_CODEC, NEW_NAME_CODEC, packAnnotations, partTitle, TIME_IDX_TITLE, timePartTitle } from '@domains/pack';
+import { DOMAINS_CODEC, FEED_CODEC, IDX_TITLE, MemorySink, NAMES_CODEC, NEW_NAME_CODEC, packAnnotations, partTitle, TIME_IDX_TITLE, timePartTitle } from '@domains/pack';
 import { nodeCompress, writePackFiles, writerId } from '@domains/pack/node';
 import { buildRoot, EMPTY_COVERAGE, layerBytes, SOURCES_LAYER_FORMAT, TIER_ANNOTATION } from '@domains/root';
 import { BLOB_HOST, MANIFEST_TYPE, REGISTRY, world } from '@domains/testkit';
@@ -253,7 +253,7 @@ export function registry({ t0 } = {}) {
     // annotations of section 4.2: { digest, ref }. A pack of `feed` or
     // `new-name` holds feed rows, one a second from `start`, newest key first,
     // and with `time` its time copy too (docs/format.md section 14), written by
-    // writeFeedPack of packages/feed; any other dataset holds `names` records.
+    // writeFeedPack of packages/feed. Other fixtures hold names or domains.
     async seedPack(pkg, tag, { dataset = 'names', tier, start, end, sources = ['thc-ct'], psl = PSL_LIVE, records = 3, extra = {}, time = false }) {
       const dir = mkdtempSync(join(tmpdir(), 'root-fixture-pack-'));
       try {
@@ -272,9 +272,10 @@ export function registry({ t0 } = {}) {
           if (pack.time !== null) layers.push(...timeSink.parts().map((bytes, i) => ({ title: timePartTitle(i), bytes })), { title: TIME_IDX_TITLE, bytes: pack.time.idx });
         } else {
           if (time) throw new Error(`fixture seedPack: a ${dataset} pack has no time copy`);
-          const recs = Array.from({ length: records }, (_, i) => ({ key: keyOf(i), flags: 1, sources: [{ bit: 0, first: 298, last: 298 }] }));
+          const recs = Array.from({ length: records }, (_, i) => ({ key: keyOf(i), flags: 1, sources: [{ bit: 0, first: 298, last: 298 }], ...(dataset === 'domains' ? { evidence: [] } : {}) }));
           const out = join(dir, 'pack');
-          summary = (await writePackFiles(recs, out, { codec: NAMES_CODEC, recordsPerBlock: 64 })).summary;
+          const codec = dataset === 'domains' ? DOMAINS_CODEC : NAMES_CODEC;
+          summary = (await writePackFiles(recs, out, { codec, recordsPerBlock: 64 })).summary;
           layers = readdirSync(out)
             .sort((a, b) => (a === 'idx' ? 1 : b === 'idx' ? -1 : a < b ? -1 : 1))
             .map((title) => ({ title, bytes: readFileSync(join(out, title)) }));

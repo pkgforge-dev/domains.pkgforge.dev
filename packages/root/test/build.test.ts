@@ -31,6 +31,70 @@ const refusal = (fn: () => unknown, code: RootErrorCode, re: RegExp) =>
 
 const first = () => buildRoot({ live: null, psl: PSL_LIVE, now: "2026-10-28T00:00:00Z" });
 
+test("build: a segment promoted after week planning holds both higher outputs and stays live through a partial daily publication", () => {
+  const monday = "2026-11-16T00:00:00Z";
+  const saturday = "2026-11-21T00:00:00Z";
+  const sunday = "2026-11-22T00:00:00Z";
+  const now = "2026-11-23T03:50:00Z";
+  const old = { sources: ["oi-nrd"] };
+  const rebuilt = { sources: ["oi-nrd", "thc-ct"], rebuild: 2 };
+  const starts = Array.from({ length: 7 }, (_, i) => `2026-11-${16 + i}T00:00:00Z`);
+  const domains = starts.map((start) => pack("domains", "d", start, old));
+  const feed = starts.map((start) => pack("feed", "d", start, old));
+  const before = buildRoot({ live: null, psl: PSL_LIVE, now, add: [...domains, ...feed] });
+  const segment = pack("domains", "seg", saturday, { end: sunday, sources: ["thc-ct"] });
+  const promoted = buildRoot({ live: live(before), psl: PSL_LIVE, now: "2026-11-23T04:00:00Z", add: [segment] });
+  const proposal = (root: typeof before, replace: Parameters<typeof buildRoot>[0]["replace"]) =>
+    buildRoot({ live: live(root), psl: PSL_LIVE, now: createdOf(Date.parse(root.created) + 1000), replace });
+
+  for (const [dataset, days] of [
+    ["domains", domains],
+    ["feed", feed],
+  ] as const) {
+    const week = { old: days.map((d) => d.pack.manifest), new: pack(dataset, "w", monday, old) };
+    assert.equal(proposal(before, [week]).datasets[dataset].length, 1, "the plan could publish before the new segment arrived");
+    refusal(() => proposal(promoted, [week]), "replace", /must wait for the daily exact feed join of obs:thc-ct/);
+  }
+
+  const fixedDomains = { old: [domains[5].pack.manifest, segment.pack.manifest], new: pack("domains", "d", saturday, rebuilt) };
+  const fixedFeed = { old: [feed[5].pack.manifest], new: pack("feed", "d", saturday, rebuilt) };
+  refusal(() => proposal(promoted, [fixedDomains]), "replace", /needs the same day's exact feed pack/);
+  assert.ok(promoted.datasets.domains.some((p) => p.manifest === segment.pack.manifest));
+  const completed = proposal(promoted, [fixedDomains, fixedFeed]);
+  assert.ok(!completed.datasets.domains.some((p) => p.manifest === segment.pack.manifest));
+  assert.ok(completed.datasets.feed.some((p) => p.tag === "feed-d-20261121-r2"));
+  const merged = proposal(
+    completed,
+    (["domains", "feed"] as const).map((ds) => ({ old: completed.datasets[ds].map((p) => p.manifest), new: pack(ds, "w", monday, rebuilt) })),
+  );
+  assert.deepEqual(
+    merged.datasets.feed.map((p) => p.tag),
+    ["feed-w-2026w47-r2"],
+  );
+
+  // A retry can prove that the existing feed already has the exact rows.
+  const exactNoChange = { old: [feed[5].pack.manifest], new: feed[5] };
+  const retry = dropSuperseded(promoted, [], [exactNoChange, fixedDomains]);
+  assert.deepEqual(retry.replace, [exactNoChange, fixedDomains]);
+  assert.deepEqual(proposal(promoted, retry.replace).datasets.feed, promoted.datasets.feed);
+});
+
+test("build: compaction may consume a quarantined or pre-corpus domains segment without a feed rebuild", () => {
+  const day = "2026-11-21T00:00:00Z";
+  const end = "2026-11-22T00:00:00Z";
+  const now = "2026-11-23T03:50:00Z";
+  const domains = pack("domains", "d", day, { sources: ["oi-nrd"] });
+  const fixed = pack("domains", "d", day, { sources: ["oi-nrd", "thc-ct"], rebuild: 2 });
+  for (const quarantine of [true, false]) {
+    const segment = pack("domains", "seg", day, { end, sources: ["thc-ct"], quarantine });
+    const feed = pack("feed", "d", quarantine ? day : end, { sources: ["oi-nrd"] });
+    const before = buildRoot({ live: null, psl: PSL_LIVE, now, add: [domains, segment, feed] });
+    const rebuilt = buildRoot({ live: live(before), psl: PSL_LIVE, now: "2026-11-23T03:50:01Z", replace: [{ old: [domains.pack.manifest, segment.pack.manifest], new: fixed }] });
+    assert.deepEqual(rebuilt.datasets.domains, [fixed.pack]);
+    assert.deepEqual(rebuilt.datasets.feed, [feed.pack]);
+  }
+});
+
 test("build: the first root is root_seq 1 with no previous, no pack and no as_of, and names the pinned PSL", () => {
   const r = first();
   assert.deepEqual(
@@ -568,9 +632,31 @@ test("pack from manifest: each fact that disagrees with another is refused by na
     "pack",
     /the manifest holds two idx layers/,
   );
-  // A quarantined segment (section 5.8) joins no root.
-  refusal(() => packFromManifest(facts({ "dev.pkgforge.domains.quarantine": "1" })), "pack", /carries dev\.pkgforge\.domains\.quarantine="1": a quarantined pack joins no root/);
+  // Only a segment is quarantined (ruling 23): a day pack that carries the annotation is refused.
+  refusal(() => packFromManifest(facts({ "dev.pkgforge.domains.quarantine": "1" })), "pack", /a pack of tier d lists quarantine; only a segment is quarantined/);
   refusal(() => packFromManifest({ ...facts(), json: { ...facts().json, artifactType: artifactType("ref") } }), "pack", /the artifact type is "application\/vnd\.pkgforge\.domains\.ref\.v1"/);
+});
+
+// The facts of a THC day segment of names, with `change` planted over its annotations.
+function segmentFacts(change: Record<string, string | undefined> = {}): ManifestFacts {
+  const base = facts({
+    "dev.pkgforge.domains.tier": "seg",
+    "dev.pkgforge.domains.source": "thc-ct",
+    ...change,
+  });
+  return { ...base, repo: repoOf("obs"), tag: "thc-ct.20261026.0232f4df0831", json: { ...base.json, artifactType: artifactType("segment") } };
+}
+
+test("pack from manifest: a segment pushed with the quarantine annotation 1 gives an entry marked quarantine: true; another value is refused (ruling 23, D7 of DOM-029)", () => {
+  const plainSeg = packFromManifest(segmentFacts()).pack;
+  assert.equal(Object.hasOwn(plainSeg, "quarantine"), false);
+  const { dataset, pack: q } = packFromManifest(segmentFacts({ "dev.pkgforge.domains.quarantine": "1" }));
+  assert.equal(dataset, "names");
+  assert.equal(q.quarantine, true);
+  assert.deepEqual({ ...q, quarantine: undefined }, { ...plainSeg, quarantine: undefined });
+  for (const v of ["yes", "true", "0", ""]) {
+    refusal(() => packFromManifest(segmentFacts({ "dev.pkgforge.domains.quarantine": v })), "pack", /a quarantined segment is pushed with "1", and no other value is read/);
+  }
 });
 
 // The facts of a synthetic feed day pack that carries a time copy: the key

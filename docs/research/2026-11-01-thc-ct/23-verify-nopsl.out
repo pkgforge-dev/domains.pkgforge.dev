@@ -1,0 +1,21 @@
+verify-pack: ghcr.io/pkgforge-dev/domains.pkgforge.dev/obs:oi-nrd.20261031t120000z.20261031t130000z-d sha256:8d85284259a46d90578dbad448764068188481663bf1a517488f01cb1ab9c55b, read with no credential
+PASS idx 1 part(s), 3 block(s) in 1 page(s), 11911 record(s)
+PASS dataset 2 (domains), as the annotation says
+PASS length the parts hold 143706 B as the index says, 143968 B with the index, as the annotation says
+PASS header 1 part header(s) agree with the index
+PASS inflate 3 of 3 block(s) read whole and inflate to their raw length
+PASS crc 3 of 3 inflated block(s) match the CRC-32 of the index
+PASS record 3 of 3 checked block(s) decode
+PASS count 11911 records, as the index header and the annotation say
+PASS order 2 block boundaries; decodeBlock holds the order inside each block
+PASS unique 2 block boundaries; decodeBlock holds the order inside each block
+PASS bounds the head's key bounds are the first and the last key
+PASS name 11911 keys are reversed names that normalise keeps, under the list 0232f4df0831
+PASS sha256 65defcd5c61f329a4849fe1016806252ac068b999be2aa6c2a00a6cb9c5b51d1
+PASS refind 1002 key(s), the first and the last among them, found by get through the index read by range (seed 1)
+SKIP time no time copy given
+FAIL psl the psl annotation is 1f96bae40adfc22ca2474d7c0099bbcfcb25aefd3e2547b5c2147c0dd2e3ebd9, the pinned list is 0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca
+PASS sources every record carries only oi-nrd
+PASS precision the registry's precision; every time inside the span 2026-10-31T12:00:00Z to 2026-10-31T13:00:00Z
+SKIP volume no volume rule given
+VERDICT fail (2 skipped)

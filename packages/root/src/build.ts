@@ -47,6 +47,7 @@ import {
   type RootJson,
   type RootTier,
   rankOf,
+  type Span,
   TIME_DATASETS,
   type TimeCopy,
   validatePack,
@@ -58,7 +59,9 @@ import {
 // The annotation of a pack's tier (docs/architecture.md section 4.2); the
 // others are the verifier's (VERIFY_ANNOTATIONS of @domains/pack).
 export const TIER_ANNOTATION = "dev.pkgforge.domains.tier";
-// The annotation of a quarantined segment (section 5.8): packFromManifest refuses it.
+// The annotation of a quarantined segment (section 5.8), pushed with the value
+// "1" (DOM-024's Decision of 2026-10-29T06:00Z): packFromManifest marks its
+// entry `quarantine: true` (ruling 23), and refuses any other value.
 export const QUARANTINE_ANNOTATION = "dev.pkgforge.domains.quarantine";
 export const SOURCES_LAYER_FORMAT = "domains.root-sources.v1";
 // The coverage table before DOM-035 writes one: its shape, with nothing measured.
@@ -134,8 +137,10 @@ export interface ManifestFacts {
 // records are the index's, its parts are the sizes its parts table gives, and
 // the first_seen of its first and last key lie inside the pack's span: the
 // half of the bind (timeBindFault of @domains/pack) that readFeed holds before
-// it reads a block of the copy. RootError pack names the first that
-// disagrees, and a manifest that carries the quarantine annotation.
+// it reads a block of the copy. A manifest that carries the quarantine
+// annotation "1" gives an entry marked `quarantine: true` (ruling 23: served,
+// never as new); validatePack then holds it to a segment. RootError pack names
+// the first fact that disagrees, and a quarantine annotation of another value.
 export function packFromManifest(facts: ManifestFacts): NewPack {
   const at = `${facts.repo}:${facts.tag}`;
   const fail = (message: string): RootError => new RootError("pack", `${at}: ${message}`);
@@ -143,10 +148,9 @@ export function packFromManifest(facts: ManifestFacts): NewPack {
   if (j.artifactType !== PACK_TYPE && j.artifactType !== SEGMENT_TYPE) throw fail(`the artifact type is ${JSON.stringify(j.artifactType ?? null)}, not ${PACK_TYPE} or ${SEGMENT_TYPE}`);
   if (typeof facts.digest !== "string" || !DIGEST.test(facts.digest)) throw fail("the manifest digest is not a sha256: digest");
   const a = j.annotations ?? {};
-  // A quarantined segment does not feed `new` (docs/architecture.md section
-  // 5.8), and the root has no field that would say so: it joins no root.
-  if (Object.hasOwn(a, QUARANTINE_ANNOTATION))
-    throw fail(`the manifest carries ${QUARANTINE_ANNOTATION}=${JSON.stringify(a[QUARANTINE_ANNOTATION])}: a quarantined pack joins no root until the operator decides (section 5.8)`);
+  const quarantined = Object.hasOwn(a, QUARANTINE_ANNOTATION);
+  if (quarantined && a[QUARANTINE_ANNOTATION] !== "1")
+    throw fail(`the manifest carries ${QUARANTINE_ANNOTATION}=${JSON.stringify(a[QUARANTINE_ANNOTATION])}; a quarantined segment is pushed with "1", and no other value is read`);
   const A = VERIFY_ANNOTATIONS;
   const get = (key: string): string => {
     const v = a[key];
@@ -222,6 +226,7 @@ export function packFromManifest(facts: ManifestFacts): NewPack {
     key_max: h.keyMax,
     sources,
     psl,
+    ...(quarantined ? { quarantine: true as const } : {}),
   };
   return { dataset, pack: validatePack(dataset, pack, at) };
 }
@@ -352,6 +357,41 @@ function listsOf(root: RootJson | null): Map<string, PackEntry[]> {
 
 const pkgTag = (p: PackEntry): string => `${p.repo.slice(NAMESPACE.length + 1)}:${p.tag}`;
 
+// The segments only a daily exact join can take into feed. A segment entirely
+// before the feed corpus cannot enter it. An empty feed can start here.
+export function pendingFeedSegments(live: Pick<RootJson, "datasets"> & Partial<Pick<RootJson, "corpus_since">>, span: Span): PackEntry[] {
+  const since = live.corpus_since?.feed;
+  return (live.datasets.domains ?? []).filter((p) => p.tier === "seg" && p.quarantine !== true && p.span.start < span.end && p.span.end > span.start && (since === undefined || p.span.end > since));
+}
+
+function consumesFeedSegment(live: RootJson, replacement: Replacement): boolean {
+  const { dataset, pack } = replacement.new;
+  return dataset === "domains" && pack.tier === "d" && pendingFeedSegments(live, pack.span).some((p) => replacement.old.includes(p.manifest));
+}
+
+const sameSpan = (a: Span, b: Span): boolean => a.start === b.start && a.end === b.end;
+
+// Ingest can advance the root between compaction planning and promotion.
+// Apply the dependency to the live root under the root writer. Keep the input
+// live if only one side of a daily exact join was published to GHCR.
+function checkFeedCompaction(live: RootJson, add: readonly NewPack[], replace: readonly Replacement[]): void {
+  const output = [...add, ...replace.map((r) => r.new)];
+  for (const { dataset, pack } of output) {
+    if ((dataset !== "domains" && dataset !== "feed") || rankOf(pack.tier) <= rankOf("d")) continue;
+    const late = pendingFeedSegments(live, pack.span);
+    if (late.length > 0) {
+      throw new RootError("replace", `the ${dataset} promotion of ${pack.tag} must wait for the daily exact feed join of ${late.map(pkgTag).join(", ")}`);
+    }
+  }
+  for (const r of replace) {
+    if (!consumesFeedSegment(live, r)) continue;
+    const { pack } = r.new;
+    if (!output.some((n) => n.dataset === "feed" && n.pack.tier === "d" && sameSpan(n.pack.span, pack.span))) {
+      throw new RootError("replace", `the domains promotion of ${pack.tag} consumes a live feed input and needs the same day's exact feed pack in this promotion`);
+    }
+  }
+}
+
 export function buildRoot(input: BuildInput): RootJson {
   const live = input.live;
   if (live !== null && (typeof live.digest !== "string" || !DIGEST.test(live.digest))) throw new RootError("usage", "the live root's digest is not a sha256: digest");
@@ -371,6 +411,7 @@ export function buildRoot(input: BuildInput): RootJson {
       );
     }
   }
+  if (live !== null) checkFeedCompaction(live.root, input.add ?? [], input.replace ?? []);
   const lists = listsOf(live?.root ?? null);
   const put = (np: NewPack): void => {
     const list = lists.get(np.dataset) ?? [];
@@ -480,7 +521,22 @@ export function dropSuperseded(live: RootJson | null, add: readonly NewPack[], r
     if (why !== null) dropped.push({ tag: np.pack.tag, manifest: np.pack.manifest, why });
     return why === null;
   };
-  return { add: add.filter(keep), replace: replace.filter((r) => keep(r.new)), dropped };
+  const nextAdd = add.filter(keep);
+  const pendingFeedDays = new Set(live === null ? [] : replace.filter((r) => consumesFeedSegment(live, r) && heldBy(live, r.new) === null).map((r) => r.new.pack.span.start));
+  const nextReplace = replace.filter((r) => {
+    const { dataset, pack } = r.new;
+    // An exact rebuild can reproduce the live day byte for byte. Keep that
+    // day as part of the paired replacement when its domains repair is new.
+    const exactSameDay =
+      dataset === "feed" &&
+      pack.tier === "d" &&
+      r.old.length === 1 &&
+      r.old[0] === pack.manifest &&
+      pendingFeedDays.has(pack.span.start) &&
+      (live?.datasets.feed ?? []).some((p) => p.manifest === pack.manifest);
+    return exactSameDay || keep(r.new);
+  });
+  return { add: nextAdd, replace: nextReplace, dropped };
 }
 
 // ---------------------------------------------------------------- the sources layer

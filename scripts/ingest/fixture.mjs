@@ -56,11 +56,11 @@ export function seedList(reg) {
   return reg.seed('ref', refTag('psl', PSL), artifactType('ref'), { 'dev.pkgforge.domains.sha256': PSL }, [{ title: 'public_suffix_list.dat', bytes: PSL_BYTES, mediaType: 'text/plain' }]);
 }
 
-// A first root (root_seq 1) pinning the list, with the packs `add` and the
-// sources.json layer of the fixture registry, as root:latest.
-export function seedRoot(reg, { now = '2026-10-30T07:00:00Z', add = [] } = {}) {
+// A first root (root_seq 1) pinning the list, with the packs `add`, the days
+// `gaps` lists, and the sources.json layer of the fixture registry, as root:latest.
+export function seedRoot(reg, { now = '2026-10-30T07:00:00Z', add = [], gaps = {} } = {}) {
   seedList(reg);
-  const root = buildRoot({ live: null, psl: PSL, now, add });
+  const root = buildRoot({ live: null, psl: PSL, now, add, gaps });
   return { root, digest: reg.seedRoot(root, { sources: sourcesLayer({ registry: loadRegistry(SOURCES), root }) }) };
 }
 

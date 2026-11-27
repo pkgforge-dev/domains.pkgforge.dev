@@ -1,0 +1,44 @@
+KILLED pass encoding ignored (exit 1) by: thc-ct: a Content-Encoding, two gzip members and a located size over maxFileBytes on both hosts write nothing 
+SURVIVED pass content-length ignored (exit 0) 
+KILLED pass short body kept (exit 1) by: thc-ct: a cs2 GET that answers 503, a body shorter than its length, a corrupt gzip or no answer before the dea
+KILLED pass format threshold off (exit 1) by: thc-ct: a valid empty gzip is empty, a CSV column is format, and 2% refused lines write the day with the share
+KILLED pass empty kept (exit 1) by: thc-ct: a valid empty gzip is empty, a CSV column is format, and 2% refused lines write the day with the share
+KILLED pass size unchecked (exit 1) by: thc-ct: a Content-Encoding, two gzip members and a located size over maxFileBytes on both hosts write nothing 
+KILLED pass wildcard flag lost (exit 1) by: thc-ct: the slice writes each distinct name once, its flags 1 for a plain line, 2 for a `*.` line and 3 for bo
+KILLED pass timeout as host fault (exit 1) by: thc-ct: a cs2 GET that answers 503, a body shorter than its length, a corrupt gzip or no answer before the dea
+KILLED pass no identity encoding asked (exit 1) by: thc-ct: every request asks for the file's own bytes: HEAD and GET send Accept-Encoding identity (42.9768ms)
+KILLED pass format before empty swapped (exit 1) by: thc-ct: a valid empty gzip is empty, a CSV column is format, and 2% refused lines write the day with the share
+KILLED lines CR not stripped (exit 1) by: thc-ct: a CRLF line gives its name and counts crlf_lines; a carriage return inside a line is refused as charse
+KILLED lines last line dropped (exit 1) by: thc-ct: a CRLF line gives its name and counts crlf_lines; a carriage return inside a line is refused as charse
+KILLED lines empty not counted (exit 1) by: thc-ct: a public suffix is refused as public-suffix, an address literal as numeric-tld, and the share of refus
+KILLED sorter OR across runs lost (exit 1) by: thc-ct sorter: 10,000 random keys come back as one sort of them, folded, for runs of 3, 7 and 10,001 (1196.067
+KILLED sorter OR within a run lost (exit 1) by: thc-ct sorter: 10,000 random keys come back as one sort of them, folded, for runs of 3, 7 and 10,001 (1453.777
+KILLED sorter equal keys not folded (exit 1) by: thc-ct sorter: 10,000 random keys come back as one sort of them, folded, for runs of 3, 7 and 10,001 (714.8414
+KILLED sorter last run not sealed (exit 1) by: thc-ct sorter: 10,000 random keys come back as one sort of them, folded, for runs of 3, 7 and 10,001 (813.5548
+KILLED day domains keyed by name (exit 1) by: thc-ct: the domains segment holds each registrable domain once, with one ct-first evidence at the day's index 
+KILLED day sources at the next day (exit 1) by: thc-ct: the slice writes each distinct name once, its flags 1 for a plain line, 2 for a `*.` line and 3 for bo
+KILLED day url dropped (exit 1) by: thc-ct: the harness's three runs hold the contract: the same input writes the same bytes, and run 3 from run 1
+KILLED day unfinished skipped (exit 1) by: thc-ct: a candidate left untried for want of a GET stops the run with no late or gap decision (2.7149ms)
+KILLED day cursorAfter unmoved (exit 1) by: thc-ct: the harness's three runs hold the contract: the same input writes the same bytes, and run 3 from run 1
+KILLED locate live order reversed (exit 1) by: thc-ct: the harness's three runs hold the contract: the same input writes the same bytes, and run 3 from run 1
+KILLED locate backfill order reversed (exit 1) by: thc-ct: a backfill of two days, one listed and one past its gap time, writes two segments from the bucket and 
+KILLED locate listing failure absent (exit 1) by: thc-ct: both hosts failing give one fault a host, write nothing and keep the cursor; a listing that fails afte
+KILLED locate 404 a fault (exit 1) by: thc-ct: both hosts failing give one fault a host, write nothing and keep the cursor; a listing that fails afte
+KILLED locate path from the date (exit 1) by: thc-ct: cs2's 404 reads the bucket at the listing's off-month path, through the resolve 302 to the CDN, and th
+KILLED locate off-origin link followed (exit 1) by: thc-ct: the listing follows Link rel=next on its origin, and a page off it, past maxListingPages, not JSON, or
+KILLED locate day twice kept (exit 1) by: thc-ct: the listing follows Link rel=next on its origin, and a page off it, past maxListingPages, not JSON, or
+KILLED locate pages unbounded (exit 1) by: thc-ct: the listing follows Link rel=next on its origin, and a page off it, past maxListingPages, not JSON, or
+KILLED index late boundary (exit 1) by: thc-ct: a day listed nowhere waits before D+1 06:00Z, goes to open at that second, and stays open until D+2 12
+KILLED index gap boundary next (exit 1) by: thc-ct: both hosts failing give one fault a host, write nothing and keep the cursor; a listing that fails afte
+KILLED index gap boundary open (exit 1) by: thc-ct: a day listed nowhere waits before D+1 06:00Z, goes to open at that second, and stays open until D+2 12
+KILLED index budget ignored (exit 1) by: thc-ct: an open day that faults on both hosts spends the run's two GETs, and next waits for the next run (3.45
+KILLED index files per run ignored (exit 1) by: thc-ct: a run writes one day: an open day that holds is written first, and next waits for the next run (95.948
+KILLED index written open day kept (exit 1) by: thc-ct: a run writes one day: an open day that holds is written first, and next waits for the next run (47.806
+KILLED index faulted next goes on (exit 1) by: thc-ct: both hosts failing give one fault a host, write nothing and keep the cursor; a listing that fails afte
+KILLED index backfill gap boundary (exit 1) by: thc-ct: a backfill of two days, one listed and one past its gap time, writes two segments from the bucket and 
+KILLED index host fault stat lost (exit 1) by: thc-ct: a cs2 GET that answers 503, a body shorter than its length, a corrupt gzip or no answer before the dea
+KILLED index open-full guard off (exit 1) by: thc-ct: a late next day while open holds maxOpen days is the fault open-full, and the cursor stays valid (1.76
+KILLED cursor null starts today (exit 1) by: thc-ct: the cursor null starts at the day before ctx.now's; a cursor of another shape, unsorted or over maxOpe
+KILLED cursor open order unchecked (exit 1) by: thc-ct: the cursor null starts at the day before ctx.now's; a cursor of another shape, unsorted or over maxOpe
+KILLED cursor maxOpen unchecked (exit 1) by: thc-ct: the cursor null starts at the day before ctx.now's; a cursor of another shape, unsorted or over maxOpe
+killed 42; survivors: pass content-length ignored

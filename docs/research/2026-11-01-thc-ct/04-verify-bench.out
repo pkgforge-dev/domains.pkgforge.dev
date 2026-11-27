@@ -1,0 +1,20 @@
+PASS idx 1 part(s), 1258 block(s) in 20 page(s), 5151679 record(s)
+SKIP dataset no dataset annotation to compare; the index is dataset 1 (names), which this verifier checks
+SKIP length no bytes annotation to compare; the parts hold 53286457 B as the index says, 53379999 B with the index
+PASS header 1 part header(s) agree with the index
+PASS inflate 1258 of 1258 block(s) read whole and inflate to their raw length
+PASS crc 1258 of 1258 inflated block(s) match the CRC-32 of the index
+PASS record 1258 of 1258 checked block(s) decode
+SKIP count no count annotation to compare; the blocks hold 5151679 records, as the index header says
+PASS order 1257 block boundaries; decodeBlock holds the order inside each block
+PASS unique 1257 block boundaries; decodeBlock holds the order inside each block
+PASS bounds the head's key bounds are the first and the last key
+PASS name 5151679 keys are reversed names that normalise keeps, under the list 0232f4df0831
+SKIP sha256 no sha256 annotation; the raw blocks hash to d3fc69dd07e6443711ae40a954b5cdbbbfda072424f74cfe6249786c3f86fc46
+PASS refind 1002 key(s), the first and the last among them, found by get through the index read by range (seed 1)
+SKIP time no time copy given
+SKIP psl no psl annotation; the names were checked under the list 0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca
+SKIP sources no source annotation
+SKIP precision no source annotation
+SKIP volume no volume rule given
+VERDICT ok (9 skipped)

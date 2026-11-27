@@ -478,9 +478,18 @@ test('run: the writer holds a draft to its source, one segment a source, window 
   inTmp(async (tmp) => {
     const row = { id: 'isc-new', precision: 'day', datasets: ['domains'], parser: 'x/1', urls: ['https://files.example.test/'] };
     const stream = { id: 'oi-cs', precision: 'second', datasets: ['names', 'domains'], parser: 'x/1', urls: ['https://stream.example.test/'] };
-    const fresh = (name, partBytes) => {
+    const fresh = (name, partBytes, fileBytes) => {
       mkdirSync(join(tmp, name));
-      return diskWriter({ dir: join(tmp, name), adapter: 'fixture-file', sources: [row, stream], psl: PSL, run: RUN, fetched: NOW, ...(partBytes === undefined ? {} : { partBytes }) });
+      return diskWriter({
+        dir: join(tmp, name),
+        adapter: 'fixture-file',
+        sources: [row, stream],
+        psl: PSL,
+        run: RUN,
+        fetched: NOW,
+        ...(partBytes === undefined ? {} : { partBytes }),
+        ...(fileBytes === undefined ? {} : { fileBytes }),
+      });
     };
     const day = {
       source: 'isc-new',
@@ -547,8 +556,8 @@ test('run: the writer holds a draft to its source, one segment a source, window 
     assert.deepEqual(pair.segments.map((s) => s.segment.source).sort(), ['isc-new', 'oi-cs', 'oi-nrd', 'whois-nrd']);
     assert.deepEqual(pair.raws.map((r) => r.source).sort(), ['oi-cs', 'oi-nrd']);
     assert.equal(readdirSync(join(tmp, 'pair')).filter((n) => !n.startsWith('.')).length, 6);
-    // A day file is one layer: past partBytes it is raw-size, through write itself.
-    const small = fresh('b', 4);
+    // A day file is one layer: past fileBytes it is raw-size, through write itself (D27 of DOM-029).
+    const small = fresh('b', 4, 4);
     await assert.rejects(small.write(day, rec, new TextEncoder().encode('more than four bytes')), (e) => e instanceof WriteFault && e.code === 'raw-size');
     // A write refused before its tag gives its source, window and dataset back: a smaller file of that day is written.
     assert.equal((await small.write(day, rec, new TextEncoder().encode('one'))).raw.bytes, 3);

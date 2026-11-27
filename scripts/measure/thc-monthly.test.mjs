@@ -171,7 +171,7 @@ test('thc-monthly awk output: keys by name, examples kept whole, an unknown key 
     'family_runs\t3',
     'first_address\t1.2.3.4',
     'last_address\t1.2.3.9',
-    'first_other_field_count\t5\t3\ta,b,c\twith a tab',
+    'first_other_field_count\t5\t3\ta,b,c\twith a tab\r',
     'suspect_count\t1',
     'suspect\t5\ta,b,c\twith a tab',
     'name_odd_count\t0',
@@ -181,8 +181,9 @@ test('thc-monthly awk output: keys by name, examples kept whole, an unknown key 
   const c = parseAwk(out);
   assert.equal(c.records, 5);
   assert.deepEqual(c.fields, { 2: 4, 3: 1 });
-  assert.deepEqual(c.first_other_field_count, { line: 5, fields: 3, text: 'a,b,c\twith a tab' });
+  assert.deepEqual(c.first_other_field_count, { line: 5, fields: 3, text: 'a,b,c\twith a tab\r' });
   assert.deepEqual(c.suspects, [{ line: 5, text: 'a,b,c\twith a tab' }]);
+  assert.deepEqual(parseAwk(out.replaceAll('\n', '\r\n')), c);
   assert.throws(() => parseAwk(`${out}surprise\t1\n`), /unknown key/);
   assert.throws(() => parseAwk(out.replace('end\tok\n', '')), /no closing end/);
   assert.throws(() => parseAwk(out.replace('ipv6\t0\n', '')), /no ipv6/);

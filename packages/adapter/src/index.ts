@@ -1,7 +1,7 @@
 // @domains/adapter: the source registry and the adapter contract (DOM-016).
 //   types         Source, Segment, Cursor, RunResult, AdapterModule, SegmentWriter
 //   validate      validateBits, validateSource(File), buildRegistry, validateRegistry,
-//                 checkCursor, validateSegment
+//                 checkCursor, validateSegment, checkDraftUrl, checkGaps
 //   band          checkBand: the volume verdict of one day, with the step change;
 //                 checkHistory: a source's volume history held to its shape
 //   writer        memoryWriter: the in-memory SegmentWriter of the tests
@@ -39,6 +39,7 @@ export type {
   FactsRef,
   Family,
   Fetch,
+  Gap,
   Json,
   Kind,
   Metric,
@@ -68,6 +69,8 @@ export {
   CONTRACT_CHECKS,
   ContractError,
   checkCursor,
+  checkDraftUrl,
+  checkGaps,
   checkRawMember,
   checkRawMemberBytes,
   checkWindow,
@@ -77,6 +80,7 @@ export {
   isIsoUtc,
   MAX_BIT,
   MAX_CURSOR_BYTES,
+  MAX_GAPS,
   MAX_ID,
   MAX_RAW_MEMBER_BYTES,
   MAX_URLS_CHARS,
@@ -97,5 +101,5 @@ export {
   validateSource,
   validateSourceFile,
 } from "./validate.ts";
-export type { MemoryWriter, Written } from "./writer.ts";
+export type { MemoryWriter, MemoryWriterOptions, Written } from "./writer.ts";
 export { memoryWriter } from "./writer.ts";

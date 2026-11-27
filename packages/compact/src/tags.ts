@@ -39,8 +39,9 @@ export interface TagDecision {
 export interface TagOptions {
   // The dev.pkgforge.domains.sha256 the caller is about to write, 64 lowercase hex digits.
   readonly sha256?: string;
-  // The dev.pkgforge.domains.sha256 annotation of each build, by its tag in lowercase.
-  readonly buildSha256?: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
+  // The dev.pkgforge.domains.sha256 annotation of each build, by its tag in
+  // lowercase. Null means the manifest was read and its other metadata differs.
+  readonly buildSha256?: ReadonlyMap<string, string | null> | Readonly<Record<string, string | null>>;
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -77,7 +78,7 @@ export function tagDecision(dataset: TierDataset, tier: Tier, start: string, exi
       if (typeof sha !== "string" || !HEX64.test(sha)) throw new CompactError("usage", `opts.sha256 is ${JSON.stringify(sha)}, not 64 lowercase hex digits`);
       const held = tags.map((tag) => {
         const v = shaOf(opts?.buildSha256, tag);
-        if (typeof v !== "string") throw new CompactError("usage", `the build ${tag} has no dev.pkgforge.domains.sha256 in opts.buildSha256: read its manifest before a rebuild`);
+        if (typeof v !== "string" && v !== null) throw new CompactError("usage", `the build ${tag} has no dev.pkgforge.domains.sha256 in opts.buildSha256: read its manifest before a rebuild`);
         return v;
       });
       for (let i = tags.length - 1; i >= 0; i -= 1) if (held[i] === sha) return { action: "present", tag: tags[i], builds: tags };

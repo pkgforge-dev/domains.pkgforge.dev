@@ -1,0 +1,16 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/resolve/2026/11/2026-10-31.txt.gz?download=true"
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "location": "https://us.aws.cdn.hf.co/synthetic/2026-10-31.txt.gz",
+      "x-linked-size": "22571"
+    },
+    "body_base64": ""
+  }
+}

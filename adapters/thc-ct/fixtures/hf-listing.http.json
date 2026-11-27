@@ -1,0 +1,15 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "synthetic",
+  "request": {
+    "method": "GET",
+    "url": "https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/tree?recursive=true"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body_base64": "W3sidHlwZSI6ImZpbGUiLCJwYXRoIjoiMjAyNi8xMS8yMDI2LTEwLTMxLnR4dC5neiIsInNpemUiOjIyNTcxLCJ4ZXRIYXNoIjoiOGE5NjBjNGYyOTBmYWFkNDliYWQxYzkxMjMwYTFjMzUyMjc0ZGNlYzlhMDUwNmY1ODgxYjUxYTVjYjU1MzFhNSIsIm10aW1lIjoiMjAyNi0xMS0wMVQwMDowNTowMi4wMDBaIiwibXRpbWVOYW5vcyI6MCwidXBsb2FkZWRBdCI6IjIwMjYtMTEtMDFUMDA6MDU6MTkuNDk4WiIsImNvbnRlbnRUeXBlIjoidGV4dC9wbGFpbiJ9XQ=="
+  }
+}

@@ -9,27 +9,35 @@
 // checked, in the band's metric.
 //
 // A relative band compares `count` with the median of the baseline: the last
-// BASELINE_DAYS accepted days. Above `max` times the median is `hold`. Below
-// `min` times it is `quarantine` for a `day` source and `hold` for any other.
-// An absolute band compares with `min` and `max` themselves.
+// BASELINE_DAYS accepted days. A day below `min` times the median, or above
+// `max` times it, is outside the band, on its side. An absolute band compares
+// with `min` and `max` themselves. Outside the band a `day` source's day is
+// `quarantine` (served, never as new: ruling 23), on either side; any other
+// source's is `hold` (nothing pushed, no history written).
 //
-// The step change. For a `day` source, RESET_AFTER consecutive observed days
-// below the floor reset the baseline to the median of those days, and the last
-// of them is `ok`. The baseline is then those days, the quarantined ones among
-// them included: they are the new level. A missing day neither counts nor breaks
-// the run. THC's volume fell to about a third in early October 2026; without the
-// reset all 21 observed days from 10-05 sit below the floor (band.test.ts
-// replays them from docs/research/measure/DOM-009/result.json).
+// The step change (D26 of DOM-029). For a `day` source, RESET_AFTER consecutive
+// observed days outside a relative band on the same side reset the baseline to
+// the median of those days, and the last of them is `ok`. The baseline is then
+// those days, the quarantined ones among them included: they are the new level.
+// A missing day neither counts nor breaks the run; a day inside the band, or
+// outside it on the other side, ends it. THC's volume fell to about a third in
+// early October 2026; without the reset all 21 observed days from 10-05 sit
+// below the floor (band.test.ts replays them from
+// docs/research/measure/DOM-009/result.json). The reset works upward too: a
+// source that returns to its old volume after a low spell is quarantined for
+// two days and resumes on the third. A held day writes no history, so a held
+// source's baseline never moves: that is why a day source never holds.
 //
 // The history carries the verdicts already stored, not the baselines, so the
 // baseline is rebuilt by replaying the history in day order. A stored verdict
 // is kept as stored: a quarantined day never enters the baseline except as part
 // of a reset run, and an accepted day always does. A quarantined day counts
-// toward a run only when it is below the floor of its own time, so a day
+// toward a run only when it is outside the band of its own time, so a day
 // quarantined for another reason does not trigger a reset.
 //
 // A median of an even number of days is the mean of the middle two. A median of
-// zero makes every non-zero day `hold`: the operator decides.
+// zero puts every non-zero day above the band: a day source resets after
+// RESET_AFTER such days, and a second source holds.
 import type { Band, Precision } from "./types.ts";
 import { bandProblems, isIsoUtc } from "./validate.ts";
 
@@ -44,7 +52,7 @@ export interface BandDay {
 
 export type Verdict = "ok" | "quarantine" | "hold";
 // no-baseline: no accepted day yet; within: inside the band; above, below: outside
-// it; step-change: below the floor, and the last day of a run that resets.
+// it; step-change: outside it, and the last day of a run that resets.
 export type BandReason = "no-baseline" | "within" | "above" | "below" | "step-change";
 
 export interface BandResult {
@@ -105,22 +113,37 @@ function baselineOf(window: readonly number[]): number | null {
   return window.length === 0 ? null : median(window.slice(-BASELINE_DAYS));
 }
 
-// The baseline window and the current run of low days, after the history.
-function replay(days: readonly BandDay[], band: Band, step: boolean, keep: number): { window: number[]; run: number[] } {
+type Side = "below" | "above";
+
+// The side of a relative band `count` lies on against the baseline `base`, or
+// null inside it, or with no baseline.
+function sideOf(count: number, base: number | null, band: Band): Side | null {
+  if (base === null) return null;
+  if (count < band.min * base) return "below";
+  if (count > band.max * base) return "above";
+  return null;
+}
+
+// The baseline window, and the current run of days outside the band with its
+// side, after the history.
+function replay(days: readonly BandDay[], band: Band, step: boolean, keep: number): { window: number[]; run: number[]; side: Side | null } {
   let window: number[] = [];
   let run: number[] = [];
+  let side: Side | null = null;
   for (const d of days) {
-    const base = baselineOf(window);
-    const below = base !== null && d.count < band.min * base;
+    const out = sideOf(d.count, baselineOf(window), band);
     if (d.quarantined) {
-      run = below ? [...run, d.count] : [];
+      if (out === null) run = [];
+      else run = out === side ? [...run, d.count] : [d.count];
+      side = out;
       continue;
     }
-    if (step && below && run.length >= keep) window = [...run.slice(-keep), d.count];
+    if (step && out !== null && out === side && run.length >= keep) window = [...run.slice(-keep), d.count];
     else window.push(d.count);
     run = [];
+    side = null;
   }
-  return { window, run };
+  return { window, run, side };
 }
 
 export function checkBand(count: number, history: readonly BandDay[], band: Band, options: BandOptions): BandResult {
@@ -132,26 +155,25 @@ export function checkBand(count: number, history: readonly BandDay[], band: Band
   if (!(resetAfter === Number.POSITIVE_INFINITY || (Number.isInteger(resetAfter) && resetAfter >= 2))) throw new BandError(`resetAfter ${resetAfter} is not an integer of at least 2, nor Infinity`);
   const days = checkHistory(history);
   const day = options.precision === "day";
-  const low: BandResult = day
-    ? { verdict: "quarantine", reason: "below", median: null, floor: null, ceiling: null, reset: null }
-    : { verdict: "hold", reason: "below", median: null, floor: null, ceiling: null, reset: null };
+  // Outside the band: a day source quarantines on either side, any other holds.
+  const outside = (reason: Side, bounds: { median: number | null; floor: number; ceiling: number }): BandResult => ({ ...bounds, verdict: day ? "quarantine" : "hold", reason, reset: null });
 
   if (!band.relative) {
-    const bounds = { median: null, floor: band.min, ceiling: band.max, reset: null };
-    if (count > band.max) return { ...bounds, verdict: "hold", reason: "above" };
-    if (count < band.min) return { ...low, ...bounds };
-    return { ...bounds, verdict: "ok", reason: "within" };
+    const bounds = { median: null, floor: band.min, ceiling: band.max };
+    if (count > band.max) return outside("above", bounds);
+    if (count < band.min) return outside("below", bounds);
+    return { ...bounds, verdict: "ok", reason: "within", reset: null };
   }
 
-  // A reset takes the resetAfter - 1 low days before this one; with Infinity
-  // no run is ever long enough.
+  // A reset takes the resetAfter - 1 days outside the band before this one, on
+  // its side; with Infinity no run is ever long enough.
   const keep = resetAfter - 1;
-  const { window, run } = replay(days, band, day, keep);
+  const { window, run, side } = replay(days, band, day, keep);
   const base = baselineOf(window);
   if (base === null) return { verdict: "ok", reason: "no-baseline", median: null, floor: null, ceiling: null, reset: null };
-  const bounds = { median: base, floor: band.min * base, ceiling: band.max * base, reset: null };
-  if (count > bounds.ceiling) return { ...bounds, verdict: "hold", reason: "above" };
-  if (count >= bounds.floor) return { ...bounds, verdict: "ok", reason: "within" };
-  if (day && run.length >= keep) return { ...bounds, verdict: "ok", reason: "step-change", reset: median([...run.slice(-keep), count]) };
-  return { ...low, ...bounds };
+  const bounds = { median: base, floor: band.min * base, ceiling: band.max * base };
+  const out = sideOf(count, base, band);
+  if (out === null) return { ...bounds, verdict: "ok", reason: "within", reset: null };
+  if (day && out === side && run.length >= keep) return { ...bounds, verdict: "ok", reason: "step-change", reset: median([...run.slice(-keep), count]) };
+  return outside(out, bounds);
 }

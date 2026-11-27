@@ -688,6 +688,9 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - DOM-020 built the GHCR form, `node scripts/verify-pack.mjs --repo PACKAGE --tag TAG`. So the Prove of DOM-026 runs, and its Found of 2026-10-29T15:30Z in `TODO/ingest.md` records it.
   - The local and GHCR forms share one ranged reader, `readRanged` of `scripts/verify-pack.mjs`. `packages/pack/node/index.ts` keeps its private `readAt`, and DOM-023's Found of 2026-10-29T15:30Z takes it.
   - DOM-022 added the check `time` (`--require time`) and the rule of the reason bits to the `record` check (`docs/format.md` sections 5.4 and 14.2).
+- **Found 2026-11-03T15:09Z (DOM-029 F10 and F12):**
+  - F10. `scripts/verify-pack.mjs --repo obs --tag TAG` with no `--psl` checks the names against `packages/names/test/fixtures/psl-2026-10-27.dat` and fails the `psl` check of every live segment, whose list is `1f96bae4...` (MEASURED 2026-11-01T10:19Z, `23-verify-nopsl.out` of `docs/research/2026-11-01-thc-ct/`). A reader of a live pack pulls `ref:psl-<sha12>` of the pack's `dev.pkgforge.domains.psl` with no credential and passes it as `--psl`, as DOM-029's Prove does (its D32).
+  - F12. The pack writer writes a names pack of no record, and the verifier passes it with `VERDICT ok (13 skipped)` (MEASURED 2026-11-01T10:22Z, `22-empty-verify.out` there). So the verifier does not catch a file that gave no name. DOM-029's adapter faults `empty` when no name is kept and `format` when more than half of the non-empty lines are refused, before it writes. A source whose adapter has no such fault can still push an empty segment.
 
 ## DOM-019 — GHCR packages, tags, the push tool and the anonymous-read check
 
@@ -1091,6 +1094,7 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
 - **Closed 2026-10-29T06:49Z (proven):** `ci.yml` run 40830988277 on 74dd42a ended `success` at 2026-10-29T06:46:32Z on ubuntu-24.04: `ℹ tests 1172`, `ℹ pass 1172`, `ℹ fail 0`, `ℹ skipped 0`, and `gate: all steps passed`.
   - Its log holds `✔ ledger workerd: the hash, the filter and delta bytes, first seen, the corpus state and the aggregation answer in workerd as in Node` and `✔ filter: the false-positive rate on 1,000,000 absent keys is 0.8% to 1.2% at 10 bits a key and 7 hashes`.
   - The gate's three parts held on the wave (the suites; the three lenses and the verification; no deployed surface of this entry).
+- **Found 2026-11-03T15:09Z (DOM-029 F8 and D28):** the filter was sized by the sum of `domains` records. For the estimated 1,504,980,665 records, the first draft's 64-bit rounding gave 1,881,225,864 B (MEASURED 2026-11-01, `16-bench-filter-8.out`). The reader's cap is 1 GiB (`18-cap-check.out`). The built filter rounds to 4,096 bits per partition and folds as described in `docs/format.md` §15.2. The measured bench repeatedly merged one 1.33-million-key pack, so the full runner cost remains [E]. Every daily rebuild scans the live domains packs. The first live daily over THC measures the cost.
 
 ## DOM-022 — The new-domain feed packs
 
@@ -1410,6 +1414,12 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - The three new ones carry `facts.json`. READ 10:36:24Z, a `curl` of each manifest with the token `QQ==`, exit 0 and HTTP 200 each: `part.000`, `idx` and `facts.json`, the last 13,266,284 B, 12,693,805 B and 11,567,133 B.
   - The Decision of 2026-11-01T00:39Z says the cron's late run "finds its work done". This one found the 12 units of 2026-10-25 to 2026-10-28 `present`, and built the three days that became ready after the step `due` dispatched run 41266798719 at 02:50:28Z. The step dispatches once an instant, so such a day waits for the cron's late run or the next instant.
   - The Found of 2026-11-01T00:39Z read 3 late starts of the two daily crons, 5 h 42 min to 6 h 10 min. This is a fourth, at 6 h 27 min. The cron `13 5 * * *` of `ref-refresh.yml` had started no run of 2026-11-01 by 10:36:24Z (`gh run list --workflow ref-refresh.yml`, exit 0); the step `due` dispatched run 41277834331 at 05:40:23Z.
+- **Found 2026-11-03T15:09Z (DOM-029 F6, F7 and F14):** DOM-029 builds four parts of this entry's compaction, and its live Prove depends on them.
+  - F6. `gh workflow run compact-daily.yml -f day=D -f rebuild=true` rebuilds no live day: the plan step gives a live day pack `present`, so it keeps no unit for `rebuild` (READ, the plan step). The absorb replaces it: every plan of `compact-daily.yml` passes `--absorb`, so a live day pack with live segments inside its day is `ready` with them and is built again under the next `-rN` (`planTier`'s option `absorb` of `packages/compact/src/plan.ts`, `docs/architecture.md` section 5.3, "Absorb").
+  - F7. `scripts/compact/day.mjs` built a feed pack for a feed plan of `skip` too (READ, its step 3), which would move the `corpus_since` of `feed` back to 2026-09-01 once THC's days are in the root. A `skip` writes no feed pack and prints `skip feed DAY: REASON`.
+  - F14. The chain meets a row of `DUE` with any run of any status, so a daily that found its day `wait` spent the day's only instant (READ, `dueRow` of `scripts/ingest/chain.mjs`). `compact-daily.yml` gains the cron `35 6 * * *` and its row, beside the rule of expected sources (`EXPECTED`: `thc-ct` until D+1 06:00Z) that this entry's Found of 2026-10-30T08:30Z asked for.
+  - The range input. `compact-daily.yml` takes `from` and `to`, at most 62 days (`MAX_RANGE_DAYS`), never with `day`, and plans the last 7 days beside the range. The day step has 240 minutes and its job 270, for the first ledger built over THC's backfill (DOM-029's D28).
+  - The Prove of the Waiting line. Once DOM-029's range compaction has absorbed THC's segment of 2026-10-26, the live feed day is `feed:feed-d-20261026-r2`. The Prove's `gh workflow run compact-daily.yml -f day=2026-10-26` then finds it `present`, and the anonymous read and `node scripts/verify-pack.mjs --repo feed --tag ...` take the live tag that `node scripts/root/show.mjs --ref latest` names.
 
 ## DOM-031 — The R2 cache with a 5 GB guard
 
@@ -1441,6 +1451,8 @@ Design A is `docs/research/2026-10-27-design-a.md`. Design B is `docs/research/2
   - `curl -sI https://domains.pkgforge.dev/v1/index/latest | grep -i '^x-domains-cache'` prints `x-domains-cache: ghcr` for the first request and `hit` or `r2` for the second.
   - `npx wrangler@4.156.1 r2 bucket info domains-pkgforge-cache` reports a size under 5 GB after a day of traffic.
 - **Correction 2026-11-02T07:42Z (DOM-030, the Operator line):** the line says to record the account name that `whoami` prints. The name carries the account's workers.dev subdomain, and `docs/security/secrets.md` keeps its id out of every document. So the Closed line records that `whoami` named the account that holds the `pkgforge.dev` zone, and never its name or id (`HUMAN.md` section 1, the agent's reading of ruling 14).
+
+- **Found 2026-11-27 (DOM-029, root compatibility):** a cache or warmer that reads datasets from the root needs the validator that accepts named holes. Deploy it from code containing the DOM-029 live-set rule. See architecture §4.6.
 
 ## DOM-038 — The names dataset: tiers and source masks
 

@@ -5,6 +5,7 @@
 //
 //   readRoot(reader, ref)         a root manifest, its three layers checked by digest, root.json validated
 //   readRootJson(reader, ref)     a root manifest and its layer root.json alone, validated as a reader
+//   previousRoots(live, read)    the bounded walk of previous roots for settlement and stale gaps
 //   packFacts(reader, 'PKG:TAG')  the root's entry for a pack: its manifest and its index head, and its time index head when it has a time copy (one range read each)
 //   missingPacks(reader, root)    every pack the root names that GHCR does not hold, by a HEAD by digest
 //   publish({ root, layers, expected, live, rollback }, ctx)   the dated push, the guard, the move, the read-back
@@ -36,7 +37,7 @@ import { IDX_TITLE, PackIndex, TIME_IDX_TITLE } from '@domains/pack';
 import { canonical, checkForward, checkSourcesLayer, packFromManifest, RootError, validateRoot } from '@domains/root';
 import { isNotPublic } from '../ghcr/check-public.mjs';
 import { ATTEMPTS, excerpt, LOGIN_TIMEOUT_S, NOT_FOUND, main as pushMain, READ_TIMEOUT_S, READBACK_ATTEMPTS, RETRY_PAUSE_S } from '../ghcr/push.mjs';
-import { RATE_CAPS_S, RATE_LIMITED, readPaused, underRateLimit } from '../ghcr/rate.mjs';
+import { RATE_CAPS_S, RATE_LIMITED, RateLimitError, readPaused, realSleep, underRateLimit } from '../ghcr/rate.mjs';
 import { blobSource } from '../verify-pack.mjs';
 
 export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, replaced: 3, private: 4, internal: 70 });
@@ -178,6 +179,50 @@ export async function readRootJson(reader, ref, deps = {}) {
     if (e instanceof RootError) throw new Fault(`${at}: ${e.message}`);
     throw e;
   }
+}
+
+// Two days of 30-minute roots (ruling 27). The advance step has five minutes;
+// this leaves time for state reads and writes and bounds pauses for GHCR 429s.
+// At 0.98 s per root (DOM-063) the 96 reads fit in the 120-second budget.
+export const CHAIN_ROOTS = 96;
+export const CHAIN_SECONDS = 120;
+
+// Each step supplies the next edge, or null with the reason in result.stopped.
+// The caller stops once it has decided every candidate. A failed or misordered
+// read supplies no edge, so its root cannot prove a promotion or settlement.
+export function previousRoots(live, readOlder, { max = CHAIN_ROOTS, budgetMs = CHAIN_SECONDS * 1000, clock = Date.now, sleep = realSleep } = {}) {
+  const result = { read: 0, oldest: null, stopped: null };
+  const t0 = clock();
+  const pause = async (ms) => {
+    if (clock() - t0 + ms > budgetMs) throw new RateLimitError(`a pause of ${ms / 1000} s for GHCR's 429 would end past the walk's ${budgetMs / 1000} s`);
+    await sleep(ms);
+  };
+  let newer = live;
+  const stop = (reason) => {
+    result.stopped = reason;
+    return null;
+  };
+  return {
+    result,
+    async step() {
+      if (newer.previous === null) return stop(`root_seq ${newer.root_seq} is the first root`);
+      if (result.read >= max) return stop(`the walk reads at most ${max} roots`);
+      if (clock() - t0 >= budgetMs) return stop(`the walk reads for at most ${budgetMs / 1000} s`);
+      let older;
+      try {
+        older = await readOlder(newer.previous, pause);
+      } catch (e) {
+        if (!(e instanceof Fault || e instanceof GhcrError || e instanceof RateLimitError)) throw e;
+        return stop(`the read of ${newer.previous}, the previous of root_seq ${newer.root_seq}, failed: ${e.message}`);
+      }
+      result.read += 1;
+      result.oldest = older.root_seq;
+      if (older.root_seq !== newer.root_seq - 1) return stop(`the previous of root_seq ${newer.root_seq} is root_seq ${older.root_seq}, not ${newer.root_seq - 1}`);
+      const edge = { newer, older };
+      newer = older;
+      return edge;
+    },
+  };
 }
 
 // `PKG:TAG` as { pkg, repo, tag }, or UsageError.

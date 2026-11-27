@@ -1,0 +1,3 @@
+exactNew: 1333201 day keys over 16 base packs (21331216 has() calls): 49.4 s = 2.318 us per (day key x pack); blocks read 5216; new 1333201
+extrapolated an October day (11.6M keys) over 59 packs: 26.4 min on this desktop (blocks read stay cached per cursor; [E])
+extrapolated a September-size day (40M keys) over 59 packs: 91.2 min on this desktop (blocks read stay cached per cursor; [E])

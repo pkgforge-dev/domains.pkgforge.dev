@@ -97,17 +97,24 @@ export const DISPATCH_PAUSE_S = 15;
 // The runs of the workflow one listing reads: a queue longer than this holds
 // the dispatch anyway.
 export const LIST_LIMIT = 50;
-// The scheduled workflows that due dispatches, each with the one cron of its
-// file (chain.test.mjs holds each row to the file, and every cron of the
-// workflows to a row or a stated exclusion). The only forms lastInstant
-// takes: a fixed minute and hour, and a day of the month, a month and a day
-// of the week that are each `*` or one number.
+// The scheduled workflows that due dispatches, one row for each cron of a
+// file: the crons of each file are the crons of its rows, in order
+// (chain.test.mjs holds the rows to the files, and every cron of the
+// workflows to a row or a stated exclusion). Each row is met alone, by a run
+// created at or after its own last instant. compact-daily.yml has two rows,
+// so a day whose THC file lands after the 01:35 run read it is built at the
+// 06:35 one (D15 of DOM-029); ingest-thc.yml runs each hour, the daily's
+// clock and its retries (D2 of DOM-029). The only forms lastInstant takes: a
+// fixed minute, an hour that is `*` or one number, and a day of the month, a
+// month and a day of the week that are each `*` or one number.
 export const DUE = Object.freeze([
   Object.freeze({ file: 'compact-daily.yml', cron: '35 1 * * *' }),
+  Object.freeze({ file: 'compact-daily.yml', cron: '35 6 * * *' }),
   Object.freeze({ file: 'compact-weekly.yml', cron: '50 3 * * 1' }),
   Object.freeze({ file: 'compact-monthly.yml', cron: '50 4 1 * *' }),
   Object.freeze({ file: 'compact-yearly.yml', cron: '50 5 1 1 *' }),
   Object.freeze({ file: 'ref-refresh.yml', cron: '13 5 * * *' }),
+  Object.freeze({ file: 'ingest-thc.yml', cron: '5 * * * *' }),
 ]);
 // The first instant the chain owes a dispatch for: an earlier instant is never
 // due, since its workflow had no cron yet or its cron ran (the header, due step 1).
@@ -121,6 +128,7 @@ export const DUE_LIST_LIMIT = 20;
 // instant is at most 366 days back, from 1 January of the year after a leap year.
 const INSTANT_DAYS = 366;
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 // The bound of one gh call: a gh that runs longer is killed.
 export const GH_TIMEOUT_MS = 60_000;
 const MAIN = 'refs/heads/main';
@@ -196,23 +204,32 @@ function cronField(cron, text, name, lo, hi, star) {
 // forms of DUE: a cron of another form is UsageError, a defect of the table
 // that its test finds. A day of the month and a day of the week both fixed is
 // refused too: cron then takes a day that matches either, a rule no row needs.
+// A fixed hour steps back a day at a time; an hour of `*` steps back an hour
+// at a time, from the current hour, over the same days.
 export function lastInstant(cron, nowMs) {
   const f = String(cron).split(' ');
   if (f.length !== 5) throw new UsageError(`the cron ${JSON.stringify(cron)} is not 5 fields split by single spaces`);
   const minute = cronField(cron, f[0], 'minute', 0, 59, false);
-  const hour = cronField(cron, f[1], 'hour', 0, 23, false);
+  const hour = cronField(cron, f[1], 'hour', 0, 23, true);
   const dom = cronField(cron, f[2], 'day of the month', 1, 31, true);
   const month = cronField(cron, f[3], 'month', 1, 12, true);
   const dow = cronField(cron, f[4], 'day of the week', 0, 6, true);
   if (dom !== null && dow !== null) throw new UsageError(`the cron ${JSON.stringify(cron)} fixes both the day of the month and the day of the week`);
-  // A day of UTC is DAY_MS long, so the candidates need no calendar fields
-  // (Date.UTC would read a year below 100 as 1900 and more).
-  const today = Math.floor(nowMs / DAY_MS) * DAY_MS;
-  for (let back = 0; back <= INSTANT_DAYS; back++) {
-    const t = today - back * DAY_MS + (hour * 60 + minute) * 60_000;
-    if (t > nowMs) continue;
+  const dayOk = (t) => {
     const day = new Date(t);
-    if ((dom === null || day.getUTCDate() === dom) && (month === null || day.getUTCMonth() + 1 === month) && (dow === null || day.getUTCDay() === dow)) return t;
+    return (dom === null || day.getUTCDate() === dom) && (month === null || day.getUTCMonth() + 1 === month) && (dow === null || day.getUTCDay() === dow);
+  };
+  // A day of UTC is DAY_MS long and an hour HOUR_MS, so the candidates need
+  // no calendar fields (Date.UTC would read a year below 100 as 1900 and more).
+  const today = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  if (hour === null) {
+    const first = today - INSTANT_DAYS * DAY_MS;
+    for (let t = Math.floor(nowMs / HOUR_MS) * HOUR_MS + minute * 60_000; t >= first; t -= HOUR_MS) if (t <= nowMs && dayOk(t)) return t;
+  } else {
+    for (let back = 0; back <= INSTANT_DAYS; back++) {
+      const t = today - back * DAY_MS + (hour * 60 + minute) * 60_000;
+      if (t <= nowMs && dayOk(t)) return t;
+    }
   }
   throw new UsageError(`the cron ${JSON.stringify(cron)} names no instant in the ${INSTANT_DAYS + 1} days up to ${iso(nowMs)}`);
 }

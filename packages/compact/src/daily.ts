@@ -37,7 +37,9 @@
 // sums them over the days of a window.
 //
 // The ledger. The filter is rebuilt from every `domains` pack through the
-// day's end (buildFilter), with as_of that end. The live delta moves to it
+// day's end (buildFilter), with as_of that end, folded toward its distinct
+// keys and under the caller's maxBytes when it can fold (D28 of DOM-029:
+// day.mjs passes the cap a reader of state takes). The live delta moves to it
 // with rebase, which keeps the hashes the new filter lacks: the domains first
 // seen after the day's end, which the hour jobs since added. An empty delta
 // would lose them and the next hours would judge them new again. The live
@@ -314,16 +316,21 @@ export interface RebuiltLedger {
   readonly filter: Uint8Array<ArrayBuffer>;
   readonly delta: Uint8Array<ArrayBuffer>;
   readonly keys: number;
+  // The bits of a partition and the hashes of the filter, after its fold
+  // (D28 of DOM-029): its bits a key are hashes * partitionBits / keys.
+  readonly partitionBits: number;
+  readonly hashes: number;
   // The hashes of the live delta, those the new delta keeps and those the new filter holds.
   readonly before: number;
   readonly kept: number;
 }
 
 // The filter of every domains pack through the day's end, as of that end,
-// and the live delta rebased onto it.
-export async function rebuildLedger(packs: readonly PackReader<DomainRecord>[], day: Day, check: LedgerCheck): Promise<RebuiltLedger> {
+// folded toward its distinct keys and under `maxBytes` of bits when it can
+// fold (buildFilter of @domains/ledger), and the live delta rebased onto it.
+export async function rebuildLedger(packs: readonly PackReader<DomainRecord>[], day: Day, check: LedgerCheck, options: { readonly maxBytes?: number } = {}): Promise<RebuiltLedger> {
   if (check.action !== "write") throw new CompactError("usage", "rebuildLedger: the live filter is this day's already");
-  const filter = await buildFilter(packs, { asOf: day.t1 });
+  const filter = await buildFilter(packs, { asOf: day.t1, ...(options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }) });
   const next = check.live === null ? HashDelta.empty(filter) : check.live.delta.rebase(filter);
-  return { filter: filter.encode(), delta: next.encode(), keys: filter.keys, before: check.live?.delta.size ?? 0, kept: next.size };
+  return { filter: filter.encode(), delta: next.encode(), keys: filter.keys, partitionBits: filter.partitionBits, hashes: filter.hashes, before: check.live?.delta.size ?? 0, kept: next.size };
 }

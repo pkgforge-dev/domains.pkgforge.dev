@@ -104,15 +104,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**63 items. 34 open, 2 partial, 0 blocked, 27 done.**
+**63 items. 33 open, 2 partial, 0 blocked, 28 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 17 | 2 | 0 | 26 | 45 |
+| P1 | 16 | 2 | 0 | 27 | 45 |
 | P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 34 | 2 | 0 | 27 | 63 |
+| **All** | 33 | 2 | 0 | 28 | 63 |
 
 ## Entries
 
@@ -129,7 +129,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-009](ingest.md) | P1 | ingest | **done** | Measure the THC daily job and the 54-day backfill |
 | [DOM-010](ingest.md) | P1 | ingest | **done** | Measure THC's monthly database: columns, CNAMEs and stream speed |
 | [DOM-011](ingest.md) | P1 | ingest | **done** | Measure names-tile availability per log, Geomys's window and the overlap |
-| [DOM-012](ingest.md) | P1 | ingest | partial | Measure when ISC and WhoisDS publish |
+| [DOM-012](ingest.md) | P1 | ingest | **done** | Measure when ISC and WhoisDS publish |
 | [DOM-013](foundation.md) | P1 | foundation | **done** | The workspace, the workerd test harness and CI |
 | [DOM-014](foundation.md) | P1 | foundation | **done** | Workflow policy check and pinned installers |
 | [DOM-015](foundation.md) | P1 | foundation | **done** | Names: normalisation, the Public Suffix List and reversed keys |
@@ -146,7 +146,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-026](ingest.md) | P1 | ingest | **done** | oi-nrd: OpenINTEL's newly registered topics |
 | [DOM-027](ingest.md) | P1 | ingest | open | isc-new: the ISC new-domain feed |
 | [DOM-028](ingest.md) | P2 | ingest | open | whoisds, cenk-nrd and hagezi-nrd: the daily lists |
-| [DOM-029](ingest.md) | P1 | ingest | open | thc-ct: THC's daily dumps and the 54-day backfill |
+| [DOM-029](ingest.md) | P1 | ingest | partial | thc-ct: THC's daily dumps and the 54-day backfill |
 | [DOM-030](serve.md) | P1 | serve | **done** | The Worker: custom domain, GHCR reads, root cache and healthz |
 | [DOM-031](storage.md) | P1 | storage | open | The R2 cache with a 5 GB guard |
 | [DOM-032](serve.md) | P1 | serve | open | GET /v1/new for registrable domains |

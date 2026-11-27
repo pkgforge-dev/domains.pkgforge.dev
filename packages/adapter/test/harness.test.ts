@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { readRecordings } from "../node/files.ts";
 import { HARNESS_USER_AGENT, parseRecording, RECORDING_FORMAT, type Recording, replayFetch, runAdapter } from "../src/harness.ts";
-import type { Source } from "../src/types.ts";
+import type { AdapterModule, Cursor, RunResult, Source } from "../src/types.ts";
 import { ContractError } from "../src/validate.ts";
 import { PSL } from "./fixture-psl.ts";
 import { BASE, DAY_SOURCE, type DayPlant, dayAdapter, FILE_SOURCE, fileAdapter, NETWORK_OPENS } from "./synthetic.ts";
@@ -339,4 +339,53 @@ test("adapter harness: ctx holds the list given as ctx.psl, and a connect that n
   const err = await refuses(runAdapter(probe as never, { recordings: RECORDINGS, psl: PSL, cursor: START, now: NOW }), "unrecorded");
   assert.match(err.message, /^unrecorded: run 1: no recording for connect tcp\.example\.test:7000: no recording$/);
   assert.deepEqual(seen, [PSL]);
+});
+
+// A day source that declares lacking the day its cursor names, while that day
+// is before 2026-10-28, and steps its cursor past it. It fetches nothing. Each
+// mode plants one fault.
+type GapMode = "ok" | "differs" | "stuck" | "again" | "unsorted";
+function gapAdapter(mode: GapMode): AdapterModule {
+  let calls = 0;
+  return {
+    async run(cursor: Cursor) {
+      calls += 1;
+      const next = (cursor as { next: string }).next;
+      const after = { next: next < "2026-10-28" ? new Date(Date.parse(`${next}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) : next };
+      const base: RunResult = { segments: [], cursor: mode === "stuck" ? cursor : after, stats: {}, errors: [] };
+      if (mode === "again") return { ...base, gaps: [{ source: DAY_SOURCE, day: "2026-10-27" }] };
+      if (next >= "2026-10-28") return base;
+      if (mode === "differs") return { ...base, gaps: [{ source: DAY_SOURCE, day: calls === 1 ? next : "2026-10-20" }] };
+      if (mode === "unsorted")
+        return {
+          ...base,
+          gaps: [
+            { source: DAY_SOURCE, day: next },
+            { source: DAY_SOURCE, day: "2026-10-01" },
+          ],
+        };
+      return { ...base, gaps: [{ source: DAY_SOURCE, day: next }] };
+    },
+  };
+}
+const runGaps = (mode: GapMode, sources?: readonly Source[]) =>
+  runAdapter(gapAdapter(mode), { recordings: [], psl: PSL, cursor: { next: "2026-10-27" }, now: NOW, ...(sources === undefined ? {} : { sources }) });
+
+test("adapter harness: a run that declares a gap and steps past it passes all three runs, the gaps held equal between runs 1 and 2", async () => {
+  const day = { id: DAY_SOURCE, precision: "day", datasets: ["names"], urls: [BASE] } as unknown as Source;
+  const { first, again, next } = await runGaps("ok", [day]);
+  assert.deepEqual(first.result.gaps, [{ source: DAY_SOURCE, day: "2026-10-27" }]);
+  assert.deepEqual(again.result.gaps, first.result.gaps);
+  assert.deepEqual(next.result.gaps, undefined);
+  // A gap of a second-precision source, or of a source the adapter does not hold, fails the source check.
+  const err = await refuses(runGaps("ok", [{ ...day, precision: "second" }]), "source");
+  assert.match(err.message, /gaps\[0\] declares 2026-10-27 lacking for example-day, which is second: only a day source lacks a day/);
+  assert.match((await refuses(runGaps("ok", [{ ...day, id: "example-other" }]), "source")).message, /gaps\[0\] is of example-day, which is not one of the adapter's sources/);
+});
+
+test("adapter harness: gaps that differ between two runs fail deterministic; gaps with the cursor kept, or declared again by run 3, fail continuation; unsorted gaps fail result", async () => {
+  assert.match((await refuses(runGaps("differs"), "deterministic")).message, /the gaps differ between two runs with the same inputs/);
+  assert.match((await refuses(runGaps("stuck"), "continuation")).message, /run 1 declared gaps and returned the cursor it started from/);
+  assert.match((await refuses(runGaps("again"), "continuation")).message, /run 3, from run 1's cursor, declared example-day 2026-10-27 lacking again/);
+  assert.match((await refuses(runGaps("unsorted"), "result")).message, /does not sort after/);
 });

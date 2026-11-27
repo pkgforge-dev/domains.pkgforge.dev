@@ -8,7 +8,8 @@
 //   node scripts/root/show.mjs [--ref latest|r-YYYYMMDDtHHMMSSz|sha256:DIGEST] [--json]
 // Prints the root's digest, root_seq, as_of, created, previous, psl and
 // psl_live, then each dataset with its live packs (tier, span, PACKAGE:TAG,
-// records, sources), the `through` of each source, the gaps, and each
+// records, sources, and ` quarantined` after a quarantined segment, ruling
+// 23), the `through` of each source, the gaps, and each
 // manifest a rollback withdrew with its time; with --json, root.json as it was read.
 // Exit codes: 0 read and valid · 1 the root does not validate, or a layer
 // does not hash to its digest · 2 could not run (bad arguments, GHCR
@@ -66,7 +67,7 @@ export function describe(read, ref) {
   for (const [ds, packs] of datasets) {
     const c = r.counts[ds];
     out.push(`dataset ${ds}: ${packs.length} live pack(s), ${c?.records ?? '?'} record(s), corpus_since ${r.corpus_since[ds] ?? '?'}`);
-    for (const p of packs) out.push(`  ${p.tier} ${p.span.start} ${p.span.end} ${pkgTag(p)} ${p.count} ${p.sources.join(',')}`);
+    for (const p of packs) out.push(`  ${p.tier} ${p.span.start} ${p.span.end} ${pkgTag(p)} ${p.count} ${p.sources.join(',')}${p.quarantine === true ? ' quarantined' : ''}`);
   }
   for (const [id, t] of Object.entries(r.through)) out.push(`through ${id} ${t}`);
   for (const [id, days] of Object.entries(r.gaps)) out.push(`gaps ${id} ${days.join(' ')}`);

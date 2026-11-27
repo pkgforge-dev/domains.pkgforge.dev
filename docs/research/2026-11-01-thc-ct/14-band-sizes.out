@@ -1,0 +1,69 @@
+day        MB     verdict     reason       median   floor    ceiling  ratio-to-median
+2026-09-01   915.0 ok          no-baseline       -       -        -  -
+2026-09-02   904.5 ok          within          915     366     3660  0.99
+2026-09-03   955.4 ok          within          910     364     3639  1.05
+2026-09-04   949.3 ok          within          915     366     3660  1.04
+2026-09-05   916.5 ok          within          932     373     3729  0.98
+2026-09-06   908.6 ok          within          917     367     3666  0.99
+2026-09-07   890.1 ok          within          916     366     3663  0.97
+2026-09-08   892.8 ok          within          915     366     3660  0.98
+2026-09-09   947.6 ok          within          909     363     3635  1.04
+2026-09-10   953.1 ok          within          917     367     3666  1.04
+2026-09-11   968.4 ok          within          917     367     3666  1.06
+2026-09-12   980.4 ok          within          917     367     3666  1.07
+2026-09-13   952.2 ok          within          948     379     3791  1.00
+2026-09-14   943.9 ok          within          952     381     3809  0.99
+2026-09-15   842.8 ok          within          952     381     3809  0.89
+2026-09-16   925.4 ok          within          952     381     3809  0.97
+2026-09-17   897.3 ok          within          952     381     3809  0.94
+2026-09-18   885.0 ok          within          944     378     3775  0.94
+2026-09-19   878.7 ok          within          925     370     3702  0.95
+2026-09-20   877.8 ok          within          897     359     3589  0.98
+2026-09-21   875.3 ok          within          885     354     3540  0.99
+2026-09-22   860.5 ok          within          879     351     3515  0.98
+2026-09-23   922.7 ok          within          879     351     3515  1.05
+2026-09-24   923.1 ok          within          879     351     3515  1.05
+2026-09-25   911.3 ok          within          879     351     3515  1.04
+2026-09-26   952.4 ok          within          879     351     3515  1.08
+2026-09-27   914.0 ok          within          911     365     3645  1.00
+2026-09-28   906.5 ok          within          914     366     3656  0.99
+2026-09-29   946.8 ok          within          914     366     3656  1.04
+2026-09-30   985.8 ok          within          923     369     3691  1.07
+2026-10-01   984.0 ok          within          923     369     3692  1.07
+2026-10-02   956.9 ok          within          947     379     3787  1.01
+2026-10-03   445.2 ok          within          952     381     3809  0.47
+2026-10-05   168.0 quarantine  below           947     379     3787  0.18
+2026-10-06   294.3 quarantine  below           947     379     3787  0.31
+2026-10-07   308.1 ok          step-change     947     379     3787  0.33
+2026-10-08   203.2 ok          within          294     118     1177  0.69
+2026-10-10   150.3 ok          within          249     100      995  0.60
+2026-10-11   275.5 ok          within          203      81      813  1.36
+2026-10-12   305.9 ok          within          239      96      957  1.28
+2026-10-13   321.7 ok          within          276     110     1102  1.17
+2026-10-14   230.1 ok          within          294     118     1177  0.78
+2026-10-15    77.0 quarantine  below           276     110     1102  0.28
+2026-10-16   278.3 ok          within          276     110     1102  1.01
+2026-10-17   329.0 ok          within          276     110     1102  1.19
+2026-10-18   327.4 ok          within          278     111     1113  1.18
+2026-10-19   336.9 ok          within          306     122     1224  1.10
+2026-10-20   340.3 ok          within          322     129     1287  1.06
+2026-10-21   327.7 ok          within          327     131     1309  1.00
+2026-10-22   296.3 ok          within          328     131     1311  0.90
+2026-10-23   312.1 ok          within          328     131     1311  0.95
+2026-10-24   292.2 ok          within          328     131     1311  0.89
+2026-10-25   302.5 ok          within          327     131     1309  0.92
+2026-10-26   319.9 ok          within          312     125     1248  1.03
+2026-10-27   348.6 ok          within          312     125     1248  1.12
+2026-10-28   360.8 ok          within          312     125     1248  1.16
+2026-10-29   341.6 ok          within          312     125     1248  1.09
+2026-10-30   331.3 ok          within          320     128     1280  1.04
+2026-10-31   324.5 ok          within          331     133     1325  0.98
+quarantined: 2026-10-05 2026-10-06 2026-10-15 (3)
+
+baseline median at 10-31 = 331.3 MB
+one day at the September size (986 MB)                     2026-11-01 986MB ok/within
+one day at 1.4 GB                                          2026-11-01 1400MB hold/above STOP
+September-size day, then normal days (does the source resume?) 2026-11-01 986MB ok/within | 2026-11-02 330MB ok/within | 2026-11-03 330MB ok/within
+three days near 120 MB (a second step down)                2026-11-01 120MB quarantine/below | 2026-11-02 110MB quarantine/below | 2026-11-03 130MB ok/step-change
+an empty file (0 B)                                        2026-11-01 0MB quarantine/below
+a 20-byte file (an empty gzip)                             2026-11-01 0MB quarantine/below

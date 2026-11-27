@@ -5,6 +5,7 @@
 //   liveState(reader, withToken, deps)   state:latest read with no credential, the token telling absent from private (D21 of DOM-024)
 //   readStateAt(reader, ref, deps)       one state object: its manifest, its layer state.json held to its digest, parsed
 //   heldBy(root, replaced)               the `held` of settle from the live root (docs/architecture.md section 5.4, Owed packs)
+//   gapHeldBy(root)                      the `gapHeld` of settle from the live root: a pending gap day it lists or a live segment covers (D9 of DOM-029)
 //   replacedOnChain(live, owed, readOlder, options)   DOM-063: the owed segments that a root on the chain of
 //                                        previous named and a compaction replaced; chainLine(live, walk) its line
 //   newestFilterTag(tags)                the newest ledger-filter-YYYYMMDD of a tag list
@@ -36,16 +37,18 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DELTA_TITLE } from '@domains/compact';
-import { artifactType, GhcrError, LATEST, LEDGER_DELTA_TAG, ledgerDeltaRunTag, ledgerFilterTag, MANIFEST_LIMIT_BYTES, REGISTRY_HOST, repoOf, segmentSource } from '@domains/ghcr';
+import { artifactType, LATEST, LEDGER_DELTA_TAG, ledgerDeltaRunTag, ledgerFilterTag, MANIFEST_LIMIT_BYTES, REGISTRY_HOST, repoOf, segmentSource } from '@domains/ghcr';
 import { EPOCH_MS, HashDelta } from '@domains/ledger';
-import { packNamed, packSpanning } from '@domains/root';
+import { packNamed, packSpanning, segmentOfDay, spansDay } from '@domains/root';
 import { guard, OWED_DAYS, parseState, STATE_MAX_BYTES, STATE_TITLE, StateError } from '@domains/state';
 import { isNotPublic } from '../ghcr/check-public.mjs';
 import { READBACK_ATTEMPTS, RETRY_PAUSE_S } from '../ghcr/push.mjs';
-import { RateLimitError, readPaused, realSleep } from '../ghcr/rate.mjs';
+import { readPaused } from '../ghcr/rate.mjs';
 import { pushFiles } from '../ingest/pack.mjs';
 import { nowIso } from '../ingest/plan.mjs';
-import { Fault, fetchTag, liveRoot, login, parsePackRef, readBlob, readRoot, tagAs } from '../root/lib.mjs';
+import { Fault, fetchTag, liveRoot, login, parsePackRef, previousRoots, readBlob, readRoot, tagAs } from '../root/lib.mjs';
+
+export { CHAIN_ROOTS, CHAIN_SECONDS } from '../root/lib.mjs';
 
 export const STATE_PKG = 'state';
 export const STATE_REPO = repoOf(STATE_PKG);
@@ -55,8 +58,13 @@ export const FILTER_TAG = /^ledger-filter-([0-9]{8})$/;
 const TITLE = 'org.opencontainers.image.title';
 const HIGHER_TIERS = new Set(['d', 'w', 'm', 'y']);
 const DAY_MS = 86_400_000;
-// A filter is about 1.2 MB a million domains at 10 bits a key [E]; the
-// table's 300 million would be about 375 MB.
+// A filter is about 1.2 MB a million domains at 10 bits a key [E]. buildFilter
+// of packages/ledger sizes it by the sum of the domains packs' records, then
+// folds it toward the distinct keys (D28 of DOM-029): after THC's backfill the
+// sum is about 1.5 billion records over about 300 million distinct keys, a
+// 1.88 GB filter unfolded (docs/research/2026-11-01-thc-ct.md)
+// and about 470 MB after two folds [E]. A filter over this is refused here and
+// by the daily build, which folds below it.
 export const LEDGER_MAX_BYTES = 1024 * 1024 * 1024;
 
 // A move refused because of what the tag holds: the guard's, or a delta of a
@@ -157,24 +165,23 @@ export function heldBy(root, replaced = null) {
   };
 }
 
-// The most roots one walk of replacedOnChain reads: two days of the chain's
-// roots at its interval of 30 minutes (ruling 27), one promotion a run. The
-// walk of a segment that a compaction replaced ends at the root before the
-// replacement, a few roots back when the next run settles it; the first walk
-// after DOM-063's push reads back to root_seq 14 (READ 2026-11-01T15:21:34Z:
-// root_seq 14 of 60 named the 11 owed segments of oi-nrd-fqdn, and 15 named
-// names-d-20261028 in their place).
-export const CHAIN_ROOTS = 96;
-// The longest one walk reads, its pauses for GHCR's 429 among them: the step
-// "Advance the cursors" of ingest-live.yml stops after 5 minutes, and a walk
-// that ran it out would stop the cursors for as long as the segment stays
-// owed. A read pauses up to 600 s for a 429 (readPaused of
-// scripts/ghcr/rate.mjs), so the walk hands each read a sleep that ends the
-// walk in place of a pause past this bound. A root read in 0.98 s, a manifest
-// and root.json from the operator's machine (MEASURED 2026-11-01T17:23:49Z to
-// 17:24:10Z, 20 roots in 19.6 s; DOM-063), so CHAIN_ROOTS fits up to about
-// 1.25 s a root; a slower walk stops here, and its segments stay owed.
-export const CHAIN_SECONDS = 120;
+// The `gapHeld` of settle (@domains/state) from the live root.json (null: no
+// root yet, nothing is held). A pending gap day is `held` when the root's gaps
+// lists it for its source, or when a live segment that carries the source
+// spans the whole day (segmentOfDay of @domains/root): the promotion dropped
+// the day from gaps because that segment covers it (D31 of DOM-029). If a
+// compaction has already replaced it, the walk must find the original
+// segment by tag and digest before it can settle its gap day.
+export function gapHeldBy(root, replacedSegments = []) {
+  return (source, day) => {
+    if (root === null) return null;
+    if (Object.hasOwn(root.gaps, source) && root.gaps[source].includes(day)) return { code: 'held', detail: `root_seq ${root.root_seq} lists ${day} in gaps.${source}` };
+    const seg = segmentOfDay(root, source, day);
+    if (seg !== null) return { code: 'held', detail: `root_seq ${root.root_seq} names obs:${seg.pack.tag}, a segment of ${source} over ${day}` };
+    const replaced = replacedSegments.find((entry) => entry.source === source && spansDay(entry.pack, day));
+    return replaced === undefined ? null : { code: 'held', detail: replaced.detail };
+  };
+}
 
 const spanLabel = (p) => `${p.repo.slice(p.repo.lastIndexOf('/') + 1)}:${p.tag} (tier ${p.tier}, ${p.span.start} to ${p.span.end})`;
 
@@ -211,13 +218,15 @@ const spanLabel = (p) => `${p.repo.slice(p.repo.lastIndexOf('/') + 1)}:${p.tag} 
 // passes through. The `sleep` handed to readOlder pauses with `sleep` and
 // throws RateLimitError in place of a pause that would end past `budgetMs`,
 // so a read's pauses for GHCR's 429 end the walk at its bound.
-// Returns { replaced, candidates, read, oldest, unnamed, open, stopped }:
-// replaced maps each held ref to its detail; oldest is the root_seq of the
+// Returns { replaced, replacedSegments, candidates, read, oldest, unnamed, open, stopped }:
+// replaced maps each held ref to its detail; replacedSegments keeps the
+// entries found in older roots, for gapHeldBy. oldest is the root_seq of the
 // last root read (null when none); unnamed counts the candidates decided
 // owed, open those undecided; stopped is the reason the walk stopped with an
 // undecided candidate, or null.
-export async function replacedOnChain(live, owed, readOlder, { max = CHAIN_ROOTS, budgetMs = CHAIN_SECONDS * 1000, clock = Date.now, sleep = realSleep, now = null } = {}) {
+export async function replacedOnChain(live, owed, readOlder, { now = null, ...limits } = {}) {
   const replaced = new Map();
+  const replacedSegments = [];
   const open = [];
   const nowMs = now === null ? null : Date.parse(now);
   for (const item of owed) {
@@ -230,58 +239,28 @@ export async function replacedOnChain(live, owed, readOlder, { max = CHAIN_ROOTS
     const holder = source === null ? null : packSpanning(live, item.dataset, span, source);
     if (holder !== null) open.push({ item, repo, tag, source, span, holder });
   }
-  const result = { replaced, candidates: open.length, read: 0, oldest: null, unnamed: 0, open: 0, stopped: null };
-  const t0 = clock();
-  const pause = async (ms) => {
-    if (clock() - t0 + ms > budgetMs) throw new RateLimitError(`a pause of ${ms / 1000} s for GHCR's 429 would end past the walk's ${budgetMs / 1000} s`);
-    await sleep(ms);
-  };
-  let newer = live;
+  const candidates = open.length;
+  const walk = previousRoots(live, readOlder, limits);
+  let unnamed = 0;
   while (open.length > 0) {
-    if (newer.previous === null) {
-      result.stopped = `root_seq ${newer.root_seq} is the first root`;
-      break;
-    }
-    if (result.read >= max) {
-      result.stopped = `the walk reads at most ${max} roots`;
-      break;
-    }
-    if (clock() - t0 >= budgetMs) {
-      result.stopped = `the walk reads for at most ${budgetMs / 1000} s`;
-      break;
-    }
-    let older;
-    try {
-      older = await readOlder(newer.previous, pause);
-    } catch (e) {
-      if (!(e instanceof Fault || e instanceof GhcrError || e instanceof RateLimitError)) throw e;
-      result.stopped = `the read of ${newer.previous}, the previous of root_seq ${newer.root_seq}, failed: ${e.message}`;
-      break;
-    }
-    result.read += 1;
-    result.oldest = older.root_seq;
-    if (older.root_seq !== newer.root_seq - 1) {
-      result.stopped = `the previous of root_seq ${newer.root_seq} is root_seq ${older.root_seq}, not ${newer.root_seq - 1}`;
-      break;
-    }
+    const edge = await walk.step();
+    if (edge === null) break;
+    const { newer, older } = edge;
     for (let i = open.length - 1; i >= 0; i -= 1) {
       const c = open[i];
       const named = packNamed(older, c.repo, c.tag);
       if (named !== null && named.pack.manifest === c.item.digest) {
-        replaced.set(
-          c.item.ref,
-          `root_seq ${older.root_seq} named ${c.item.ref} (${c.item.digest}), root_seq ${newer.root_seq} replaced it, and ${spanLabel(c.holder)} holds it in root_seq ${live.root_seq}`,
-        );
+        const detail = `root_seq ${older.root_seq} named ${c.item.ref} (${c.item.digest}), root_seq ${newer.root_seq} replaced it, and ${spanLabel(c.holder)} holds it in root_seq ${live.root_seq}`;
+        replaced.set(c.item.ref, detail);
+        replacedSegments.push({ source: c.source, pack: named.pack, detail });
         open.splice(i, 1);
       } else if (older.created < c.item.since || packSpanning(older, c.item.dataset, c.span, c.source) === null) {
-        result.unnamed += 1;
+        unnamed += 1;
         open.splice(i, 1);
       }
     }
-    newer = older;
   }
-  result.open = open.length;
-  return result;
+  return { replaced, replacedSegments, candidates, unnamed, open: open.length, ...walk.result };
 }
 
 // The line advance.mjs prints for a walk of replacedOnChain, or null when it

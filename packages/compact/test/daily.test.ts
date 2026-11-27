@@ -15,6 +15,7 @@ import {
   FEED_SUSPECT,
   FEED_SUSPECT_CERT,
   FEED_TIME_CODEC,
+  type DomainRecord,
   type FeedRecord,
   MemorySink,
   mergePacks,
@@ -68,7 +69,7 @@ test("daily: basePacks are the live domains packs that end by the day's start; a
 
 test("daily: joinInputs leaves out the inputs the root marks quarantined, and their sources (ruling 23)", () => {
   const a = pack("domains", "seg", "2026-10-27T00:00:00Z", { sources: ["thc-ct"], end: "2026-10-28T00:00:00Z" }).pack;
-  const b = { ...pack("domains", "seg", "2026-10-27T05:00:00Z", { sources: ["oi-nrd"] }).pack, quarantine: 1 };
+  const b = { ...pack("domains", "seg", "2026-10-27T05:00:00Z", { sources: ["oi-nrd"] }).pack, quarantine: true as const };
   const c = pack("domains", "seg", "2026-10-27T06:00:00Z", { sources: ["isc-new"] }).pack;
   assert.deepEqual(joinInputs([a, b], ["A", "B"]), { readers: ["A"], left: [b], sources: ["thc-ct"] });
   // The sources of the inputs read, sorted; oi-nrd's one input is quarantined.
@@ -338,4 +339,19 @@ test("daily: rebuildLedger builds the filter through the day's end and rebases t
   const first = await rebuildLedger([f.base.reader as never], day, checkLedger(null, day));
   assert.equal(HashDelta.decode(first.delta).size, 0);
   await assert.rejects(rebuildLedger([f.base.reader as never], day, checkLedger(ledgerOf([], day.t1), day)), (e: unknown) => e instanceof CompactError && e.code === "usage");
+});
+
+test("daily: the ledger rebuild folds under the caller's bit-array byte limit", async () => {
+  const day = dayOf(D);
+  const rows = Array.from({ length: 2000 }, (_, i) => domain(`com.k${String(i).padStart(5, "0")}`, "thc-ct", dayNo("2026-10-26")));
+  const base = await tierPack("domains", "d", "2026-10-26T00:00:00Z", rows, { sources: ["thc-ct"] });
+  const check = checkLedger(null, day);
+  const uncapped = await rebuildLedger([base.reader as PackReader<DomainRecord>], day, check);
+  assert.equal(uncapped.partitionBits, 4096);
+  const maxBytes = BloomFilter.decode(uncapped.filter).bitBytes / 2;
+  const capped = await rebuildLedger([base.reader as PackReader<DomainRecord>], day, check, { maxBytes });
+  const filter = BloomFilter.decode(capped.filter);
+  assert.equal(filter.partitionBits, 2048);
+  assert.equal(filter.bitBytes, maxBytes);
+  assert.equal(filter.keys, rows.length);
 });

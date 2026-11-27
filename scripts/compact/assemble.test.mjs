@@ -418,6 +418,8 @@ test('assemble cli: no run id, one source with no precision, or inputs under two
       sources: ['thc-ct'],
       psl: [PSL, '0'.repeat(64)],
       records: 0,
+      late: [],
+      absorb: false,
     };
     const planPath = join(dir, 'two-lists.json');
     writeFileSync(planPath, JSON.stringify(planFile({ plan: tier, root: `sha256:${'1'.repeat(64)}`, key: { cuts: [], ranges: 1, bytes: [0], total: 0 }, time: null })));
@@ -490,6 +492,8 @@ test('assemble cli: a plan whose verdict is not ready is exit 2: there is nothin
       sources: ['oi-cs', 'thc-ct'],
       psl: [PSL],
       records: 0,
+      late: [],
+      absorb: false,
     };
     const planPath = join(dir, 'wait.json');
     writeFileSync(planPath, JSON.stringify(planFile({ plan: tier, root: `sha256:${'1'.repeat(64)}`, key: null, time: null })));

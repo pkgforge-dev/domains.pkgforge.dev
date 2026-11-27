@@ -1,0 +1,2 @@
+{"day":"2026-10-15","path":"2026/10/2026-10-15.txt.gz","cs2":{"host":"cs2","bytes":76999576,"sha256":"618048a26c4f215e89b520d8a1268738a32ab96907f60844c25574ecca4b9955"},"bucket":{"host":"hf","bytes":76999576,"sha256":"618048a26c4f215e89b520d8a1268738a32ab96907f60844c25574ecca4b9955"},"equal":true}
+conditions {"at":"2026-11-27T08:22:08.954Z","node":"v26.13.0","platform":"win32"}

@@ -10,11 +10,14 @@ import {
   buildRegistry,
   ContractError,
   checkCursor,
+  checkDraftUrl,
+  checkGaps,
   checkRawMember,
   checkRawMemberBytes,
   factKeysWalk,
   factsProblem,
   MAX_CURSOR_BYTES,
+  MAX_GAPS,
   MAX_ID,
   MAX_RAW_MEMBER_BYTES,
   MAX_URLS_CHARS,
@@ -541,4 +544,92 @@ test("adapter validate: the facts' walk names the first fact whose key no record
   assert.equal(walked(facts("com.f", "com.g"), records), 'the fact of "com.g" names a key no record of the segment has');
   assert.equal(walked(facts("com.c", "com.e"), records), 'the fact of "com.c" names a key no record of the segment has');
   assert.equal(walked(facts("com.b"), []), 'the fact of "com.b" names a key no record of the segment has');
+});
+
+const contract = (fn: () => unknown, check: string, why: RegExp): void => {
+  assert.throws(fn, (e: unknown) => e instanceof ContractError && e.check === check && why.test(e.message), why.source);
+};
+
+test("adapter validate: a run's gaps are absent, or a list of { source, day } sorted by source, then day, one each, at most MAX_GAPS", () => {
+  checkGaps(undefined, "run");
+  checkGaps([], "run");
+  checkGaps(
+    [
+      { source: "thc-ct", day: "2026-10-04" },
+      { source: "thc-ct", day: "2026-10-09" },
+      { source: "thc-ct-b", day: "2026-10-01" },
+    ],
+    "run",
+  );
+  contract(() => checkGaps({}, "run"), "result", /gaps is not a list/);
+  contract(() => checkGaps([{ source: "thc-ct" }], "run"), "result", /gaps\[0\] is not \{ source, day \}/);
+  contract(() => checkGaps([{ source: "thc-ct", day: "2026-10-04", why: "x" }], "run"), "result", /gaps\[0\] is not \{ source, day \}/);
+  contract(() => checkGaps([{ source: "THC", day: "2026-10-04" }], "run"), "result", /gaps\[0\]\.source "THC" is not a source id/);
+  contract(() => checkGaps([{ source: "thc-ct", day: "2026-02-30" }], "run"), "result", /gaps\[0\]\.day "2026-02-30" is not a calendar day/);
+  contract(() => checkGaps([{ source: "thc-ct", day: "2026-10-04T00:00:00Z" }], "run"), "result", /is not a calendar day/);
+  contract(
+    () =>
+      checkGaps(
+        [
+          { source: "thc-ct", day: "2026-10-09" },
+          { source: "thc-ct", day: "2026-10-04" },
+        ],
+        "run",
+      ),
+    "result",
+    /gaps\[1\] thc-ct 2026-10-04 does not sort after thc-ct 2026-10-09/,
+  );
+  contract(
+    () =>
+      checkGaps(
+        [
+          { source: "thc-ct", day: "2026-10-04" },
+          { source: "thc-ct", day: "2026-10-04" },
+        ],
+        "run",
+      ),
+    "result",
+    /does not sort after/,
+  );
+  // Sorted by source first: a shorter id that is a prefix sorts first.
+  contract(
+    () =>
+      checkGaps(
+        [
+          { source: "thc-ct-b", day: "2026-10-01" },
+          { source: "thc-ct", day: "2026-10-04" },
+        ],
+        "run",
+      ),
+    "result",
+    /does not sort after/,
+  );
+  const year = Array.from({ length: MAX_GAPS + 1 }, (_, i) => ({ source: "thc-ct", day: new Date(Date.UTC(2026, 0, 1) + i * 86_400_000).toISOString().slice(0, 10) }));
+  checkGaps(year.slice(0, MAX_GAPS), "run");
+  contract(() => checkGaps(year, "run"), "result", /gaps lists 367 days, over 366/);
+});
+
+test("adapter validate: a draft's url lies under one of its row's urls, with no credential, of at most MAX_URLS_CHARS characters", () => {
+  const urls = ["https://cs2.ip.thc.org/", "https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps"];
+  checkDraftUrl(undefined, urls, "draft");
+  checkDraftUrl("https://cs2.ip.thc.org/2026-10-31.txt.gz", urls, "draft");
+  checkDraftUrl("https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/resolve/2026/11/2026-10-31.txt.gz?download=true", urls, "draft");
+  checkDraftUrl("https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps", urls, "draft");
+  // Without the rows, the URL rules alone.
+  checkDraftUrl("https://example.test/x", null, "draft");
+  contract(() => checkDraftUrl(5, urls, "draft"), "draft", /url is not a string/);
+  contract(() => checkDraftUrl("not-a-url", urls, "draft"), "draft", /url: "not-a-url" is not a URL/);
+  contract(() => checkDraftUrl("ftp://cs2.ip.thc.org/x", null, "draft"), "draft", /url: the scheme ftp: is not one of/);
+  contract(() => checkDraftUrl("https://user:pw@cs2.ip.thc.org/x", null, "draft"), "draft", /credential: a URL holds a user name or a password/);
+  contract(() => checkDraftUrl("https://cs2.ip.thc.org/x#t", null, "draft"), "draft", /credential: a URL holds a fragment/);
+  // A signed CDN URL a redirect led to: under no row, and its signature is a credential parameter.
+  contract(() => checkDraftUrl("https://us.aws.cdn.hf.co/x?X-Amz-Signature=abc", urls, "draft"), "draft", /the query parameter X-Amz-Signature names a credential/);
+  contract(() => checkDraftUrl("https://us.aws.cdn.hf.co/x", urls, "draft"), "draft", /is not one of the source's urls nor under one/);
+  // A neighbour of a row's URL that is not under it.
+  contract(() => checkDraftUrl("https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps-other/x", urls, "draft"), "draft", /nor under one/);
+  contract(() => checkDraftUrl("https://cs2.ip.thc.org.evil.test/x", urls, "draft"), "draft", /nor under one/);
+  contract(() => checkDraftUrl(`https://cs2.ip.thc.org/${"x".repeat(MAX_URLS_CHARS)}`, urls, "draft"), "draft", /characters, over 1024/);
+  for (const bad of ["https://cs2.ip.thc.org/a\nb", "https://cs2.ip.thc.org/a\tb", "https://cs2.ip.thc.org/a b", "https://cs2.ip.thc.org/a\u007f"]) {
+    contract(() => checkDraftUrl(bad, urls, "draft"), "draft", /holds a space or a control character/);
+  }
 });

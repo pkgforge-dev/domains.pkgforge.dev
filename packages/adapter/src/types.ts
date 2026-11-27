@@ -50,8 +50,9 @@ export const METRICS = Object.freeze(["count", "bytes"] as const);
 export type Metric = (typeof METRICS)[number];
 
 // The expected volume of one day (docs/architecture.md section 5.8). Relative:
-// min and max are fractions of the median of recent accepted days (0.4 and 2.5
-// for THC). Absolute: min and max are the metric's own numbers.
+// min and max are fractions of the median of recent accepted days (THC's are
+// 0.4 and 4, adapters/thc-ct/source.json). Absolute: min and max are the
+// metric's own numbers.
 export interface Band {
   readonly metric: Metric;
   readonly min: number;
@@ -183,6 +184,12 @@ export interface SegmentDraft {
   // of the records written (factsProblem and factKeysWalk of validate.ts). An
   // empty list is no facts: no layer, and no Segment.facts.
   readonly facts?: readonly FactRow[];
+  // The URL the raw bytes came from (AGENTS.md absolute 11): one of the source
+  // row's `urls`, or a URL under one (checkDraftUrl of validate.ts), never a
+  // signed URL a redirect led to. The writer stores it as the segment's
+  // annotation dev.pkgforge.domains.url; absent, the annotation is the row's
+  // urls joined by a space.
+  readonly url?: string;
 }
 
 // One record of a segment. Every dataset sorts by `key` (docs/architecture.md
@@ -255,11 +262,23 @@ export interface AdapterFault {
   readonly detail: string;
 }
 
+// A UTC day a `day` source lacks for good: its publisher wrote no file of it
+// before the adapter's deadline (ruling 24). The day reaches the root's `gaps`
+// through the run's proposal and state (docs/architecture.md section 5.4).
+export interface Gap {
+  readonly source: string;
+  // YYYY-MM-DD.
+  readonly day: string;
+}
+
 export interface RunResult {
   readonly segments: readonly Segment[];
   readonly cursor: Cursor;
   readonly stats: Readonly<Record<string, number>>;
   readonly errors: readonly AdapterFault[];
+  // The days the run declared lacking, sorted by source, then day, one each
+  // (checkGaps of validate.ts); absent or empty when it declared none.
+  readonly gaps?: readonly Gap[];
 }
 
 export interface AdapterModule {

@@ -1,0 +1,66 @@
+== 2026-11-01T08:22:34Z HEAD cs2 2026-10-31 with Accept-Encoding gzip
+HTTP/1.1 200 OK
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 01 Nov 2026 08:22:35 GMT
+Content-Type: application/octet-stream
+Content-Length: 324537041
+Last-Modified: Sun, 01 Nov 2026 00:05:02 GMT
+Connection: keep-alive
+ETag: "6ae6822e-13580ad1"
+Accept-Ranges: bytes
+
+== HEAD cs2 2026-10-04 (a day THC never published)
+HTTP/1.1 404 Not Found
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 01 Nov 2026 08:22:36 GMT
+Content-Type: text/html
+Content-Length: 162
+== HEAD cs2 2026-09-30 (before cs2's listing starts)
+HTTP/1.1 404 Not Found
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 01 Nov 2026 08:22:37 GMT
+Content-Type: text/html
+Content-Length: 162
+== HEAD cs2 2026-11-01 (not yet)
+HTTP/1.1 404 Not Found
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 01 Nov 2026 08:22:38 GMT
+Content-Type: text/html
+Content-Length: 162
+== HEAD cs2 path with double slash
+HTTP/1.1 200 OK
+Server: nginx/1.24.0 (Ubuntu)
+Date: Sun, 01 Nov 2026 08:22:39 GMT
+== HF resolve HEAD, Accept-Encoding gzip
+HTTP/1.1 302 Found
+Content-Type: text/plain; charset=utf-8
+Content-Length: 1153
+Connection: keep-alive
+Date: Sun, 01 Nov 2026 08:22:39 GMT
+X-Powered-By: huggingface-moon
+X-Request-Id: Root=1-6ae6f6cf-597e69a2339a2e1810bfede9
+RateLimit: "resolvers";r=2999;t=121
+RateLimit-Policy: "fixed window";"resolvers";q=3000;w=300
+cross-origin-opener-policy: same-origin
+Referrer-Policy: strict-origin-when-cross-origin
+Access-Control-Max-Age: 86400
+Access-Control-Allow-Origin: https://huggingface.co
+Vary: Origin, Accept
+Access-Control-Expose-Headers: X-Repo-Commit,X-Request-Id,X-Error-Code,X-Error-Message,X-Total-Count,ETag,Link,Accept-Ranges,Content-Range,X-Linked-Size,X-Linked-ETag,X-Xet-Hash,RateLimit,RateLimit-Policy
+X-Linked-Size: 324537041
+X-Linked-ETag: "87e3a5485a6fb9948cb48edac7d574e0d0d87ea43c9e2c712f71a1e2a96fb47b"
+X-Xet-Hash: 87e3a5485a6fb9948cb48edac7d574e0d0d87ea43c9e2c712f71a1e2a96fb47b
+Last-Modified: Sun, 01 Nov 2026 00:05:02 GMT
+Link: <https://huggingface.co/api/buckets/IP-THC-ORG/Daily-Cerstream-Dumps/xet-read-token>; rel="xet-auth", <https://cas-server.xethub.hf.co/v1/reconstructions/87e3a5485a6fb9948cb48edac7d574e0d0d87ea43c9e2c712f71a1e2a96fb47b>; rel="xet-reconstruction-info"
+X-Cache: Miss from cloudfront
+Via: 1.1 9ab9eed763c904df40e663d80875e3e2.cloudfront.net (CloudFront)
+X-Amz-Cf-Pop: SIN2-P7
+Alt-Svc: h3=":443"; ma=86400
+X-Amz-Cf-Id: wNm4CsfVLbND1sR4OjRgT67YAK7zXwvuoUfQebw56aU01U-80E-4KA==
+Strict-Transport-Security: max-age=31536000
+
+== HF resolve of the path the Premise says (2026/10/2026-10-31.txt.gz)
+HTTP/1.1 404 Not Found
+Content-Type: text/html; charset=utf-8
+Content-Length: 51974
+Connection: keep-alive

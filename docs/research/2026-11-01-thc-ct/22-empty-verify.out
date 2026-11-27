@@ -1,0 +1,20 @@
+PASS idx 1 part(s), 0 block(s) in 0 page(s), 0 record(s)
+SKIP dataset no dataset annotation to compare; the index is dataset 1 (names), which this verifier checks
+SKIP length no bytes annotation to compare; the parts hold 16 B as the index says, 100 B with the index
+PASS header 1 part header(s) agree with the index
+SKIP inflate the pack holds no block
+SKIP crc the pack holds no block
+SKIP record the pack holds no block
+SKIP count no count annotation to compare; the blocks hold 0 records, as the index header says
+SKIP order the pack holds no block
+SKIP unique the pack holds no block
+PASS bounds the head's key bounds are the first and the last key
+SKIP name the pack holds no block
+SKIP sha256 no sha256 annotation; the raw blocks hash to e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+SKIP refind the pack holds no record to find
+SKIP time no time copy given
+SKIP psl no psl annotation; the names were checked under the list 0232f4df0831911356e8ee1f4d5c3b6b12c0ed3f6bd66b0f81c8ab5d3d49e9ca
+PASS sources the registry holds thc-ct; the pack holds no record to check
+PASS precision the registry's precision; the pack holds no time to bound by 2026-01-01 to the clock 2026-11-01T10:22:53Z
+PASS volume ok (within): 300000000 against the median 310000000 of thc-ct (floor 124000000, ceiling 1240000000)
+VERDICT ok (13 skipped)

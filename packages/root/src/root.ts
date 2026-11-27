@@ -23,7 +23,14 @@
 //                 new-name may list `time`, its time copy (docs/format.md
 //                 section 14): { idx, parts }, the digests and sizes of its
 //                 layers time.idx and time.part.NNN. It is absent when the pack
-//                 has none, never null, and no other dataset lists it
+//                 has none, never null, and no other dataset lists it. A
+//                 segment whose manifest carries dev.pkgforge.domains.quarantine
+//                 lists `quarantine`, the value true (ruling 23, D7 of
+//                 DOM-029): it is served, and counts toward no `new` window
+//                 (isQuarantined of packages/compact). It is absent on every
+//                 other pack, never false, so a root with no quarantined
+//                 segment holds the fields a writer of commit 137a220 knows: a
+//                 writer of an earlier commit refuses a field it does not know
 //   withdrawn     the manifests a rollback took out of the live set, each with
 //                 `at`, the created of the root that withdrew it, sorted by
 //                 manifest; [] in the first root. No live pack names one, and
@@ -44,7 +51,14 @@
 //     pack whose sources it does not share (the THC day segment beside the
 //     hour packs of the live lanes): the one exception to the disjoint spans
 //     of section 4.5. feed and new-name have none: no two of their packs overlap;
-//   - the union of the spans is one interval from corpus_since: no hole;
+//   - the union of the spans is one interval from corpus_since, but for a hole
+//     that `gaps` names (ruling 24, D8 of DOM-029): a hole [reach, start) is
+//     accepted when one source lists in gaps every UTC day the hole touches,
+//     and that source is carried both by a pack that ends at `reach` and by a
+//     pack that starts at `start`. Any other hole is refused as a missed
+//     promotion. So THC's missing 2026-10-04, between two THC day segments,
+//     passes once gaps lists it, and a stream outage on a THC gap day still
+//     fails: the stream's hour packs do not carry thc-ct;
 //   - the packs are listed by span start, then the higher tier first, then
 //     repository and tag, and no manifest digest appears twice in the root.
 //
@@ -62,8 +76,12 @@ export const DATASETS: readonly TierDataset[] = Object.freeze(Object.keys(TIER_D
 // The fields of root.json and of a pack entry, in the order they are written.
 export const ROOT_FIELDS = Object.freeze(["format", "root_seq", "as_of", "created", "previous", "psl", "psl_live", "corpus_since", "gaps", "through", "counts", "datasets", "withdrawn"] as const);
 export const PACK_FIELDS = Object.freeze(["repo", "tag", "tier", "span", "manifest", "pack", "idx", "parts", "count", "key_min", "key_max", "sources", "psl"] as const);
-// A pack entry's optional field, written after `parts` when the pack has a time copy.
-export const PACK_OPTIONAL_FIELDS = Object.freeze(["time"] as const);
+// A pack entry's optional fields: `time`, written after `parts` when the pack
+// has a time copy, and `quarantine`, written last on a quarantined segment.
+export const PACK_OPTIONAL_FIELDS = Object.freeze(["time", "quarantine"] as const);
+// The field of a pack entry that marks a quarantined segment (ruling 23); its
+// one value is true. QUARANTINE_FIELD of packages/compact is this one.
+export const QUARANTINE_FIELD = "quarantine";
 export const TIME_FIELDS = Object.freeze(["idx", "parts"] as const);
 // The datasets whose packs may carry a time copy, and the dataset byte its
 // index holds (docs/format.md section 14.1: 6 for feed, 7 for new-name).
@@ -127,6 +145,8 @@ export interface PackEntry {
   readonly sources: readonly string[];
   // The sha256 of the PSL the pack was built under (dev.pkgforge.domains.psl).
   readonly psl: string;
+  // A quarantined segment's mark (ruling 23); absent on every other pack.
+  readonly quarantine?: true;
 }
 
 export interface DatasetCount {
@@ -313,6 +333,12 @@ export function validatePack(dataset: TierDataset, v: unknown, at: string, stric
     if (i > 0 && !(id > v.sources[i - 1])) throw fail("sources are not sorted and distinct");
   }
   if (typeof v.psl !== "string" || !HEX64.test(v.psl)) throw fail("psl is not 64 lowercase hex digits");
+  if (Object.hasOwn(v, QUARANTINE_FIELD)) {
+    // One shape says quarantined, and absence says not: no false, no 1.
+    if (v[QUARANTINE_FIELD] !== true) throw fail(`${QUARANTINE_FIELD} is ${JSON.stringify(v[QUARANTINE_FIELD])}; a quarantined segment lists true, and any other pack leaves the field out`);
+    // A compaction takes a quarantined segment in and is served whole; the mark is the segment's alone.
+    if (tier !== "seg") throw fail(`a pack of tier ${tier} lists ${QUARANTINE_FIELD}; only a segment is quarantined (ruling 23)`);
+  }
   return v as unknown as PackEntry;
 }
 
@@ -330,8 +356,31 @@ export function comparePacks(a: PackEntry, b: PackEntry): number {
 const shareSource = (a: PackEntry, b: PackEntry): boolean => a.sources.some((s) => b.sources.includes(s));
 const label = (p: PackEntry): string => `${p.repo.slice(NAMESPACE.length + 1)}:${p.tag} (${p.tier}, ${p.span.start} to ${p.span.end})`;
 
+// The UTC days YYYY-MM-DD that [start, end) touches, in order.
+function daysTouched(start: string, end: string): string[] {
+  const days: string[] = [];
+  const last = msOf(end, "a hole's end") - 1000;
+  for (let ms = Math.floor(msOf(start, "a hole's start") / DAY_MS) * DAY_MS; ms <= last; ms += DAY_MS) days.push(isoOf(ms).slice(0, 10));
+  return days;
+}
+
+// Why the hole [reach, start) is not one that `gaps` names (the header's
+// rule, ruling 24), or null when it is. `before` holds the sources of the
+// packs that end at `reach`, `after` those of the packs that start at `start`.
+function holeProblem(reach: string, start: string, before: ReadonlySet<string>, after: ReadonlySet<string>, gaps: Readonly<Record<string, readonly string[]>>): string | null {
+  const days = daysTouched(reach, start);
+  const candidates = [...before].filter((s) => after.has(s)).sort();
+  const listed = (s: string): readonly string[] => (Object.hasOwn(gaps, s) ? (gaps[s] ?? []) : []);
+  const unlisted = candidates.map((s) => [s, days.filter((d) => !listed(s).includes(d))] as const);
+  if (unlisted.some(([, missing]) => missing.length === 0)) return null;
+  const head = `a hole from ${reach} to ${start}: no pack covers it`;
+  if (candidates.length === 0) return `${head}, and no source is carried by a pack on each side of it, so gaps cannot name it (ruling 24)`;
+  return `${head}, and gaps lists not every day it touches for a source carried on both sides (ruling 24): ${unlisted.map(([s, missing]) => `${s} lacks ${missing.join(" ")}`).join("; ")}`;
+}
+
 // The live-set rule over the packs of one dataset (the header lists it).
-export function checkLiveSet(dataset: string, packs: readonly PackEntry[]): void {
+// `gaps` is the root's, which names the holes the rule accepts.
+export function checkLiveSet(dataset: string, packs: readonly PackEntry[], gaps: Readonly<Record<string, readonly string[]>> = {}): void {
   const fail = (message: string): RootError => new RootError("live-set", `datasets.${dataset}: ${message}`);
   const segmentsMayOverlap = (SEGMENT_OVERLAP as readonly string[]).includes(dataset);
   for (let i = 1; i < packs.length; i += 1) {
@@ -340,11 +389,21 @@ export function checkLiveSet(dataset: string, packs: readonly PackEntry[]): void
     if (c > 0) throw fail(`${label(packs[i])} is listed after ${label(packs[i - 1])}: the packs are listed by span start, then the higher tier first`);
   }
   let reach = packs.length > 0 ? packs[0].span.end : "";
+  // The sources of the packs whose span ends at `reach`.
+  let atReach = new Set<string>(packs.length > 0 ? packs[0].sources : []);
   for (let i = 0; i < packs.length; i += 1) {
     const a = packs[i];
     if (i > 0) {
-      if (a.span.start > reach) throw fail(`a hole from ${reach} to ${a.span.start}: no pack covers it`);
-      if (a.span.end > reach) reach = a.span.end;
+      if (a.span.start > reach) {
+        const after = new Set<string>();
+        for (let j = i; j < packs.length && packs[j].span.start === a.span.start; j += 1) for (const s of packs[j].sources) after.add(s);
+        const problem = holeProblem(reach, a.span.start, atReach, after, gaps);
+        if (problem !== null) throw fail(problem);
+      }
+      if (a.span.end > reach) {
+        reach = a.span.end;
+        atReach = new Set(a.sources);
+      } else if (a.span.end === reach) for (const s of a.sources) atReach.add(s);
     }
     for (let j = i + 1; j < packs.length && packs[j].span.start < a.span.end; j += 1) {
       const b = packs[j];
@@ -472,7 +531,7 @@ export function validateRoot(json: unknown, options: ValidateOptions = {}): Root
     if (typeof h !== "string" || !HEX64.test(h)) throw new RootError("psl", `psl_live[${i}] is not 64 lowercase hex digits`);
     if (i > 0 && !(h > json.psl_live[i - 1])) throw new RootError("psl", "psl_live is not sorted and distinct");
   }
-  gapsOf(json.gaps);
+  const gaps = gapsOf(json.gaps);
   const withdrawn = withdrawnOf(json.withdrawn, createdMs, strict);
   for (const k of ["corpus_since", "through", "counts"] as const) if (!isObj(json[k])) throw schema(`${k} is not an object`);
   if (!isObj(json.datasets)) throw schema("datasets is not an object");
@@ -495,7 +554,7 @@ export function validateRoot(json: unknown, options: ValidateOptions = {}): Root
       if (out !== undefined) throw new RootError("withdrawn", `${at} names the manifest ${p.manifest}, which withdrawn lists (at ${out}): a withdrawn pack is not live`);
       digests.set(p.manifest, at);
     }
-    checkLiveSet(ds, list);
+    checkLiveSet(ds, list, gaps);
     known[ds] = list;
   }
   const d = derive(known);

@@ -76,6 +76,7 @@ node() {
       stub_rc "$f.rc" ;;
     scripts/ghcr/tags.mjs) if [ -f "$STUB/tags.txt" ]; then cat "$STUB/tags.txt"; fi; stub_rc "$STUB/tags.rc" ;;
     scripts/compact/assemble.mjs) cat "$STUB/assemble.txt"; stub_rc "$STUB/assemble.rc" ;;
+    scripts/compact/day.mjs) if [ -f "$STUB/day.txt" ]; then cat "$STUB/day.txt"; fi; stub_rc "$STUB/day.rc" ;;
     scripts/verify-pack.mjs) stub_rc "$STUB/verify.rc" ;;
     scripts/ghcr/push.mjs) stub_rc "$STUB/push.rc" ;;
     scripts/state/move.mjs) stub_rc "$STUB/move.rc" ;;
@@ -186,8 +187,8 @@ const showTxt = ({ digest = `sha256:${hex('a')}`, psl = PIN } = {}) =>
 const NS = 'pkgforge-dev/domains.pkgforge.dev';
 const entry = (repo, tag) => ({ repo: `${NS}/${repo}`, tag });
 // The fields of a plan file that the steps read (packages/compact, planFile).
-const planJson = (dataset, tag, start, { verdict = 'ready', ranges = 1, psl = [PIN], inputs = [], excluded = [], sources = ['ct-live', 'thc-ct'] } = {}) =>
-  `${JSON.stringify({ verdict, dataset, tag, span: { start, end: start }, key: verdict === 'ready' ? { ranges } : null, psl, inputs, excluded, sources })}\n`;
+const planJson = (dataset, tag, start, { verdict = 'ready', ranges = 1, psl = [PIN], inputs = [], excluded = [], sources = ['ct-live', 'thc-ct'], late = [], absorb = false } = {}) =>
+  `${JSON.stringify({ verdict, dataset, tag, span: { start, end: start }, key: verdict === 'ready' ? { ranges } : null, psl, inputs, excluded, sources, late, absorb })}\n`;
 const unitsOf = (r) => JSON.parse(r.output.units).include;
 
 // The plan step of `file` for the one unit `span` (the dispatched form), with
@@ -198,7 +199,7 @@ function plan(file, span, plans = {}, show = {}) {
     stub[`plan/${dataset}.${span}.json`] = p.json;
     if (p.rc !== undefined) stub[`plan/${dataset}.${span}.rc`] = String(p.rc);
   }
-  return runStep(file, 'plan', 'Plan the units', { env: { SPAN: span }, stub });
+  return runStep(file, 'plan', 'Plan the units', { env: { SPAN: span, FROM: '', TO: '' }, stub });
 }
 
 const MONDAY = '2026-10-05';
@@ -296,7 +297,7 @@ test('workflow shell: at most MAX_LEGS legs in a run, 256 kept and 257 deferred,
       const day = new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
       stub[`plan/names.${day}.json`] = planJson('names', `names-d-${day.replaceAll('-', '')}`, `${day}T00:00:00Z`, { ranges });
     }
-    return runStep(file, 'plan', 'Plan the units', { env: { SPAN: '', LOOKBACK: '2' }, stub });
+    return runStep(file, 'plan', 'Plan the units', { env: { SPAN: '', FROM: '', TO: '', LOOKBACK: '2' }, stub });
   };
   const cases = ALL.flatMap((file) => [55, 56, 57].map((second) => [file, second]));
   const runs = await each(cases, ([file, second]) => run(file, second));
@@ -352,7 +353,7 @@ test('workflow shell: the daily makes a day leg for a ready domains unit, keeps 
     { unit: 'domains-d-20261026', kind: 'day', day: DAY },
     { unit: 'feed-d-20261026', kind: 'day', day: DAY },
   ]);
-  assert.deepEqual(JSON.parse(both.output.days).include, [{ day: DAY }]);
+  assert.deepEqual(JSON.parse(both.output.days).include, [{ day: DAY, rebuild: '' }]);
   assert.equal(both.output.dayed, 'true');
   assert.equal(both.output.merged, 'false');
   assert.deepEqual(unitsOf(present), [{ unit: 'feed-d-20261026', kind: 'day', day: DAY }], 'a live domains day builds its feed');
@@ -449,9 +450,8 @@ const replace = (file, text) =>
 // The plan file packages/compact writes (planTier, then planFile, as
 // scripts/compact/plan.mjs does) for the feed week 2026w41 whose day
 // 2026-10-06 is one quarantined segment of obs: the week replaces it and does
-// not read it (ruling 23). The entries are synthetic (packages/root/test/helpers.ts).
-// plan.mjs is not run: validateRoot refuses the field `quarantine` until
-// DOM-029 adds it, so no root.json can carry the mark yet.
+// not read it (ruling 23). The entries are synthetic (packages/root/test/helpers.ts);
+// scripts/compact/plan.test.mjs reads the same mark from a root.json file.
 const SEG = { ...pack('feed', 'seg', '2026-10-06T00:00:00Z', { end: '2026-10-07T00:00:00Z', sources: ['oi-nrd'] }).pack, quarantine: true };
 function quarantinedWeek() {
   const day = (d) => pack('feed', 'd', `2026-10-${String(d).padStart(2, '0')}T00:00:00Z`).pack;
@@ -553,7 +553,7 @@ test('workflow shell: verify names every check to compare, time for a feed pack 
 // The daily push step over `days`, each { day, planned, replaced }: its
 // domains unit is planned this run when `planned`, and its leg wrote its
 // replacement when `replaced`. `rc` is the exit of every push.mjs call.
-function pushFiltersOf(days, rc = 0) {
+function pushFiltersOf(days, rc = 0, heldDays = '') {
   const files = {};
   for (const { day, planned, replaced } of days) {
     const compact = day.replaceAll('-', '');
@@ -563,7 +563,7 @@ function pushFiltersOf(days, rc = 0) {
     if (planned) files[`runner/plans/domains-d-${compact}.json`] = planJson('domains', `domains-d-${compact}`, `${day}T00:00:00Z`);
     if (replaced) files[`runner/replace/domains-d-${compact}.txt`] = `replace names:x=names:domains-d-${compact}\n`;
   }
-  return runStep('compact-daily.yml', 'push', 'Push the ledger filters', { env: { REGISTRY_TOKEN: 'none' }, files, stub: rc === 0 ? {} : { 'push.rc': String(rc) } });
+  return runStep('compact-daily.yml', 'push', 'Push the ledger filters', { env: { REGISTRY_TOKEN: 'none', HELD_DAYS: heldDays }, files, stub: rc === 0 ? {} : { 'push.rc': String(rc) } });
 }
 const pushFilters = (planned, replaced) => pushFiltersOf([{ day: DAY, planned, replaced }]);
 const pushed = (r, tag = 'ledger-filter-20261026') => r.calls.some((c) => c.startsWith(`node scripts/ghcr/push.mjs state ${tag} `));
@@ -654,6 +654,41 @@ test('workflow shell: gather promotes nothing when no leg wrote a replacement', 
   }
 });
 
+test('workflow shell: a missing exact feed or domains upload holds only its paired day, including its ledger filter', opts, async () => {
+  const domains = 'domains-d-20261026';
+  const feed = 'feed-d-20261026';
+  const domainsReplacement = `names:${domains},obs:y=names:${domains}-r2`;
+  const feedReplacement = `feed:${feed}=feed:${feed}-r2`;
+  const gather = (domainOut, feedOut, quarantine = false) =>
+    runStep('compact-daily.yml', 'gather', 'Join the replacements', {
+      files: {
+        [`runner/plans/${domains}.json`]: planJson('domains', domains, D, { inputs: [{ tier: 'seg', ...(quarantine ? { quarantine: true } : {}) }] }),
+        [`runner/plans/${feed}.json`]: planJson('feed', feed, D),
+        'runner/replace/names-d-20261026.txt': 'add names:names-d-20261026\n',
+        ...(domainOut ? { [`runner/replace/${domains}.txt`]: `replace ${domainsReplacement}\n` } : {}),
+        ...(feedOut ? { [`runner/replace/${feed}.txt`]: `replace ${feedReplacement}\n` } : {}),
+      },
+    });
+  const [noFeed, noDomains, both, quarantined] = await Promise.all([gather(true, false), gather(false, true), gather(true, true), gather(true, false, true)]);
+  for (const held of [noFeed, noDomains]) {
+    assert.equal(held.status, 0, held.text);
+    assert.equal(held.output.add, 'names:names-d-20261026 ');
+    assert.equal(held.output.replace, '');
+    assert.equal(held.output.held_days, '20261026');
+    assert.match(held.text, /wait for both verified day packs before promotion/);
+  }
+  assert.equal(both.status, 0, both.text);
+  assert.equal(both.output.held_days, '');
+  assert.equal(both.output.replace, `${domainsReplacement} ${feedReplacement} `);
+  assert.equal(quarantined.output.held_days, '');
+  assert.match(quarantined.output.replace, /domains-d-20261026-r2/);
+
+  const state = await pushFiltersOf([{ day: DAY, planned: true, replaced: true }], 0, noFeed.output.held_days);
+  assert.equal(state.status, 0, state.text);
+  assert.ok(!pushed(state));
+  assert.equal(state.output.newest, '');
+});
+
 // The conditions no bash run reaches, held by name: each is one operand a
 // review deleted from a copy and saw every check pass.
 const conds = (v) => String(v ?? '');
@@ -669,8 +704,8 @@ test('workflow shell: the job and step conditions keep the order plan, verify, p
     assert.equal(jobs.gather.needs, 'assemble', file);
   }
   const { push } = workflow('compact-daily.yml').jobs;
-  assert.deepEqual(push.needs, ['plan', 'day', 'assemble']);
-  for (const c of [MAIN, "needs.day.result == 'success'", "needs.assemble.result != 'skipped'"]) assert.ok(conds(push.if).includes(c), `push: ${c}`);
+  assert.deepEqual(push.needs, ['plan', 'day', 'assemble', 'gather']);
+  for (const c of [MAIN, "needs.day.result == 'success'", "needs.assemble.result != 'skipped'", "needs.gather.result == 'success'"]) assert.ok(conds(push.if).includes(c), `push: ${c}`);
   // The delta moves after the filters, in the same job, and only when a filter was pushed or present.
   const names = push.steps.map((s) => s.name);
   assert.deepEqual(
@@ -688,4 +723,200 @@ test('workflow shell: the job and step conditions keep the order plan, verify, p
   // The day leg reads state with no credential, and only the two steps of push hold the token.
   const tokened = Object.entries(workflow('compact-daily.yml').jobs).flatMap(([id, job]) => (job.steps ?? []).filter((s) => s.env?.REGISTRY_TOKEN).map((s) => `${id}: ${s.name}`));
   assert.deepEqual(tokened, ['assemble: Push the pack', 'push: Push the ledger filters', 'push: Move ledger-delta']);
+});
+
+// ---- DOM-029: the range inputs (D18), --absorb on every plan and the day
+// legs' rebuild lists (D17), the late warning and the second cron (D15), the
+// kept feed day (L8) and the day step's time (D28).
+
+// The plan step of the daily dispatched with `env` (SPAN, FROM, TO, and any
+// workflow env it overrides). No plan file is given, so every unit waits, and
+// the calls of plan.mjs give the days planned, in order.
+const rangePlan = (env) => runStep('compact-daily.yml', 'plan', 'Plan the units', { env: { SPAN: '', FROM: '', TO: '', ...env }, stub: { 'show.txt': showTxt() } });
+// The day of each plan of names, in the order planned: a day planned twice shows twice.
+const plannedDays = (r) => r.calls.filter((c) => c.startsWith('node scripts/compact/plan.mjs --dataset names ')).map((c) => c.match(/--span (\S+)/)[1].slice(0, 10));
+const ymd = (ms) => new Date(ms).toISOString().slice(0, 10);
+// The days `n` days back from the clock, as GNU date's "today - n days" gives them.
+const back = (n) => ymd(Date.now() - n * 86_400_000);
+const LOOKBACK_DAYS = () => [7, 6, 5, 4, 3, 2, 1].map(back);
+
+test('workflow shell: the daily plans the range of from and to, inclusive, with the last LOOKBACK days, each day once and oldest first', opts, async () => {
+  const [far, near, bound] = await Promise.all([
+    rangePlan({ FROM: '2026-09-29', TO: '2026-10-02' }),
+    // A range that overlaps the last LOOKBACK days: each day is planned once.
+    rangePlan({ FROM: back(9), TO: back(5) }),
+    // MAX_RANGE_DAYS days are taken; the workflow's own bound is held by name below.
+    rangePlan({ FROM: '2026-09-01', TO: '2026-09-03', MAX_RANGE_DAYS: '3' }),
+  ]);
+  assert.equal(far.status, 0, far.text);
+  assert.deepEqual(plannedDays(far), ['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', ...LOOKBACK_DAYS()]);
+  assert.match(far.text, /^the range 2026-09-29 to 2026-10-02: 4 day\(s\), and the last 7 days$/m);
+  assert.equal(near.status, 0, near.text);
+  assert.deepEqual(plannedDays(near), [9, 8, 7, 6, 5, 4, 3, 2, 1].map(back));
+  assert.equal(bound.status, 0, bound.text);
+  assert.deepEqual(plannedDays(bound).slice(0, 3), ['2026-09-01', '2026-09-02', '2026-09-03']);
+  // Every unit of every day is planned with --absorb, and each dataset of a day in order.
+  const calls = far.calls.filter((c) => c.startsWith('node scripts/compact/plan.mjs'));
+  assert.equal(calls.length, 3 * 11);
+  for (const c of calls) assert.match(c, / --absorb --out /, c);
+  assert.deepEqual(
+    calls.slice(0, 3).map((c) => c.match(/--dataset (\S+)/)[1]),
+    ['names', 'domains', 'feed'],
+  );
+  // The day dispatched alone, and the schedule's days, are planned with --absorb too.
+  const [one, scheduled] = await Promise.all([rangePlan({ SPAN: DAY }), rangePlan({})]);
+  assert.deepEqual(plannedDays(one), [DAY]);
+  assert.deepEqual(plannedDays(scheduled), LOOKBACK_DAYS());
+  for (const r of [one, scheduled]) for (const c of r.calls.filter((x) => x.includes('plan.mjs'))) assert.match(c, / --absorb /, c);
+  assert.equal(workflow('compact-daily.yml').env.MAX_RANGE_DAYS, '62');
+});
+
+test('workflow shell: a range off its form, longer than MAX_RANGE_DAYS, ending before it starts, half given or beside day is exit 2 before the root is read', opts, async () => {
+  const cases = [
+    [{ FROM: '2026-09-01', TO: '2026-11-02' }, /the range from 2026-09-01 to 2026-11-02 is 63 days, above MAX_RANGE_DAYS \(62\)/],
+    [{ FROM: '2026-09-01', TO: '2026-09-04', MAX_RANGE_DAYS: '3' }, /is 4 days, above MAX_RANGE_DAYS \(3\)/],
+    [{ FROM: '2026-10-31', TO: '2026-10-01' }, /the range from 2026-10-31 to 2026-10-01 ends before it starts/],
+    [{ FROM: '2026-09-01' }, /from and to come together, each a calendar day YYYY-MM-DD/],
+    [{ TO: '2026-09-01' }, /from and to come together/],
+    [{ FROM: '2026-02-30', TO: '2026-03-01' }, /from and to come together/],
+    [{ FROM: '2026-9-01', TO: '2026-10-01' }, /from and to come together/],
+    [{ FROM: '2026-09-01', TO: '2026-10-01; true' }, /from and to come together/],
+    [{ SPAN: DAY, FROM: '2026-09-01', TO: '2026-09-02' }, /the day input and the from and to inputs choose the days two ways/],
+    [{ SPAN: DAY, TO: '2026-09-02' }, /choose the days two ways/],
+    [{ SPAN: '2026-10-2' }, /the day input is not YYYY-MM-DD/],
+  ];
+  const runs = await each(cases, ([env]) => rangePlan(env));
+  for (const [i, r] of runs.entries()) {
+    assert.equal(r.status, 2, `${JSON.stringify(cases[i][0])}\n${r.text}`);
+    assert.match(r.text, cases[i][1]);
+    assert.deepEqual(r.calls, [], `${JSON.stringify(cases[i][0])}: nothing is read`);
+  }
+});
+
+test('workflow shell: a day built without an expected source is warned late; an absorb gives its day leg --rebuild domains, with feed when its feed unit absorbs too', opts, async () => {
+  const f = 'compact-daily.yml';
+  const [late, absorb, quarantined, feedOnly] = await Promise.all([
+    plan(f, DAY, {
+      names: { json: planJson('names', 'names-d-20261026', D, { late: ['thc-ct'] }) },
+      domains: { json: planJson('domains', 'domains-d-20261026', D, { late: ['thc-ct'] }) },
+      feed: { json: planJson('feed', 'feed-d-20261026', D) },
+    }),
+    plan(f, DAY, {
+      names: { json: planJson('names', 'names-d-20261026', D, { absorb: true }) },
+      domains: { json: planJson('domains', 'domains-d-20261026', D, { absorb: true }) },
+      feed: { json: planJson('feed', 'feed-d-20261026', D, { absorb: true }) },
+    }),
+    // The late segment is quarantined: the feed day is present, and only domains absorbs.
+    plan(f, DAY, {
+      domains: { json: planJson('domains', 'domains-d-20261026', D, { absorb: true }) },
+      feed: { json: planJson('feed', 'feed-d-20261026', D, { verdict: 'present' }) },
+    }),
+    plan(f, DAY, {
+      domains: { json: planJson('domains', 'domains-d-20261026', D) },
+      feed: { json: planJson('feed', 'feed-d-20261026', D, { absorb: true }) },
+    }),
+  ]);
+  assert.equal(late.status, 0, late.text);
+  for (const dataset of ['names', 'domains'])
+    assert.ok(
+      late.text
+        .split('\n')
+        .includes(
+          `::warning::the day ${DAY} is built without thc-ct in ${dataset}: its file is past its instant, 2026-10-27T06:00:00Z for thc-ct (EXPECTED of packages/compact); a later run absorbs it when it lands`,
+        ),
+      late.text,
+    );
+  assert.equal((late.text.match(/::warning::/g) ?? []).length, 2);
+  assert.deepEqual(JSON.parse(late.output.days).include, [{ day: DAY, rebuild: '' }]);
+  assert.equal(absorb.status, 0, absorb.text);
+  assert.deepEqual(JSON.parse(absorb.output.days).include, [{ day: DAY, rebuild: 'domains,feed' }]);
+  assert.match(absorb.text, /^day 2026-10-26: an absorb, day\.mjs --rebuild domains,feed$/m);
+  assert.deepEqual(
+    unitsOf(absorb).map((u) => u.unit),
+    ['domains-d-20261026', 'feed-d-20261026', 'names-d-20261026'],
+  );
+  assert.equal(quarantined.status, 0, quarantined.text);
+  assert.deepEqual(JSON.parse(quarantined.output.days).include, [{ day: DAY, rebuild: 'domains' }]);
+  assert.deepEqual(
+    unitsOf(quarantined).map((u) => u.unit),
+    ['domains-d-20261026'],
+  );
+  assert.equal(feedOnly.status, 0, feedOnly.text);
+  assert.deepEqual(JSON.parse(feedOnly.output.days).include, [{ day: DAY, rebuild: 'feed' }]);
+});
+
+// The day step of the daily for DAY with the plan's list `rebuild` and the dispatch's `REBUILD`.
+const dayStep = (rebuild, dispatched = 'false') =>
+  runStep('compact-daily.yml', 'day', 'Build the day packs and the ledger', {
+    env: { DAY, DAY_REBUILD: rebuild, ROOT_REF: `sha256:${hex('a')}`, REBUILD: dispatched, LEDGER: '--no-ledger' },
+    stub: { 'day.txt': 'verdict domains ready names:domains-d-20261026\n' },
+  });
+const dayCall = (r) => r.calls.find((c) => c.startsWith('node scripts/compact/day.mjs')) ?? '';
+
+test("workflow shell: the day leg passes the plan's rebuild list, including a feed-only rebuild, and refuses an unknown list", opts, async () => {
+  const [both, domains, feed, none, dispatched, odd] = await Promise.all([dayStep('domains,feed'), dayStep('domains'), dayStep('feed'), dayStep(''), dayStep('', 'true'), dayStep('names')]);
+  assert.equal(both.status, 0, both.text);
+  assert.match(dayCall(both), / --no-ledger --rebuild domains,feed$/);
+  assert.match(dayCall(domains), / --no-ledger --rebuild domains$/);
+  assert.equal(feed.status, 0, feed.text);
+  assert.match(dayCall(feed), / --no-ledger --rebuild feed$/);
+  assert.equal(none.status, 0, none.text);
+  assert.doesNotMatch(dayCall(none), /--rebuild/);
+  assert.match(dayCall(dispatched), / --rebuild domains,feed$/);
+  assert.equal(odd.status, 1, odd.text);
+  assert.match(odd.text, /the plan gave the day 2026-10-26 the rebuild list names, expected domains, feed or domains,feed/);
+  assert.deepEqual(odd.calls, []);
+});
+
+test('workflow shell: an absorb names unit is assembled with --rebuild; a kept feed day pushes nothing and writes no replacement', opts, async () => {
+  const unit = 'names-d-20261026';
+  const assembleCall = (r) => r.calls.find((c) => c.startsWith('node scripts/compact/assemble.mjs')) ?? '';
+  const assemble = (absorb) =>
+    runStep('compact-daily.yml', 'assemble', 'Assemble the pack', {
+      env: { UNIT: unit, REBUILD: 'false', PIN_PSL: PIN },
+      stub: { 'assemble.txt': `present names:${unit} (${unit}): nothing is written\n` },
+      files: { [`runner/plans/${unit}.json`]: planJson('names', unit, D, { absorb }) },
+    });
+  const take = (line, more = {}) =>
+    runStep('compact-daily.yml', 'assemble', 'Take the day pack', {
+      env: { UNIT: 'feed-d-20261026' },
+      files: { 'runner/plans/feed-d-20261026.json': planJson('feed', 'feed-d-20261026', D, { absorb: true }), 'runner/day/day.txt': `verdict feed ready feed:feed-d-20261026\n${line}\n`, ...more },
+    });
+  const [absorbed, plain, kept, wrote] = await Promise.all([
+    assemble(true),
+    assemble(false),
+    take(
+      "keep feed:feed-d-20261026: the day's records are names:domains-d-20261026, which carries dev.pkgforge.domains.quarantined-inputs isc-new, and an exact join over it would take those records as new (ruling 23); no feed pack is written, and the live feed day stays",
+    ),
+    take('wrote feed:feed-d-20261026-r2 sha256:0 records 3 parts 1 time 1', { 'runner/day/feed/manifest.json': '{}', 'runner/day/feed/blobs.json': '[]', 'runner/day/feed/idx': 'idx' }),
+  ]);
+  assert.equal(absorbed.status, 0, absorbed.text);
+  assert.match(assembleCall(absorbed), / --rebuild$/);
+  assert.doesNotMatch(assembleCall(plain), /--rebuild/);
+  assert.equal(kept.status, 0, kept.text);
+  assert.deepEqual([kept.env.OUTCOME, kept.env.PKG, kept.env.TAG], ['kept', 'feed', 'feed-d-20261026']);
+  assert.match(kept.text, /^kept feed:feed-d-20261026: day\.mjs wrote no pack for feed-d-20261026, and the live one stays$/m);
+  // A written -r2 is taken as any written pack: its directory is moved to pack/.
+  assert.equal(wrote.status, 0, wrote.text);
+  assert.deepEqual([wrote.env.OUTCOME, wrote.env.PKG, wrote.env.TAG], ['assembled', 'feed', 'feed-d-20261026-r2']);
+  assert.ok(existsSync(join(wrote.dir, 'runner', 'pack', 'idx')) && existsSync(join(wrote.dir, 'runner', 'manifest.json')));
+  const steps = Object.fromEntries(workflow('compact-daily.yml').jobs.assemble.steps.map((s) => [s.name ?? s.with?.name, s]));
+  assert.equal(steps['Write the replacement'].if, "env.OUTCOME != 'kept'");
+  assert.equal(steps['replace.${{ matrix.unit }}'].if, "env.OUTCOME != 'kept'");
+  for (const name of ['Verify the pack', 'Push the pack']) assert.equal(steps[name].if, "env.OUTCOME == 'assembled'", name);
+});
+
+test('workflow shell: the daily runs at 01:35 and 06:35, and its day step has 240 minutes in a job of 270', () => {
+  const wf = workflow('compact-daily.yml');
+  assert.deepEqual(
+    wf.on.schedule.map((s) => s.cron),
+    ['35 1 * * *', '35 6 * * *'],
+  );
+  assert.deepEqual(Object.keys(wf.on.workflow_dispatch.inputs), ['day', 'from', 'to', 'rebuild', 'first-ledger']);
+  assert.equal(wf.jobs.day['timeout-minutes'], 270);
+  const step = wf.jobs.day.steps.find((s) => s.name === 'Build the day packs and the ledger');
+  assert.equal(step['timeout-minutes'], 240);
+  assert.equal(step.env.DAY_REBUILD, '${{ matrix.rebuild }}');
+  const planStep = wf.jobs.plan.steps.find((s) => s.name === 'Plan the units');
+  assert.deepEqual(planStep.env, { SPAN: '${{ inputs.day }}', FROM: '${{ inputs.from }}', TO: '${{ inputs.to }}' });
 });

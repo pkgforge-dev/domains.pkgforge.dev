@@ -1,0 +1,10 @@
+file D:/_WORK_/domains.pkgforge.dev/.tmp/dom029/dl/head/2026-10-31.head.gz 67108864 B; magic 1f 8b method 8 flags 8 mtime 1793491502 xfl 2 os 3
+two-member gzip through DecompressionStream: "threw Trailing junk found after the end of the compressed stream"
+gunzip+normalise: 272903365 B text, 5979353 lines (last partial line dropped), upper 59200, wild 1527081, refused {"numeric-tld":1053}; stopped: 
+  wall 60.97 s: gunzip 4.64 s, split+normalise+key+reg 56.28 s; rss 1088 MiB heap 851 MiB ext 141 MiB
+  keys 5978300, regs 5978300
+A one sort of 5978300 keys: 5.82 s, dedupe 0.93 s, distinct 5151679; rss 1308 MiB heap 1035 MiB ext 138 MiB
+A one sort of 5978300 reg keys: 2.85 s, distinct 1333201
+B names: 6 runs of 1000000: sort+encode 18.19 s, stored 52492991 B (8.78 B a key), merge 6.57 s, distinct 5151679; rss 1145 MiB heap 785 MiB ext 306 MiB
+B regs: 6 runs of 1000000: sort+encode 4.10 s, stored 6605519 B (1.10 B a key), merge 1.43 s, distinct 1333201; rss 1106 MiB heap 799 MiB ext 128 MiB
+done rss 1106 MiB heap 799 MiB ext 128 MiB

@@ -314,6 +314,8 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
 - **Found 2026-11-02T03:56Z (DOM-030, gate part (c), the heap of the blocks):** `apps/api/src/pack.ts` refuses a pack of more than 8,192 records a block, 256 entries a page or an index above 1 MiB. At 8,192 records the worst block measured held 13.0 MiB in Node, a `domains` block of 958,942 raw bytes with 12 evidence entries a record, so six blocks at once hold about 78 MiB (DOM-030's MEASURED of 2026-11-02T03:45Z). This route keeps the blocks it holds at once times that heap under the isolate's 128 MB, and measures the heap of its own blocks in workerd.
 - **Found 2026-11-02T07:42Z (DOM-030, `validateRoot` once):** `LoadedRoot.datasets()` of `apps/api/src/root.ts` runs `validateRoot` of `packages/root` in the reader's form once a root and isolate, and no route of DOM-030 calls it. So this route's first read of the datasets pays it. On the root of 435,492 B of root_seq 73 it took 10 to 28 ms in one reading and 5 to 10 ms in another, in Node (DOM-030's MEASURED of 2026-11-02T00:32:58Z and its Correction of 07:40Z). DOM-054 reads its CPU on Cloudflare against the `cpu_ms` of 50.
 
+- **Found 2026-11-27 (DOM-029, root compatibility):** deploy the newness route from code that understands named holes in the live root. If it calls `datasets()`, the earlier root validator can reject a named hole even in reader mode. See architecture §4.6.
+
 ## DOM-033 — /v1/domain, /v1/sources, /v1/status and /v1/coverage
 
 - **Status:** open
@@ -345,6 +347,8 @@ The Worker `domains-pkgforge-dev` on `domains.pkgforge.dev`: its GHCR reads, its
   - `node scripts/test.mjs apps/api --name "domain"` and `node scripts/test.mjs packages/compact --name "summary"` pass.
 - **Correction 2026-10-29T15:30Z (Premise, the empty coverage layer):** the Premise gives the layer as `{"pairs":[],"gaps":{}}` until DOM-035 closes. DOM-020 writes `{"as_of":null,"day":null,"pairs":[],"gaps":{}}`: `EMPTY_COVERAGE` of `packages/root/src/build.ts`, the shape of `docs/architecture.md` section 4.6 and of DOM-035's Output bullet, with nothing measured. A rollback takes the target's coverage table.
 - **Found 2026-10-31T02:04Z (DOM-003, the field `hot`):** DOM-003's verdict is `actions-chain`, so DOM-025 is closed on ruling 8 with no code. No entry writes `hot/manifest.json` or a heartbeat, and DOM-031's warmer writes neither. `/v1/status` drops `hot`, which would always be `null` with no writer: the Approach, the Tests and the Prove say so. A later verdict of `worker` reopens DOM-025, and that entry adds the field back.
+
+- **Found 2026-11-27 (DOM-029, root compatibility):** any route that calls `datasets()` needs the named-hole validator. The deployed head-only routes do not exercise it. See architecture §4.6.
 
 ## DOM-039 — Subdomains, name lookup, name listing and batch lookup
 

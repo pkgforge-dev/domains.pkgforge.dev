@@ -1,0 +1,6 @@
+3000194 lines in 9119 batches (329 a batch)
+A sync loop           : 1065 ms, 0.355 us a line (acc -737123483)
+B async gen per line  : 2358 ms, 0.786 us a line (acc -737123483)
+C async gen per batch : 928 ms, 0.309 us a line (acc -737123483)
+D async gen of records: 1049 ms, 0.407 us a record (n 2580167)
+node v26.7.0

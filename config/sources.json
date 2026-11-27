@@ -3,6 +3,48 @@
   "comment": "Written by node scripts/sources/build.mjs from adapters/*/source.json; never edited by hand. Sorted by bit, then the sources with no bit by id.",
   "sources": [
     {
+      "id": "thc-ct",
+      "bit": 0,
+      "family": "ct",
+      "datasets": [
+        "names",
+        "domains"
+      ],
+      "precision": "day",
+      "kind": "ct_name",
+      "basis": [
+        "ct-first"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "bytes",
+        "min": 0.4,
+        "max": 4,
+        "relative": true
+      },
+      "urls": [
+        "https://cs2.ip.thc.org/",
+        "https://huggingface.co/buckets/IP-THC-ORG/Daily-Cerstream-Dumps"
+      ],
+      "retention": "unknown",
+      "parser": "thc-ct/1",
+      "failure_modes": [
+        "The file is late: it lands at about 00:02 to 00:05 UTC the next day (MEASURED 2026-11-01, DOM-029), and the hourly run reads it then. A day not written by D+1 06:00Z goes to the cursor's open list and daily compaction stops waiting. The live run retries open days first. A bad file on both hosts can spend both downloads and delay later days until the open day clears. The daily compaction can absorb a late file into its day pack.",
+        "A day still unwritten at D+2 12:00Z is declared a gap, even if a host faulted. The live fault line records that distinction. A single-day backfill can recover a file the live run missed while the compaction still accepts the day's segments; promotion drops the gap when the segments join the root.",
+        "One host fails, times out after 900 s or answers 404: the other host is read in the same run, cs2 first for the live day and the bucket first for a backfill. A listing of the bucket that fails is a fault, never an absence.",
+        "Every host fails: one fault line per host. Before D+1 06:00Z the next hour's run retries the day at the same cursor; past that instant it retries through the open list until it is written or declared a gap.",
+        "A body shorter or longer than its length, a Content-Encoding, a truncated gzip or a second gzip member, or a file over 2 GiB: the faults length, encoding, gzip and size. Each host is taken through its whole integrity pass before anything is written, so nothing is written from a host that faults.",
+        "An empty file, or a changed line format: the fault empty when no name is kept, and format when more than half of the non-empty lines are refused. Lines over 4,096 UTF-16 code units before name normalisation (excluding the line ending) count as line-too-long. Each written day reports the refusal share, and the workflow warns at 1% or more. Two whole days had refusal rates of 0.0026% and 0.0040% (MEASURED 2026-11-02, DOM-029).",
+        "The volume shifts without notice (September 843 to 986 MB a day, October 77 to 984 MB): the band is 0.4 to 4 times the median of the last 7 accepted days, a day outside it on either side is quarantined (served, never as new), and 3 consecutive days on one side reset the baseline (the replay of the 59 days quarantines 2026-10-05, 10-06 and 10-15; MEASURED 2026-11-01, DOM-029).",
+        "The order is a locale collation, not bytes (24.5% of adjacent lines inverted in the head of 2026-10-31; MEASURED 2026-11-01, DOM-029): the adapter sorts the keys itself, in runs merged by a heap.",
+        "Upper case on 0.53% to 0.57% of lines across two whole days (MEASURED 2026-11-02, DOM-029): lowercased by the names package.",
+        "CRLF line endings: one trailing carriage return is stripped from a line and counted (none measured); a carriage return inside a line is refused as charset.",
+        "Address literals such as 192.0.2.1, which a certificate carried: refused as numeric-tld and counted.",
+        "The bucket's directory is the month the file was uploaded, not the month of its date: 2026-10-31 sits at 2026/11/2026-10-31.txt.gz (MEASURED 2026-11-01, DOM-029). The path is always taken from the bucket's listing, never built from the date."
+      ],
+      "adapter": "thc-ct"
+    },
+    {
       "id": "oi-nrd",
       "bit": 1,
       "family": "ct",

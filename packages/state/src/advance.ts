@@ -3,12 +3,16 @@
 // (DOM-024, docs/architecture.md section 5.4), and settles the packs it owes.
 //
 //   advance(live, proposals, tagExists, { now, run })  →  { state, accepted, dropped, changed }
-//   settle(state, held, now)                           →  { state, settled }
+//   settle(state, held, now, gapHeld?)                 →  { state, settled, settledGaps }
 //
 // advance, in this order:
 //   1. the base is `live`, or the empty state when no state was ever pushed;
-//   2. proposals in adapter order; every proposal of an adapter that has more
-//      than one is dropped `duplicate` (one run of an adapter a run);
+//   2. proposals in adapter order; when an adapter has more than one, every
+//      one of them is dropped `duplicate` (one run of an adapter a run),
+//      unless every one keeps its cursor (`before` equal to `after`) and no
+//      ref, and no (source, day) of history, is in two of them: the legs of
+//      one backfill, a window each, all accepted (D13 of DOM-029). A mix of a
+//      moving and a keeping proposal of one adapter is still `duplicate`;
 //   3. a proposal whose `before` is not the base's cursor of its adapter
 //      (null equals an absent cursor) is dropped `stale-before`: another run
 //      moved the cursor since it read it, so it is read again from the live one;
@@ -16,9 +20,10 @@
 //      one whose tag holds another digest `digest`;
 //   5. an accepted proposal moves its adapter's cursor to `after`, records
 //      the move in `moved`, merges its days into the history (a day present
-//      is replaced, the newest HISTORY_DAYS kept), and owes each segment that
-//      is not quarantined (D4 of DOM-024: a quarantined segment joins no root,
-//      ruling 23);
+//      is replaced, the newest HISTORY_DAYS kept), owes each segment,
+//      quarantined or not (a quarantined segment joins the root marked, ruling
+//      23 and D7 of DOM-029, which lifts D4 of DOM-024), and adds its gaps to
+//      the pending gaps (the newest GAP_DAYS a source kept);
 //   6. `changed` is whether the next state differs from the live one but for
 //      `updated`, which is `now` when it does and the live one when not.
 // A dropped adapter is read again from its old cursor by the next run, which
@@ -41,6 +46,12 @@
 // root that named the segment tells the two apart: the caller's `held` reads
 // that (replacedOnChain of scripts/state/lib.mjs, DOM-063), and this package
 // reads no root.
+//
+// settle also drops each pending gap day for which `gapHeld(source, day)`
+// answers { code: "held", detail } (D9 of DOM-029): gapHeldBy of
+// scripts/state/lib.mjs answers it when the live root's gaps lists the day, or
+// a live segment of that source spans the whole day. A pending gap never
+// expires: it waits for the promotion that lists it.
 import { canonicalJson, jsonEqual } from "@domains/adapter";
 import { StateError } from "./errors.ts";
 import { type Proposal, proposedRefs, validateProposal } from "./proposal.ts";
@@ -49,6 +60,7 @@ import {
   DAY_MS,
   DIGEST,
   emptyState,
+  GAP_DAYS,
   type HistoryItem,
   HISTORY_DAYS,
   isObject,
@@ -61,6 +73,7 @@ import {
   type State,
   sameState,
   validateState,
+  withGaps,
 } from "./state.ts";
 
 export type DropCode = "invalid" | "duplicate" | "stale-before" | "missing-tag" | "digest";
@@ -89,6 +102,15 @@ export interface Settled {
 
 export type Held = (item: OwedItem) => { readonly code: Exclude<SettleCode, "expired">; readonly detail: string } | null;
 
+// A pending gap day settle dropped, and why.
+export interface SettledGap {
+  readonly source: string;
+  readonly day: string;
+  readonly detail: string;
+}
+
+export type GapHeld = (source: string, day: string) => { readonly code: "held"; readonly detail: string } | null;
+
 const usage = (detail: string): StateError => new StateError("usage", detail);
 const cursorText = (c: unknown): string => (c === null ? "none" : canonicalJson(c));
 
@@ -99,6 +121,29 @@ function mergeDay(days: readonly HistoryItem[], item: HistoryItem): HistoryItem[
   next.push({ day: item.day, count: item.count, quarantined: item.quarantined });
   next.sort((a, b) => (a.day < b.day ? -1 : 1));
   return next.slice(-HISTORY_DAYS);
+}
+
+// Why the proposals of one adapter cannot all apply, or null (rule 2): one of
+// them moves its cursor, or two name one ref or one (source, day) of history.
+// The cursor check comes first: two runs of an adapter that move it are two
+// runs too many, whatever they name.
+function keepingClash(list: readonly Proposal[]): string | null {
+  const moving = list.find((p) => !jsonEqual(p.before, p.after));
+  if (moving !== undefined) return `run ${moving.run} moves the cursor from ${cursorText(moving.before)} to ${cursorText(moving.after)}`;
+  const refs = new Set<string>();
+  const days = new Set<string>();
+  for (const p of list) {
+    for (const { ref } of proposedRefs(p)) {
+      if (refs.has(ref)) return `${ref} is in two of them`;
+      refs.add(ref);
+    }
+    for (const d of p.history) {
+      const key = `${d.source} ${d.day}`;
+      if (days.has(key)) return `the history day ${key} is in two of them`;
+      days.add(key);
+    }
+  }
+  return null;
 }
 
 // Why a proposal's refs do not stand in GHCR as it says, or null.
@@ -131,42 +176,46 @@ export function advance(live: State | null, proposals: readonly Proposal[], tagE
   const cursors = { ...base.cursors };
   const moved = { ...base.moved };
   const history: Record<string, readonly HistoryItem[]> = { ...base.history };
+  const gaps: Record<string, readonly string[]> = { ...base.gaps };
   let owed = base.owed;
   const accepted: Proposal[] = [];
   const dropped: Dropped[] = [];
   for (const adapter of [...byAdapter.keys()].sort()) {
     const list = byAdapter.get(adapter)!;
     if (list.length > 1) {
-      const runs = list.map((p) => `run ${p.run} attempt ${p.attempt} at ${p.at}`).join(", ");
-      for (let i = 0; i < list.length; i++)
-        dropped.push({ adapter, code: "duplicate", detail: `${adapter} has ${list.length} proposals (${runs}); none is applied, and the adapter is read again from its live cursor` });
-      continue;
+      const clash = keepingClash(list);
+      if (clash !== null) {
+        const runs = list.map((p) => `run ${p.run} attempt ${p.attempt} at ${p.at}`).join(", ");
+        for (let i = 0; i < list.length; i++)
+          dropped.push({ adapter, code: "duplicate", detail: `${adapter} has ${list.length} proposals (${runs}), and ${clash}; none is applied, and the adapter is read again from its live cursor` });
+        continue;
+      }
     }
-    const p = list[0]!;
-    const current = cursorOf(base, adapter);
-    if (!jsonEqual(p.before, current)) {
-      dropped.push({
-        adapter,
-        code: "stale-before",
-        detail: `${adapter} proposes from the cursor ${cursorText(p.before)}, and the live cursor is ${cursorText(current)}: another run moved it; the adapter is read again from the live one`,
-      });
-      continue;
+    for (const p of list) {
+      const current = cursorOf(base, adapter);
+      if (!jsonEqual(p.before, current)) {
+        dropped.push({
+          adapter,
+          code: "stale-before",
+          detail: `${adapter} proposes from the cursor ${cursorText(p.before)}, and the live cursor is ${cursorText(current)}: another run moved it; the adapter is read again from the live one`,
+        });
+        continue;
+      }
+      const missing = refProblem(p, tagExists);
+      if (missing !== null) {
+        dropped.push(missing);
+        continue;
+      }
+      cursors[adapter] = p.after;
+      moved[adapter] = { at: now, run };
+      // Object.hasOwn: a source id such as `constructor` is no key of Object.prototype here.
+      for (const d of p.history) history[d.source] = mergeDay(Object.hasOwn(history, d.source) ? history[d.source]! : [], d);
+      for (const s of p.segments) owed = oweInto(owed, { ref: s.ref, digest: s.digest, dataset: s.dataset, tier: "seg", start: s.start, end: s.end, since: now });
+      for (const g of p.gaps ?? []) gaps[g.source] = [...new Set([...(Object.hasOwn(gaps, g.source) ? gaps[g.source]! : []), g.day])].sort().slice(-GAP_DAYS);
+      accepted.push(p);
     }
-    const missing = refProblem(p, tagExists);
-    if (missing !== null) {
-      dropped.push(missing);
-      continue;
-    }
-    cursors[adapter] = p.after;
-    moved[adapter] = { at: now, run };
-    // Object.hasOwn: a source id such as `constructor` is no key of Object.prototype here.
-    for (const d of p.history) history[d.source] = mergeDay(Object.hasOwn(history, d.source) ? history[d.source]! : [], d);
-    for (const s of p.segments) {
-      if (!s.quarantined) owed = oweInto(owed, { ref: s.ref, digest: s.digest, dataset: s.dataset, tier: "seg", start: s.start, end: s.end, since: now });
-    }
-    accepted.push(p);
   }
-  const draft: State = { format: STATE_FORMAT, updated: now, cursors, moved, history, owed };
+  const draft: State = withGaps({ format: STATE_FORMAT, updated: now, cursors, moved, history, owed }, gaps);
   const changed = !sameState(live, draft);
   const state = validateState(changed ? draft : { ...draft, updated: base.updated });
   return { state, accepted, dropped, changed };
@@ -174,10 +223,32 @@ export function advance(live: State | null, proposals: readonly Proposal[], tagE
 
 const HELD_CODES: readonly string[] = Object.freeze(["held", "covered", "withdrawn"]);
 
-export function settle(state: State, held: Held, now: string): { readonly state: State; readonly settled: readonly Settled[] } {
+export function settle(
+  state: State,
+  held: Held,
+  now: string,
+  gapHeld: GapHeld = () => null,
+): { readonly state: State; readonly settled: readonly Settled[]; readonly settledGaps: readonly SettledGap[] } {
   if (!isSecond(now)) throw usage(`now ${JSON.stringify(now ?? null)} is not an ISO 8601 UTC time to the second`);
   if (typeof held !== "function") throw usage("held is not a function");
+  if (typeof gapHeld !== "function") throw usage("gapHeld is not a function");
   const live = validateState(state);
+  const settledGaps: SettledGap[] = [];
+  const pending: Record<string, string[]> = {};
+  for (const [source, days] of Object.entries(live.gaps ?? {})) {
+    pending[source] = [];
+    for (const day of days) {
+      const answer: unknown = gapHeld(source, day);
+      if (answer === null) {
+        pending[source].push(day);
+        continue;
+      }
+      if (!isObject(answer) || answer.code !== "held" || typeof answer.detail !== "string") {
+        throw usage(`gapHeld answered ${JSON.stringify(answer ?? null)} for ${source} ${day}; it answers null or { code: held, detail }`);
+      }
+      settledGaps.push({ source, day, detail: answer.detail });
+    }
+  }
   const kept: OwedItem[] = [];
   const settled: Settled[] = [];
   for (const item of live.owed) {
@@ -200,5 +271,6 @@ export function settle(state: State, held: Held, now: string): { readonly state:
     }
     kept.push(item);
   }
-  return { state: settled.length === 0 ? live : { ...live, updated: now, owed: kept }, settled };
+  if (settled.length === 0 && settledGaps.length === 0) return { state: live, settled, settledGaps };
+  return { state: withGaps({ ...live, updated: now, owed: kept }, pending), settled, settledGaps };
 }

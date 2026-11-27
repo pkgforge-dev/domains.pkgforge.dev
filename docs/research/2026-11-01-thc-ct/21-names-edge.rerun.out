@@ -1,0 +1,44 @@
+"a.example.com"                a.example.com                wild false reg "example.com" site "example.com" key com.example.a
+"*.a.example.com"              a.example.com                wild true reg "example.com" site "example.com" key com.example.a
+"A.Example.COM"                a.example.com                wild false reg "example.com" site "example.com" key com.example.a
+"192.0.2.1"                    REFUSED numeric-tld
+"*.10.0.0.1"                   REFUSED numeric-tld
+"1.2.3.4.example.com"          1.2.3.4.example.com          wild false reg "example.com" site "example.com" key com.example.4.3.2.1
+"10.0.0.1."                    REFUSED numeric-tld
+"foo.xn--55qx5d.cn"            foo.xn--55qx5d.cn            wild false reg "foo.xn--55qx5d.cn" site "foo.xn--55qx5d.cn" key cn.xn--55qx5d.foo
+"foo.xn--p1ai"                 foo.xn--p1ai                 wild false reg "foo.xn--p1ai" site "foo.xn--p1ai" key xn--p1ai.foo
+"xn--80ak6aa92e.xn--p1ai"      xn--80ak6aa92e.xn--p1ai      wild false reg "xn--80ak6aa92e.xn--p1ai" site "xn--80ak6aa92e.xn--p1ai" key xn--p1ai.xn--80ak6aa92e
+"foo.com.np"                   foo.com.np                   wild false reg "foo.com.np" site "foo.com.np" key np.com.foo
+"co.uk"                        REFUSED public-suffix
+"*.co.uk"                      REFUSED public-suffix
+"github.io"                    github.io                    wild false reg "github.io" site null key io.github
+"foo.github.io"                foo.github.io                wild false reg "github.io" site "foo.github.io" key io.github.foo
+"xn--bcher-kva.example"        xn--bcher-kva.example        wild false reg "xn--bcher-kva.example" site "xn--bcher-kva.example" key example.xn--bcher-kva
+"xn--.example.com"             xn--.example.com             wild false reg "example.com" site "example.com" key com.example.xn--
+"xn--a.example.com"            xn--a.example.com            wild false reg "example.com" site "example.com" key com.example.xn--a
+"a b.example.com"              REFUSED charset
+"a\r"                          REFUSED charset
+"_dmarc.example.com"           _dmarc.example.com           wild false reg "example.com" site "example.com" key com.example._dmarc
+"*.*.example.com"              REFUSED charset
+"a..example.com"               REFUSED label-empty
+"-a.example.com"               -a.example.com               wild false reg "example.com" site "example.com" key com.example.-a
+"a-.example.com"               a-.example.com               wild false reg "example.com" site "example.com" key com.example.a-
+"foo.ck"                       REFUSED public-suffix
+"www.ck"                       www.ck                       wild false reg "www.ck" site "www.ck" key ck.www
+"foo.bar.ck"                   foo.bar.ck                   wild false reg "foo.bar.ck" site "foo.bar.ck" key ck.bar.foo
+"[::1]"                        REFUSED charset
+"::1"                          REFUSED charset
+"localhost"                    REFUSED no-dot
+"example.com:443"              REFUSED charset
+"EXAMPLE.COM."                 example.com                  wild false reg "example.com" site "example.com" key com.example
+"foo.bd"                       foo.bd                       wild false reg "foo.bd" site "foo.bd" key bd.foo
+"x.kawasaki.jp"                REFUSED public-suffix
+"city.kawasaki.jp"             city.kawasaki.jp             wild false reg "city.kawasaki.jp" site "city.kawasaki.jp" key jp.kawasaki.city
+"a.b.city.kawasaki.jp"         a.b.city.kawasaki.jp         wild false reg "city.kawasaki.jp" site "city.kawasaki.jp" key jp.kawasaki.city.b.a
+IDN rules in file (first 5): aéroport.ci | 公司.cn | 網絡.cn | 网络.cn | 个人.hk
+"foo.aéroport.ci" "foo.xn--aroport-bya.ci"
+"foo.公司.cn" "foo.xn--55qx5d.cn"
+"foo.網絡.cn" "foo.xn--od0alg.cn"
+"foo.网络.cn" "foo.xn--io0a7i.cn"
+"foo.个人.hk" "foo.xn--ciqpn.hk"
+conditions {"instrument":"docs/research/2026-11-01-thc-ct/21-names-edge.mjs","at":"2026-11-03T15:00:40.592Z","exit":0,"node":"v26.7.0","os":"win32 10.0.26300","cpu":"12th Gen Intel(R) Core(TM) i7-12700H","cpus":20,"memory_bytes":68321587200,"argv":[]}
