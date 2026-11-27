@@ -26,7 +26,7 @@ B names one or more of the five bases of `docs/architecture.md` §3.3 (`zone`, `
 | `ct-le` | 5 | Names tiles of the Let's Encrypt logs Sycamore and Willow. About 35.5 million entries a day for the 2026h2 and 2027h1 shards (design A M10). Each tile holds 256 entries. | Polled. About 2.3 tiles a second for the reliable set of all operators. | A shard rolls over. Handling: follow the CT log list, re-read daily. | F `ct`, K `ct_name`, B `ct-first`, P second | DOM-037 (measured by DOM-011) |
 | `ct-geomys` | 6 | Names tiles of the Geomys logs Tuscolo. About 15.2 million entries a day (design A M10). Host `*.skylight.geomys.org`. | Polled. | The host answers 429 and the header `Skylight-Rate-Limited` to a client with no email address in its User-Agent. A User-Agent with an address got 4 of 4 answers of 200 (MEASURED 2026-10-27T08:24:26Z). Handling: a contact address in every User-Agent. | F `ct`, K `ct_name`, B `ct-first`, P second | DOM-037 |
 | `ct-ipng` | 7 | Names tiles of the IPng log Gouda, about 8.2 million entries a day. Gouda serves names tiles from a first served tile onward: tile 366,929 of 4,810,099 for Gouda2026h2 and tile 100,748 of 924,943 for Gouda2027h1 (MEASURED 2026-10-27T08:24:45Z). Halloumi answered 404 for tile 0 and the last full tile (MEASURED 2026-10-27T08:23:41Z). | Polled. | A 404 is a state, not an error. Handling: a per-run probe of the first served tile and the last full tile. | F `ct`, K `ct_name`, B `ct-first`, P second | DOM-037 |
-| `isc-new` | 8 | ISC's new-domain feed `https://isc.sans.edu/feeds/domaindata.json.gz` and dated `domaindata.<date>.json.gz`. 250,940 domains for 2026-10-26, about 2.3 MB gzipped. Fields: `domainname`, `ip`, `firstseen`, `score`. | Over seven sampled days, dated files became nonempty from 00:42 to 02:41 UTC on D+1. Latest-alias rewrites were 120.6 min apart at the median and 284.2 min at most (DOM-012). | Dated files can get header revisions through D+4. Track ETag and Last-Modified per path and distinguish length changes from header changes. Candidate alerts are a missing D at 04:00 UTC on D+1 and no alias rewrite for six hours. ISC describes its data as new to ISC. | F `isc`, K `claimed_new`, B `nrd-list`, P day | DOM-027 (measured by DOM-012) |
+| `isc-new` | 8 | ISC daily snapshots at `https://isc.sans.edu/feeds/domaindata.json.gz` and `domaindata.<date>.json.gz`. Rows carry `domainname` and the `firstseen` day. The day means new to ISC and supplies T2 list evidence. Optional metadata such as `ip` and `score` stays in the exact gzip. | Over seven sampled days, dated files became nonempty from 00:42 to 02:41 UTC on D+1. Latest-alias rewrites were 120.6 min apart at the median and 284.2 min at most (DOM-012). | Dated headers changed through D+4. Track validators per path and use SHA-256 for byte identity. A nonempty dated snapshot must have a single UTC `firstseen` day matching its path. Candidate alerts are a missing D at 04:00 UTC on D+1 and no alias rewrite for six hours. | F `isc`, K `claimed_new`, B `nrd-list`, P day | DOM-027 (measured by DOM-012) |
 | `whoisds` | 9 | WhoisDS's free daily file, a sample of 70,000 domains. Path `https://www.whoisds.com/whois-database/newly-registered-domains/<base64 of YYYY-MM-DD.zip>/nrd`. | Seven dated paths first served nonempty responses 13:36 to 14:21 UTC on the path date (DOM-012). Two historical overlap comparisons align D with ISC's D-1. | The same ZIP entry identity can appear on two dated paths. Deduplicate by entry identity and keep the path date distinct from the list's data date. A candidate alert for no new identity is 15:30 UTC. ZIP entry timestamps lack a timezone. | F `whoisds`, K `claimed_new`, B `nrd-list`, P day | DOM-028 (measured by DOM-012) |
 | `cenk-nrd` | 10 | `cenk/nrd`, built from WhoisDS. 699,321 lines (11.6 MB) in the sampled 10-day file. | Over six whole UTC days, the first daily commit was 14:02 UTC at the median and 16:52 UTC at the latest (DOM-012). | The copy on `dl.cenk.app` was five days stale on 2026-10-27. Read raw GitHub. A candidate alert for a missing daily publication is 18:00 UTC. | F `whoisds`, K `claimed_new`, B `nrd-list`, P day | DOM-028 |
 | `hagezi-nrd` | 11 | `hagezi/nrd` `domains/nrd7.txt` and earlier rolling windows. The sampled file had 2,773,880 lines for 7 days (47,794,272 B). | Over six whole UTC days, the first daily commit was 07:39 UTC at the median and 07:52 UTC at the latest (DOM-012). | The list may include subdomains. Its Stamus Labs input can lag by a few days. Reduce to registrable domains and keep the source lag. A candidate alert for a missing daily publication is 09:00 UTC. | F `stamus`, K `claimed_new`, B `nrd-list`, P day | DOM-028 |
@@ -44,6 +44,81 @@ B names one or more of the five bases of `docs/architecture.md` §3.3 (`zone`, `
 The complete 2026-10-15 THC gzip from cs2 and the Hugging Face bucket matched
 at 76,999,576 B with the same SHA-256 on 2026-11-27. The recorded result covers
 one day. See [the host comparison](research/2026-11-01-thc-ct/33-compare-hosts.out).
+
+## ISC raw and indexed coverage
+
+The raw archive is planned for the 67 UTC observation dates from 2025-10-26
+through 2025-12-31 inclusive. It retains the publisher's exact gzip and a
+member record with its actual date, source URL, byte count and SHA-256.
+The archive command validated the first and last date directly against ISC
+on 2026-11-27. A successful hosted archive and anonymous verification of
+all dates are still pending. [DOM-027](../TODO/ingest.md#dom-027--isc-new-the-isc-new-domain-feed)
+
+Indexed eligibility starts on 2026-01-01 under the existing DPK1 epoch.
+A valid snapshot can produce T2, day-precision `nrd-list` evidence for its
+normalized registrable domains. Its day is an ISC observation date.
+The registry defines source bit 8. The live feeds lane and separate
+indexed root coverage proof remain pending. The raw archive does not
+contribute to indexed `corpus_since`, source `through`, or derived
+coverage ratios. [DOM-051](../TODO/ingest.md#dom-051--gtlds-without-czds-iscs-year-of-dated-files-dns-coffees-daily-counts-gov-and-the-zone-walks)
+
+### Verify a published ISC archive day
+
+After the hosted run, copy the manifest digest and gzip SHA-256 from its
+`public obs:TAG ... gzip sha256:...` line. From the checkout root, replace
+`MANIFEST_DIGEST` and `GZIP_SHA256` below with those values. The manifest
+digest includes its `sha256:` prefix. The gzip hash can include it.
+
+```bash
+node --input-type=module - 2025-10-26 MANIFEST_DIGEST GZIP_SHA256 <<'NODE'
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { repoOf } from '@domains/ghcr';
+import { datedUrl } from './adapters/isc-new/src/index.ts';
+import { anonymousReader } from './scripts/ghcr/check-public.mjs';
+import { archiveTag } from './scripts/ingest/isc-archive.mjs';
+import { readBlob } from './scripts/root/lib.mjs';
+import { blobSource } from './scripts/verify-pack.mjs';
+
+const [day, manifestDigest, gzip] = process.argv.slice(2);
+const gzipHash = gzip.replace(/^sha256:/, '');
+const reader = anonymousReader();
+const repo = repoOf('obs');
+const tag = archiveTag(day);
+assert.equal((await reader.getManifest(repo, tag)).digest, manifestDigest);
+const { digest, json } = await reader.getManifest(repo, manifestDigest);
+assert.equal(digest, manifestDigest);
+assert.equal(json.artifactType, 'application/vnd.pkgforge.domains.raw.v1');
+assert.equal(json.layers.length, 2);
+const [raw, index] = json.layers;
+assert.equal(raw.annotations['org.opencontainers.image.title'], 'raw.000');
+assert.equal(index.annotations['org.opencontainers.image.title'], 'members.json');
+assert.equal(raw.digest, `sha256:${gzipHash}`);
+const members = JSON.parse(Buffer.from(await readBlob(reader, repo, index)).toString('utf8'));
+const start = `${day}T00:00:00Z`;
+const end = new Date(Date.parse(start) + 86_400_000).toISOString().replace('.000Z', 'Z');
+assert.equal(json.annotations['dev.pkgforge.domains.span.start'], start);
+assert.equal(json.annotations['dev.pkgforge.domains.span.end'], end);
+assert.equal(json.annotations['dev.pkgforge.domains.url'], datedUrl(day));
+assert.deepEqual(members, {
+  format: 'domains.raw-members.v1',
+  source: 'isc-new',
+  start,
+  end,
+  members: [{ day, url: datedUrl(day), offset: 0, length: raw.size, sha256: gzipHash }],
+});
+const bytes = blobSource(reader, repo, raw);
+const hash = createHash('sha256');
+for (let at = 0; at < raw.size; at += 8 * 1024 ** 2) {
+  hash.update(await bytes.read(at, Math.min(8 * 1024 ** 2, raw.size - at)));
+}
+assert.equal(hash.digest('hex'), gzipHash);
+console.log(`verified ${tag} ${digest} ${raw.digest}`);
+NODE
+```
+
+`tags.mjs` inventories dates. The check above binds a published tag to
+the workflow's manifest and gzip hashes and verifies both public layers.
 
 ## The Zonestream broker
 

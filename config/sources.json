@@ -150,6 +150,39 @@
         "Zone rows (ct_name zone_data, no certificate) are 25.2% of the retained span (476,562 of 1,894,990 messages), up to 91.4% of an hour, in registry bursts, 95.4% of them with confidence 8 to 10 (MEASURED 2026-10-31, DOM-026): each is T2 nrd-list with its confidence, and only a row with a certificate is nrd-ct+rdap. The topic has no submission_timestamp, so no certificate age."
       ],
       "adapter": "oi-nrd"
+    },
+    {
+      "id": "isc-new",
+      "bit": 8,
+      "family": "isc",
+      "datasets": [
+        "domains"
+      ],
+      "precision": "day",
+      "kind": "claimed_new",
+      "basis": [
+        "nrd-list"
+      ],
+      "cadence": "P1D",
+      "band": {
+        "metric": "bytes",
+        "min": 1,
+        "max": 67108864,
+        "relative": false
+      },
+      "urls": [
+        "https://isc.sans.edu/feeds/"
+      ],
+      "retention": "P5D",
+      "parser": "isc-new/1",
+      "failure_modes": [
+        "A 200 response can hold a valid empty array, which supplies no observations. A 404 says the requested path is missing. Other HTTP failures are faults.",
+        "The alias and dated paths have independent validators. DOM-012 observed dated header changes through D+4. SHA-256 identifies the exact gzip independently of ETag and length.",
+        "The byte band mirrors the parser's 64 MiB compressed ceiling. Transport encoding, a length mismatch, invalid gzip or malformed JSON end the read with a fault.",
+        "A nonempty dated snapshot needs one UTC firstseen day matching its path. The day measures new to ISC. Dates before 2026-01-01 are eligible for raw archival only.",
+        "ISC documents at least five previous dated snapshots. Earlier file availability is verified per path."
+      ],
+      "adapter": "isc-new"
     }
   ]
 }

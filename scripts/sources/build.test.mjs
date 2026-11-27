@@ -72,7 +72,7 @@ test('sources build: with no adapters it writes a registry of no source, and --c
   assert.equal(run(['--check', '--root', dir]).status, 0);
 });
 
-test("sources build: this checkout's registry holds thc-ct at bit 0, of the adapter thc-ct, then oi-nrd, oi-nrd-fqdn and oi-nrd-confirmed at bits 1, 2 and 3, of the adapter oi-nrd", () => {
+test("sources build: this checkout's registry holds the THC, OpenINTEL and ISC definitions in bit order", () => {
   const json = JSON.parse(readFileSync(join(ROOT, 'config', 'sources.json'), 'utf8'));
   assert.deepEqual(
     json.sources.map((s) => [s.id, s.bit, s.adapter, s.datasets, s.precision]),
@@ -81,10 +81,13 @@ test("sources build: this checkout's registry holds thc-ct at bit 0, of the adap
       ['oi-nrd', 1, 'oi-nrd', ['domains'], 'second'],
       ['oi-nrd-fqdn', 2, 'oi-nrd', ['names'], 'second'],
       ['oi-nrd-confirmed', 3, 'oi-nrd', ['domains'], 'second'],
+      ['isc-new', 8, 'isc-new', ['domains'], 'day'],
     ],
   );
+  const isc = json.sources.find((source) => source.id === 'isc-new');
+  assert.deepEqual([isc.family, isc.kind, isc.basis, isc.parser], ['isc', 'claimed_new', ['nrd-list'], 'isc-new/1']);
   const r = run(['--check']);
-  assert.match(r.stdout, /^sources 4 adapters 2$/m);
+  assert.match(r.stdout, /^sources 5 adapters 3$/m);
 });
 
 test('sources build: an adapter is written in, and --check fails once its source.json changes or the registry is absent', () => {

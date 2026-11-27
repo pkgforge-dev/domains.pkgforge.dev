@@ -1326,9 +1326,12 @@ in two of them; otherwise each is dropped `duplicate`.
 A source that streams (Kafka, names tiles) keeps the bytes it read in the
 raw lane of the package `obs` (`docs/architecture.md` section 3.4): one
 object for each source and window in a run, pushed before the segment that
-names it in its annotation `dev.pkgforge.domains.raw`. A source that fetches
-a file keeps the file in its segment's own layer `raw` instead, at most
-1 GiB.
+names it in its annotation `dev.pkgforge.domains.raw`. An indexed source
+that fetches a file keeps the file in its segment's own `raw` layer, at
+most 2 GiB. The standalone 2025 ISC archive uses the same raw lane format
+with one original gzip in `raw.000`. Its member records the publisher
+URL and actual UTC date. The window ends at midnight on the next day.
+That archive has neither an indexed segment nor a root entry (DOM-027).
 
 | Part | Value |
 | --- | --- |

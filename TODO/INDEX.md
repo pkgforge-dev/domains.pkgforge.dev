@@ -104,15 +104,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**63 items. 33 open, 2 partial, 0 blocked, 28 done.**
+**63 items. 32 open, 3 partial, 0 blocked, 28 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 16 | 2 | 0 | 27 | 45 |
+| P1 | 15 | 3 | 0 | 27 | 45 |
 | P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 33 | 2 | 0 | 28 | 63 |
+| **All** | 32 | 3 | 0 | 28 | 63 |
 
 ## Entries
 
@@ -144,7 +144,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-024](ingest.md) | P1 | ingest | **done** | The state cursors and the ingest workflow skeleton |
 | [DOM-025](ops.md) | P2 | ops | **done** | The Worker hot tier, only if the clock verdict is a Worker |
 | [DOM-026](ingest.md) | P1 | ingest | **done** | oi-nrd: OpenINTEL's newly registered topics |
-| [DOM-027](ingest.md) | P1 | ingest | open | isc-new: the ISC new-domain feed |
+| [DOM-027](ingest.md) | P1 | ingest | partial | isc-new: the ISC new-domain feed |
 | [DOM-028](ingest.md) | P2 | ingest | open | whoisds, cenk-nrd and hagezi-nrd: the daily lists |
 | [DOM-029](ingest.md) | P1 | ingest | partial | thc-ct: THC's daily dumps and the 54-day backfill |
 | [DOM-030](serve.md) | P1 | serve | **done** | The Worker: custom domain, GHCR reads, root cache and healthz |

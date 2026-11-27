@@ -254,7 +254,9 @@ the TCP recordings and the sandbox of the harness (`packages/adapter/node/sandbo
 `docs/clock.md` and `scripts/measure/clock-verdict.mjs` (DOM-003), the first
 adapter `adapters/oi-nrd/` (DOM-026), THC's adapter `adapters/thc-ct/` with
 `ingest-thc.yml`, `scripts/ingest/thc-plan.mjs` and `scripts/ingest/adopt.mjs`
-(DOM-029), `probes/worker/` (DOM-061), the Worker `apps/api/` with `docs/worker.md` and
+(DOM-029), the offline history tools in `scripts/compact/history*.mjs` and
+`docs/history-repair.md` (DOM-029), the ISC snapshot seam `adapters/isc-new/`
+and `ingest-isc-archive.yml` (DOM-027), `probes/worker/` (DOM-061), the Worker `apps/api/` with `docs/worker.md` and
 `worker.yml` (DOM-030), the measurement workflows and `ci.yml` under
 `.github/workflows/`, and `docs/research/measure/`, where each measurement
 writes its results under its entry id.

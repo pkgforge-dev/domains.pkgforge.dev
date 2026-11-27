@@ -364,6 +364,12 @@ words are recorded they are quoted; where this record holds none, it says so.
     the live chain is held to, and DOM-034 measures whether the chain meets
     it. Overturn: the operator's ruling.
 
+28. **Keep 2025 ISC gzip and index from 2026** (operator, 2026-11-27).
+    Archive the exact dated gzip for 2025-10-26 through 2025-12-31
+    inclusive. Indexed ISC eligibility starts on 2026-01-01 under the
+    existing DPK1 epoch. Report verified raw archive coverage and indexed
+    root coverage separately (DOM-027 and DOM-051).
+
 Also settled, as a default and not as an operator ruling:
 
 - **Session scope:** a session works the order item after item until every entry

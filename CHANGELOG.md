@@ -2,6 +2,18 @@
 
 What shipped and when, newest first. Times are UTC.
 
+## 2026-11-27
+
+- Added the dispatch-only ISC raw archive workflow for 2025-10-26 through
+  2025-12-31, and the snapshot seam for indexing from 2026-01-01 (DOM-027).
+  Both archive boundary files passed direct source validation. The first
+  hosted archive and indexed publication remain pending.
+- Added an offline exact-history planner and builder (DOM-029). Anonymous
+  root reads verified 21 original November dates and 63 daily manifests.
+  The pre-backfill plan identifies twelve later feed packs to reconcile.
+  The local builder emits unpublished candidates. See
+  [historical feed repair](docs/history-repair.md).
+
 ## 2026-11-03
 
 - The Worker runs the new runtime set (DOM-030, closed): version `c8a325ab` of 9f4da66, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1. Every `curl` line of the Prove passed against it, and `/healthz` reads `HTTP/1.1 200 OK`.

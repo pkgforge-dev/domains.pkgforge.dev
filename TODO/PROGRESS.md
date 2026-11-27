@@ -5,9 +5,9 @@ the only one.
 
 ## State
 
-- **Tree:** the session started on local `f105a12` with DOM-029 staged. Upstream `main` is `4fcdb48`, which records the second Worker deployment and closes DOM-030. This commit integrates the reviewed DOM-029 work and closes DOM-012.
-- **Last session:** started 2026-11-27T07:59:17Z. Final recorded instant: 2026-11-27T08:44Z.
-- **Deployed:** Worker `domains-pkgforge-dev` version `c8a325ab`, build `9f4da663dc5a`, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1 (DOM-030, done). No serving R2 cache bucket. The probe Worker and bucket remain for DOM-056. The `root`, `obs`, `state`, `names`, `feed`, `ref` and `probe` GHCR packages are public. This session changed no deployment and ran no hosted THC ingest.
+- **Tree:** `d0e6de4` on `main` integrates the reviewed DOM-029 ingest work and closes DOM-012. The following increment adds the ISC raw archive workflow and the offline exact-history planner and builder.
+- **Session:** started 2026-11-27T07:59:17Z. This record includes the 13:44Z September canary dispatch.
+- **Deployed:** Worker `domains-pkgforge-dev` version `c8a325ab`, build `9f4da663dc5a`, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1 (DOM-030, done). No serving R2 cache bucket. The probe Worker and bucket remain for DOM-056. The `root`, `obs`, `state`, `names`, `feed`, `ref` and `probe` GHCR packages are public. `ingest-thc.yml` was created at 08:47:41Z. First run 46007734746 succeeded and published the 2026-11-26 names and domains segments in root 1259. The ISC archive workflow awaits registration and dispatch.
 - **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013).
 
 ## Baseline
@@ -20,7 +20,7 @@ the only one.
 | candidate gate | 2026-11-27T08:41:43Z, exit 0 on `61ae27216cc4`, 2,226 tests passed, 3 Windows skips, 199 files |
 | reconciled gate | `npm run gate`, with Node v26.13.0 and the rebased lockfile. The exact passing tree is in `.tmp/gate-passes.jsonl`. |
 
-**63 items. 33 open, 2 partial, 0 blocked, 28 done.**
+**63 items. 32 open, 3 partial, 0 blocked, 28 done.**
 
 ## What this session did
 
@@ -28,22 +28,25 @@ the only one.
 - Planned the two historical ingest windows against anonymous root 1248. September 1 through November 1 gave 60 run legs and two gaps. November 2 through November 26 gave 24 legs and a November 18 gap. The November 19 file was quarantined in the dry plan. These readings precede any live THC run. The September 12 standalone canary precedes bulk dispatch.
 - Recovered DOM-012's 32 hosted poll artifacts. The committed-evidence replay passed with seven observed days for all four feeds, 1,037 polls from 31 runs in the sample and an 11.1-minute maximum gap. The deployed Worker and anonymous root were checked separately. The hosted proof, offline replay and both review and mechanical gate evidence close DOM-012.
 - Corrected the README's description of public metadata and OCI artifacts and kept consumer route documentation in DOM-059, under ruling 26. Recorded the 60-run ingest sample under DOM-034. Three runs had state or root move failures with no common cause established by their public logs.
+- Built the initial ISC archive path for 2025-10-26 through 2025-12-31 and the separate indexed snapshot seam for dates on or after 2026-01-01 (ruling 28). The two boundary files passed direct source validation. The hosted archive, anonymous proof of its 67 dates and the indexed root path remain pending (DOM-027).
+- Verified the original November 2–22 archive lineage for 21 days and 63 manifest digests. The read-only history plan against root 1248 covers six domains and feed weeks and leaves 12 downstream feed packs unresolved. The build fixture produces local candidates. Production layer verification, full historical replay and guarded publication remain open (DOM-029).
 
 ## What is in progress
 
 | entry | waits for |
 | --- | --- |
-| DOM-029 | first live THC run, September canary, historical backfill, daily and higher-tier checks, ledger timing and verified historical feed repair |
+| DOM-029 | [September canary](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46009749305), historical backfill, daily and higher-tier checks, ledger timing and verified historical feed repair |
 | DOM-023 | its live compaction Prove after THC supplies the required day inputs |
+| DOM-027 | hosted raw archive coverage and separate indexed ingest, promotion and root proof |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
 ## Start here next session
 
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
-2. THC: follow the close order in DOM-029. Drain workflow runs on earlier commits before the first THC promotion, and record the first live day L. Run the September 12 canary before the bulk backfill. Plan consecutive windows of at most 62 days, September 1 through November 1 (or L if earlier), then November 2 through L, including the one-day case if L is November 2. Dispatch only windows with work. After promotion, verify the no-work plan, both OBS manifest digests per day and full-day live coverage or verified replacement lineage. Run range compaction after the scheduled daily. Reconstruct the historical feed days ahead of closing the entry, including downstream days whose original joins used incomplete history. Prove rebuilt original-span higher-tier replacements. Then build the September weeks (September 7, 14 and 21) and the September and October months, and measure the first eligible ledger build. DOM-023's live Prove follows.
+2. THC: the first live run 46007734746 succeeded and both manifest digests match root 1259. L is November 26. Watch September 12 canary run 46009749305 and verify its output before bulk backfill. Plan consecutive windows of at most 62 days, September 1 through November 1 (or L if earlier), then November 2 through L. Dispatch only windows with work. After promotion, verify the no-work plan, both OBS manifest digests per day and full-day live coverage or verified replacement lineage. Run range compaction after the scheduled daily. Use the actual post-backfill root with the offline history CLI, verify original-span replacements, and resolve downstream feed days before closing. Then build the September weeks (September 7, 14 and 21) and the September and October months, and measure the first eligible ledger build. DOM-023's live Prove follows.
 3. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill and range compaction (item 2). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
-4. The feed's other adapters: DOM-027 and DOM-028. DOM-012 supplies the publication measurements.
+4. The feed's other adapters: DOM-027 first archives the verified 2025 gzip files in oldest-first windows of at most seven dates. Then wire indexed ISC ingestion from 2026-01-01 and verify its root separately. DOM-028 follows. DOM-012 supplies the publication measurements.
 5. The Worker and the first routes: DOM-030 done, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
 6. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
 7. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
@@ -55,7 +58,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
 Known limits:
 - Current Worker routes expose metadata. Named-hole dataset readers need the DOM-029 validator before deployment.
-- Root 1248 already contains OpenINTEL-only November weeks 45 through 47. All 63 daily manifests for November 2–22 and the nine live weekly manifests read anonymously with one PSL. Historical feed repair needs exact daily membership verified against prior roots or saved plans, corrected exact joins in day order and original-span replacements guarded under `root-writer`. Later feed days can need repair after earlier sightings change their newness.
+- The pre-backfill root 1248 contains OpenINTEL-only November weeks 45 through 47. Original daily membership is verified by 63 digests. The local history CLI stops at unpublished candidates and lists 12 unresolved downstream packs for that plan. A post-backfill plan, production layer verification, original-span replacements guarded under `root-writer` and later exact feed checks remain due.
 - Daily pairing establishes co-publication of a domains and feed day. The pinned workflow's exact join and artifact verification establish their contents. A same-span reference from a manual promotion alone gives no exact-join evidence.
 - Runner duration and September memory estimates await the canary. The estimated ledger rebuild cost awaits its first eligible hosted daily.
 - Name-level newness is censored for about 200 days (DOM-041).

@@ -1,0 +1,66 @@
+# DOM-027: archive the 2025 ISC gzip files into the raw lane of obs.
+# Dispatch contiguous windows from 2025-10-26 through 2025-12-31, up to seven
+# inclusive days at a time, starting the next after its predecessor verifies.
+# A failed window can be retried intact. A differing body for an archived day
+# stops the window and preserves the original. No indexed packs or root moves.
+name: Archive ISC 2025
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: First day of the archive window, YYYY-MM-DD
+        required: true
+        type: string
+      to:
+        description: Last day of the archive window, inclusive, at most seven days total
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ingest-isc-archive
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  ingest:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Install oras
+        run: |
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Archive the dated gzip files
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: node scripts/ingest/isc-archive.mjs --from "$FROM" --to "$TO"

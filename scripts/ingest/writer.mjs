@@ -117,6 +117,10 @@ export const VARIANTS = Object.freeze({ names: undefined, domains: 'd' });
 const HOUR_MS = 3_600_000;
 const P = 'dev.pkgforge.domains.';
 
+export function rawMembersJson(source, { start, end }, members) {
+  return `${canonicalJson({ format: MEMBERS_FORMAT, source, start, end, members })}\n`;
+}
+
 // A refusal of the writer that no ContractError check names: `cursor`,
 // `tag`, `straddle`, `raw`, `raw-size`, `facts`, `manifest`. run.mjs prints it as the adapter
 // run's fault and pushes nothing (exit 1).
@@ -408,8 +412,8 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
     renameSync(temp, at);
     // The writer's own fields last: checkRawMember refuses a rawMember that names one.
     const member = { ...rawMember, offset: 0, length: got.bytes, sha256: got.sha256 };
-    const members = { format: MEMBERS_FORMAT, source: draft.source, start: draft.window.start, end: draft.window.end, members: [member] };
-    writeOut(join(at, MEMBERS_TITLE), `${canonicalJson(members)}\n`, 'run');
+    const members = [member];
+    writeOut(join(at, MEMBERS_TITLE), rawMembersJson(draft.source, draft.window, members), 'run');
     const files = [...got.files.map((_, i) => ({ path: join(at, partName(i)), mediaType: RAW_MEDIA_TYPE })), { path: join(at, MEMBERS_TITLE), mediaType: 'application/json' }];
     const object = {
       tag,
@@ -419,7 +423,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
       end: draft.window.end,
       bytes: got.bytes,
       sha256: got.sha256,
-      members: members.members.length,
+      members: members.length,
       files,
       annotations: {
         [`${P}source`]: draft.source,
@@ -427,7 +431,7 @@ export function diskWriter({ dir, adapter, sources, psl, run, fetched, partBytes
         [`${P}span.end`]: draft.window.end,
         [`${P}bytes`]: String(got.bytes),
         [`${P}sha256`]: got.sha256,
-        [`${P}members`]: String(members.members.length),
+        [`${P}members`]: String(members.length),
         [`${P}adapter`]: adapter,
         [`${P}parser`]: row.parser,
         [`${P}url`]: url,
