@@ -1,0 +1,79 @@
+# DOM-027: stage dated ISC packs in obs with an anonymous verification ledger.
+# Use contiguous windows of up to seven days. The end date is exclusive.
+name: Stage indexed ISC history
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: First UTC day to stage, YYYY-MM-DD
+        required: true
+        type: string
+      to:
+        description: Exclusive UTC day after the window, YYYY-MM-DD
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ingest-isc-stage
+  queue: max
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  LC_ALL: C
+
+jobs:
+  ingest:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Install oras
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Stage and verify the dated window
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          set -euo pipefail
+          node scripts/ingest/run.mjs --adapter isc-new --psl root --stage \
+            --from "${FROM}T00:00:00Z" --to "${TO}T00:00:00Z" \
+            --out "$RUNNER_TEMP/isc-stage"
+
+      - name: Save the verified manifest identities
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: isc-stage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/isc-stage/stage.jsonl
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 90

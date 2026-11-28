@@ -32,6 +32,7 @@ const PSL_TITLE = 'public_suffix_list.dat';
 // The list is about 0.3 MB; a layer above this is refused unread.
 const PSL_MAX_BYTES = 16 * 1024 * 1024;
 const PUSHED = /^(?:pushed|present) \S+ (sha256:[0-9a-f]{64})\b/;
+export const QUARANTINE = 'dev.pkgforge.domains.quarantine';
 
 let files = 0;
 
@@ -137,5 +138,5 @@ export async function pslFile(reader, sha256, dir, deps = {}) {
 export async function rootPsl(reader, dir, deps = {}) {
   const live = await readRoot(reader, LATEST, deps);
   const path = await pslFile(reader, live.root.psl, dir, deps);
-  return { path, sha256: live.root.psl, from: `root:${LATEST} ${live.digest}` };
+  return { path, sha256: live.root.psl, from: `root:${LATEST} ${live.digest}`, rootDigest: live.digest, domainsSince: live.root.corpus_since.domains ?? null };
 }

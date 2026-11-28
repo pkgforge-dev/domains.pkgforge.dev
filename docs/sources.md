@@ -47,20 +47,23 @@ one day. See [the host comparison](research/2026-11-01-thc-ct/33-compare-hosts.o
 
 ## ISC raw and indexed coverage
 
-The raw archive is planned for the 67 UTC observation dates from 2025-10-26
-through 2025-12-31 inclusive. It retains the publisher's exact gzip and a
-member record with its actual date, source URL, byte count and SHA-256.
-The archive command validated the first and last date directly against ISC
-on 2026-11-27. A successful hosted archive and anonymous verification of
-all dates are still pending. [DOM-027](../TODO/ingest.md#dom-027--isc-new-the-isc-new-domain-feed)
+The raw archive covers 67 UTC observation dates from 2025-10-26 through
+2025-12-31 inclusive. It retains the publisher's exact gzip and a member
+record with its actual date, source URL, byte count and SHA-256. Eleven
+hosted archive runs on 2026-11-27 verified all 67 dates anonymously.
+Independent manifest and gzip readback covered October 26, November 16 and
+December 31. [DOM-027](../TODO/ingest.md#dom-027--isc-new-the-isc-new-domain-feed)
 
 Indexed eligibility starts on 2026-01-01 under the existing DPK1 epoch.
 A valid snapshot can produce T2, day-precision `nrd-list` evidence for its
-normalized registrable domains. Its day is an ISC observation date.
-The registry defines source bit 8. The live feeds lane and separate
-indexed root coverage proof remain pending. The raw archive does not
-contribute to indexed `corpus_since`, source `through`, or derived
-coverage ratios. [DOM-051](../TODO/ingest.md#dom-051--gtlds-without-czds-iscs-year-of-dated-files-dns-coffees-daily-counts-gov-and-the-zone-walks)
+normalized registrable domains. Its day is an ISC observation date. The
+registry defines source bit 8. The indexed bridge stages dated candidates
+in `obs`, then the root writer promotes the proved digests. The separate
+cursor move checks every day through its target against the public root.
+At the 2026-11-28 reading, production staging, promotion and cursor adoption
+were pending and the ordinary `feeds` lane was inactive. Indexed
+`corpus_since`, source `through` and derived coverage are measured from
+indexed root entries. [DOM-027](../TODO/ingest.md#dom-027--isc-new-the-isc-new-domain-feed)
 
 ### Verify a published ISC archive day
 

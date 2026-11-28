@@ -141,6 +141,69 @@ test('promote: a pack added to the live root is listed with its index head, unde
     );
   }));
 
+test('promote: a matching ISC digest pin extends the live domains edge and reads back that exact manifest', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    const initial = await reg.seedPack('obs', 'oi-nrd.20261022t13.0232f4df0831', {
+      dataset: 'domains',
+      tier: 'seg',
+      start: '2026-10-22T13:00:50Z',
+      end: '2026-10-22T14:00:00Z',
+      sources: ['oi-nrd'],
+    });
+    const first = await promote(reg, tmp, ['--psl', PSL_TAG, '--add', initial.ref], { now: '2026-10-29T09:00:00Z' });
+    assert.equal(first.code, EXIT.ok, first.text);
+    const live = rootAt(reg, 'latest');
+    const tag = 'isc-new.20261022.0232f4df0831-d';
+    const pack = await reg.seedPack('obs', tag, {
+      dataset: 'domains',
+      tier: 'seg',
+      start: '2026-10-22T00:00:00Z',
+      end: '2026-10-23T00:00:00Z',
+      sources: ['isc-new'],
+    });
+    const from = reg.w.requests.length;
+    const r = await promote(reg, tmp, ['--add', `${pack.ref}@${pack.digest}`], { now: '2026-10-29T09:10:00Z' });
+    assert.equal(r.code, EXIT.ok, r.text);
+    const next = rootAt(reg, 'latest');
+    assert.equal(next.root.previous, live.digest);
+    assert.equal(next.root.corpus_since.domains, '2026-10-22T00:00:00Z');
+    const listed = next.root.datasets.domains.find((p) => p.tag === tag);
+    assert.deepEqual([listed.manifest, listed.count, listed.sources], [pack.digest, 3, ['isc-new']]);
+    const requests = reg.w.requests.slice(from);
+    assert.equal(requests.filter((q) => q.url.endsWith(`/obs/manifests/${tag}`)).length, 1);
+    assert.ok(requests.some((q) => q.init.method === 'HEAD' && decodeURIComponent(q.url).endsWith(`/obs/manifests/${pack.digest}`)));
+    assert.match(r.out.at(-1), /read back with no credential$/);
+  }));
+
+test('promote: a tag that resolves to a different digest refuses before index reads or writes, including with --partial', () =>
+  inRegistry(async (reg, tmp) => {
+    reg.seedPsl();
+    assert.equal((await promote(reg, tmp, ['--psl', PSL_TAG], { now: '2026-10-29T09:00:00Z' })).code, EXIT.ok);
+    const live = rootAt(reg, 'latest');
+    const tag = 'isc-new.20261022.0232f4df0831-d';
+    const span = { dataset: 'domains', tier: 'seg', start: '2026-10-22T00:00:00Z', end: '2026-10-23T00:00:00Z', sources: ['isc-new'] };
+    const expected = await reg.seedPack('obs', tag, span);
+    const current = await reg.seedPack('obs', tag, { ...span, records: 4 });
+    for (const partial of [[], ['--partial', '--gap', 'isc-new=2026-10-21']]) {
+      const from = reg.w.requests.length;
+      const calls = reg.calls.length;
+      const r = await promote(reg, tmp, ['--add', `${expected.ref}@${expected.digest}`, ...partial], { now: '2026-10-29T09:10:00Z' });
+      assert.equal(r.code, EXIT.fault, r.text);
+      assert.equal(r.err[0], `promote: ghcr.io/${repoOf('obs')}:${tag} resolved to ${current.digest}, expected ${expected.digest}`, r.text);
+      const requests = reg.w.requests.slice(from);
+      assert.ok(requests.some((q) => q.url.endsWith(`/obs/manifests/${tag}`)));
+      assert.ok(!requests.some((q) => q.url.includes('/obs/blobs/')));
+      const commands = verbs(reg).slice(calls);
+      assert.deepEqual(
+        commands.filter((v) => ['push', 'copy', 'tag'].includes(v)),
+        [],
+      );
+      assert.doesNotMatch(r.text, /^(built|waiting) /m);
+      assert.equal(rootAt(reg, 'latest').digest, live.digest);
+    }
+  }));
+
 test("promote: a feed day pack's time copy is read by its time index head and listed as time { idx, parts }; an hour pack without one lists none", () =>
   inRegistry(async (reg, tmp) => {
     reg.seedPsl();
@@ -852,6 +915,28 @@ test('promote: bad arguments and a missing token are exit 2 before anything is r
   assert.match(err.join('\n'), /REGISTRY_TOKEN is not set/);
   assert.equal(await main(['--fixture', 'nope'], { err: () => undefined, out: () => undefined }), EXIT.usage);
 });
+
+test('promote: additions accept tag-only and exact lowercase SHA-256 words, and replacements only accept tag words', () =>
+  inRegistry(async (reg, tmp) => {
+    const ref = 'obs:isc-new.20261022.0232f4df0831-d';
+    const digest = `sha256:${'a'.repeat(64)}`;
+    assert.deepEqual(parsePromoteArgs(['--add', 'names:a', `--add=${ref}@${digest}`]).add, [
+      { ref: 'names:a', expectedDigest: null },
+      { ref, expectedDigest: digest },
+    ]);
+    for (const pin of ['', digest.slice(0, -1), `${digest}a`, `sha256:${'A'.repeat(64)}`, digest.replace('sha256', 'sha512'), `${digest}@${digest}`, `${digest}\n`]) {
+      const r = await promote(reg, tmp, ['--add', `${ref}@${pin}`], { now: '2026-10-29T09:00:00Z' });
+      assert.equal(r.code, EXIT.usage, r.text);
+      assert.match(r.text, /needs a digest pin sha256:<64 lowercase hex digits> after @/);
+    }
+    for (const value of [`${ref}@${digest}=obs:a`, `obs:a=${ref}@${digest}`]) {
+      const r = await promote(reg, tmp, ['--replace', value], { now: '2026-10-29T09:00:00Z' });
+      assert.equal(r.code, EXIT.usage, r.text);
+      assert.match(r.text, /is not PACKAGE:TAG/);
+    }
+    assert.deepEqual(reg.w.requests, []);
+    assert.deepEqual(reg.calls, []);
+  }));
 
 test('promote: a malformed GITHUB_RUN_ATTEMPT is exit 2 before anything is read, and latest keeps its digest', () =>
   inRegistry(async (reg, tmp) => {

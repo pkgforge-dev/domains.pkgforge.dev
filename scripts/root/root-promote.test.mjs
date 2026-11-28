@@ -138,11 +138,11 @@ function runMove(t, env) {
 test('root-promote: the move step passes each input word to promote.mjs as its own flag, never globbed, and its exit code through', {
   skip: BASH === null ? 'no bash on this machine' : false,
 }, (t) => {
-  const r = runMove(t, { ADD: 'names:names-d-20261026  obs:thc-ct.20261026.0232f4df0831 *', REPLACE: 'names:a,names:b=names:c', PSL: 'psl-1f96bae40adf' });
+  const pinned = `obs:isc-new.20261022.0232f4df0831-d@sha256:${'a'.repeat(64)}`;
+  const r = runMove(t, { ADD: `names:names-d-20261026  ${pinned} *`, REPLACE: 'names:a,names:b=names:c', PSL: 'psl-1f96bae40adf' });
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(r.calls, [
-    ['scripts/root/promote.mjs', '--add', 'names:names-d-20261026', '--add', 'obs:thc-ct.20261026.0232f4df0831', '--add', '*', '--replace', 'names:a,names:b=names:c', '--psl', 'psl-1f96bae40adf'],
-  ]);
+  const args = ['scripts/root/promote.mjs', '--add', 'names:names-d-20261026', '--add', pinned, '--add', '*', '--replace', 'names:a,names:b=names:c', '--psl', 'psl-1f96bae40adf'];
+  assert.deepEqual(r.calls, [args]);
   assert.equal(r.output, 'rc=0\n');
   // No input at all: promote.mjs with no flag (the live root's PSL, nothing added).
   assert.deepEqual(runMove(t, {}).calls, [['scripts/root/promote.mjs']]);

@@ -58,6 +58,8 @@
 //      after the proposal: the progress the run returned is real. The
 //      result's stats are printed after the faults, one line (D18 of
 //      DOM-026), so the job log holds each source's lag and age.
+// An ISC --stage backfill verifies its entire window, checks for competing obs
+// tags, and writes stage.jsonl after anonymous readback. It writes no proposal.
 // A contract fault of the module or the writer (ContractError, WriteFault,
 // PackError) pushes nothing and writes no proposal: exit 1. The run is
 // --run, else GITHUB_RUN_ID: a workflow run id, as each manifest names it.
@@ -65,7 +67,7 @@
 // Usage:
 //   node scripts/ingest/run.mjs --adapter ID --out DIR [--lane LANE] [--adapters DIR] [--lanes FILE]
 //                               [--sources FILE] [--psl FILE|root] [--state FILE] [--recordings DIR]
-//                               [--from ISO --to ISO] [--now ISO] [--run ID] [--no-push]
+//                               [--from ISO --to ISO] [--now ISO] [--run ID] [--no-push | --stage]
 // --psl is required; --lanes is read with --lane alone; a flag is given once.
 // --out may hold other adapters' runs: --out/work/<ID>/ is new or empty, and
 // the proposal file is written once: one already there is exit 2 before the
@@ -118,7 +120,7 @@ import {
 } from '@domains/adapter';
 import { liveConnect, readRecordings, readTcpRecordings } from '@domains/adapter/node';
 import { CompactError, WORKFLOW_RUN_ID } from '@domains/compact';
-import { annotationProblem, GhcrError, LayoutError } from '@domains/ghcr';
+import { annotationProblem, GhcrError, LATEST, LayoutError } from '@domains/ghcr';
 import { loadPsl, PslError } from '@domains/names';
 import { PackError } from '@domains/pack';
 import { cursorOf, encodeProposal, historyOf, LANES, parseState, propose, proposalFile, StateError } from '@domains/state';
@@ -130,9 +132,9 @@ import { parseArgs, repeatedFlag } from '../lib/args.mjs';
 import { oneLine } from '../lib/line.mjs';
 import { USER_AGENT } from '../lib/user-agent.mjs';
 import { Fault, runAttempt, tempDir, UsageError } from '../root/lib.mjs';
-import { liveState, PrivateState, tokenFrom } from '../state/lib.mjs';
+import { liveState, PrivateState, readStateAt, tokenFrom } from '../state/lib.mjs';
 import { BITS, DEFAULT_SOURCES, loadRegistry, UsageError as RegistryUsage } from '../verify-pack.mjs';
-import { pushFiles, pushPlanOf, rootPsl, verifyDir } from './pack.mjs';
+import { pushFiles, pushPlanOf, QUARANTINE, rootPsl, verifyDir } from './pack.mjs';
 import { DEFAULT_ADAPTERS, DEFAULT_LANES, isoSecond, nowIso, readLanes, windowOf } from './plan.mjs';
 import { diskWriter, RAW_TYPE, WriteFault } from './writer.mjs';
 
@@ -140,14 +142,15 @@ export const EXIT = Object.freeze({ ok: 0, fault: 1, usage: 2, private: 4, inter
 // The checks every segment's verify names (DOM-024's Found of 2026-10-29T06:00Z),
 // and `volume` for a one-day segment of a day source (D5 of DOM-024).
 export const REQUIRE = Object.freeze(['dataset', 'length', 'count', 'sha256', 'psl', 'sources', 'precision']);
-export const QUARANTINE = 'dev.pkgforge.domains.quarantine';
+export { QUARANTINE };
 const PUSHED_VERDICTS = new Set(['ok', 'quarantine']);
 const DATASET_ORDER = ['names', 'domains'];
+const ISC = 'isc-new';
 const DAY_MS = 86_400_000;
 const USAGE =
-  'usage: node scripts/ingest/run.mjs --adapter ID --out DIR --psl FILE|root [--lane LANE] [--adapters DIR] [--lanes FILE] [--sources FILE] [--state FILE] [--recordings DIR] [--from ISO --to ISO] [--now ISO] [--run ID] [--no-push]';
+  'usage: node scripts/ingest/run.mjs --adapter ID --out DIR --psl FILE|root [--lane LANE] [--adapters DIR] [--lanes FILE] [--sources FILE] [--state FILE] [--recordings DIR] [--from ISO --to ISO] [--now ISO] [--run ID] [--no-push | --stage]';
 const VALUED = ['adapter', 'out', 'lane', 'adapters', 'lanes', 'sources', 'psl', 'state', 'recordings', 'from', 'to', 'now', 'run'];
-const FLAGS = [...VALUED, 'no-push'];
+const FLAGS = [...VALUED, 'no-push', 'stage'];
 
 const sha256Of = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
@@ -168,6 +171,7 @@ function readJson(path, what) {
 function parse(argv, env, clock) {
   const a = parseArgs(argv);
   if (typeof a['no-push'] === 'string') throw new UsageError(`--no-push takes no value, and it was given ${JSON.stringify(a['no-push'])}`);
+  if (typeof a.stage === 'string') throw new UsageError('--stage takes no value');
   for (const k of Object.keys(a)) if (k !== '_' && !FLAGS.includes(k)) throw new UsageError(`unknown flag --${k}`);
   const twice = repeatedFlag(a);
   if (twice !== null) throw new UsageError(`--${twice} is given twice`);
@@ -184,6 +188,12 @@ function parse(argv, env, clock) {
   // D17 of DOM-024: --from and --to are a window of their own; the sources are
   // --adapter's.
   const window = windowOf(a.from, a.to, a.from === undefined && a.to === undefined ? undefined : [a.adapter], now);
+  const stage = a.stage === true;
+  const push = a['no-push'] !== true;
+  if (stage && (a.adapter !== ISC || window === null || !push || a.psl !== 'root' || a.state !== undefined || a.lane !== undefined)) {
+    throw new UsageError('--stage needs an ISC dated window, --psl root, and the public live state, with no --lane or --no-push');
+  }
+  if (a.adapter === ISC && window !== null && push && !stage) throw new UsageError('publishing an ISC dated backfill requires --stage');
   return {
     adapter: a.adapter,
     out: a.out,
@@ -197,7 +207,8 @@ function parse(argv, env, clock) {
     window,
     now,
     run,
-    push: a['no-push'] !== true,
+    push,
+    stage,
   };
 }
 
@@ -365,7 +376,7 @@ function historyItems(verified) {
 }
 
 // Step 8: the raw lane objects, then the segments. Returns { code, digests }.
-async function pushAll(writer, verified, d, tmp) {
+async function pushAll(writer, verified, d, tmp, stage) {
   const deps = { env: d.env, oras: d.oras, reader: d.reader, sleep: d.sleep, random: d.random, tmp, err: d.err };
   const digests = new Map();
   const one = async (tag, plan) => {
@@ -381,10 +392,18 @@ async function pushAll(writer, verified, d, tmp) {
     if (c !== 0) return { code: codeOf(c), digests };
   }
   for (const v of verified) {
-    const plan = pushPlanOf(v.w.manifest.json, v.w.blobs);
-    const annotations = v.verdict === 'quarantine' ? [...plan.annotations, [QUARANTINE, '1']] : plan.annotations;
-    const c = await one(v.w.tag, { ...plan, annotations });
-    if (c !== 0) return { code: codeOf(c), digests };
+    const tag = v.w.tag;
+    const known = stage?.manifests.get(tag);
+    if (known === undefined) {
+      const plan = pushPlanOf(v.w.manifest.json, v.w.blobs);
+      const annotations = v.verdict === 'quarantine' ? [...plan.annotations, [QUARANTINE, '1']] : plan.annotations;
+      const c = await one(tag, { ...plan, annotations });
+      if (c !== 0) return { code: codeOf(c), digests };
+    } else {
+      d.out(`present obs:${tag} ${known} (verified ISC staging pack)`);
+      digests.set(tag, known);
+    }
+    if (stage !== null) await stage.record(v, digests.get(tag));
   }
   return { code: EXIT.ok, digests };
 }
@@ -429,6 +448,9 @@ async function runJob(argv, deps) {
     const args = parse(argv, d.env, d.now);
     const rows = sourcesOf(args);
     if (args.lane !== null && !readLanes(args.lanes, args.adapters)[args.lane].includes(args.adapter)) throw new UsageError(`${args.adapter} is not in the lane ${args.lane} of ${args.lanes}`);
+    const stageSupport = args.stage ? await import('./isc-stage.mjs') : null;
+    const stageDays = stageSupport?.stageDays(args.window, args.now);
+    if (args.stage && Object.values(readLanes(DEFAULT_LANES, args.adapters)).some((lane) => lane.includes(ISC))) throw new UsageError('ISC staging requires the ordinary ISC lane to be inactive');
     if (args.push && (!d.env.REGISTRY_TOKEN || !d.env.GITHUB_ACTOR)) throw new UsageError("a push needs REGISTRY_TOKEN (the job's own GITHUB_TOKEN) and GITHUB_ACTOR; give --no-push to verify alone");
     const work = join(args.out, 'work', args.adapter);
     freshDir(work, 'run');
@@ -436,7 +458,8 @@ async function runJob(argv, deps) {
     // anything is pushed. A backfill's file names its window's start (D13 of
     // DOM-029), so the legs of one backfill merge into one directory.
     const proposalPath = join(args.out, 'proposals', proposalFile(args.adapter, args.window?.start));
-    if (args.push && existsSync(proposalPath)) throw new UsageError(`${proposalPath} exists: run writes into a new directory`);
+    if (args.push && !args.stage && existsSync(proposalPath)) throw new UsageError(`${proposalPath} exists: run writes into a new directory`);
+    const stageFile = stageSupport?.checkStagePath(args.out);
     if (args.recordings !== undefined && (!existsSync(args.recordings) || !statSync(args.recordings).isDirectory())) throw new UsageError(`--recordings ${args.recordings} is not a directory`);
     // The pushes' registry configs live here, and go with it.
     temp = tempDir(deps.tmp ?? d.env.RUNNER_TEMP, 'ingest-run-');
@@ -444,6 +467,7 @@ async function runJob(argv, deps) {
     // 2. The live state.
     let state;
     let from;
+    let stateDigest = null;
     if (args.state !== undefined) {
       let bytes;
       try {
@@ -459,15 +483,19 @@ async function runJob(argv, deps) {
       }
       from = args.state;
     } else {
-      // The registry config of a token read is removed before the adapter module runs.
-      const readTemp = tempDir(deps.tmp ?? d.env.RUNNER_TEMP, 'ingest-state-');
       let live;
-      try {
-        live = await liveState(d.reader, tokenFrom(readTemp, d), d);
-      } finally {
-        rmSync(readTemp, { recursive: true, force: true });
+      if (args.stage) live = await readStateAt(d.reader, LATEST, d);
+      else {
+        // The registry config of a token read is removed before the adapter module runs.
+        const readTemp = tempDir(deps.tmp ?? d.env.RUNNER_TEMP, 'ingest-state-');
+        try {
+          live = await liveState(d.reader, tokenFrom(readTemp, d), d);
+        } finally {
+          rmSync(readTemp, { recursive: true, force: true });
+        }
       }
       state = live?.state ?? null;
+      stateDigest = live?.digest ?? null;
       from = live === null ? 'state:latest none' : `state:latest ${live.digest}`;
     }
     const cursor = cursorOf(state, args.adapter);
@@ -526,8 +554,14 @@ async function runJob(argv, deps) {
     }
 
     // 8. The pushes.
-    const pushed = await pushAll(writer, verified, d, temp);
+    if (args.stage && faults !== EXIT.ok) return faults;
+    const stage = stageSupport === null ? null : await stageSupport.prepareIscStage({ args, days: stageDays, stateDigest, list, file: stageFile, verified, writer }, d);
+    const pushed = await pushAll(writer, verified, d, temp, stage);
     if (pushed.code !== EXIT.ok) return pushed.code;
+    if (stage !== null) {
+      await stage.finish();
+      return EXIT.ok;
+    }
 
     // 9. The proposal.
     const before = cursor;

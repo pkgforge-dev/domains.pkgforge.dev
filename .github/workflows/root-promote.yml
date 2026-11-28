@@ -58,7 +58,7 @@ on:
   workflow_call:
     inputs:
       add:
-        description: The packs to add, PACKAGE:TAG separated by spaces or newlines
+        description: The packs to add, PACKAGE:TAG or PACKAGE:TAG@sha256:<64 lowercase hex digits>, separated by spaces or newlines
         type: string
         required: false
         default: ""
@@ -90,7 +90,7 @@ on:
   workflow_dispatch:
     inputs:
       add:
-        description: The packs to add, PACKAGE:TAG separated by spaces or newlines
+        description: The packs to add, PACKAGE:TAG or PACKAGE:TAG@sha256:<64 lowercase hex digits>, separated by spaces or newlines
         type: string
         required: false
         default: ""

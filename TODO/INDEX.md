@@ -70,7 +70,8 @@ record guard refuses an order that lists an entry before an open dependency.
    feed packs (DOM-022) and compaction (DOM-023) make it queryable. The adapters
    follow in the order of their freshness: OpenINTEL's claims (DOM-026), ISC
    (DOM-027), the lists (DOM-028), then THC's daily dump (DOM-029), which is
-   the largest and seeds the ledger's horizon of 2026-09-01. The Worker
+   the largest and seeds the ledger's horizon of 2026-09-01. The ordinary ISC
+   lane follows the verified historical root and cursor handoff in DOM-027. The Worker
    (DOM-030), `/v1/new` (DOM-032) and the dossier (DOM-033) give an operator
    checkpoint: queries for `.com.np`, `.com` and `co.uk` over windows of 1 h to
    7 d. The R2 cache (DOM-031) is an optimisation and does not block the

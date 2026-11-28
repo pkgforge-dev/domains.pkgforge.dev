@@ -12,6 +12,7 @@
 //   2. read each --add and each new pack of --replace: its manifest with no
 //      credential and its index head by range, and the head of its time copy's
 //      index too when it carries one (scripts/root/lib.mjs packFacts);
+//      an --add digest pin must match the tag's manifest before an index read;
 //      a re-run (GITHUB_RUN_ATTEMPT above 1) drops every one the live root
 //      already names or supersedes (section 4.7 rule 4);
 //   3. with --partial, keep the additions the live-set rule allows (keepLiveSet
@@ -106,7 +107,7 @@
 // to stderr).
 import { readFileSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { artifactType, GhcrError, LayoutError, NAMESPACE, refTag, repoOf } from '@domains/ghcr';
+import { artifactType, DIGEST, GhcrError, LayoutError, NAMESPACE, refTag, repoOf } from '@domains/ghcr';
 import { buildRoot, canonical, checkLiveSet, comparePacks, createdOf, dropSuperseded, EMPTY_COVERAGE, layerBytes, RootError, segmentOfDay, sourcesLayer } from '@domains/root';
 import { anonymousReader, PRIVATE_LINE } from '../ghcr/check-public.mjs';
 import { orasRunner } from '../ghcr/push.mjs';
@@ -117,7 +118,7 @@ import { EXIT, Fault, liveRoot, login, missingPacks, packFacts, parsePackRef, Pr
 
 export { EXIT };
 const USAGE =
-  'usage: node scripts/root/promote.mjs [--add PKG:TAG]... [--replace OLD[,OLD...]=NEW]... [--psl psl-SHA12] [--gap SOURCE=YYYY-MM-DD]... [--fetched SOURCE=TIME]... [--coverage FILE] [--sources FILE] [--partial] | --fixture NAME';
+  'usage: node scripts/root/promote.mjs [--add PKG:TAG[@sha256:HEX64]]... [--replace OLD[,OLD...]=NEW]... [--psl psl-SHA12] [--gap SOURCE=YYYY-MM-DD]... [--fetched SOURCE=TIME]... [--coverage FILE] [--sources FILE] [--partial] | --fixture NAME';
 const REPEATED = new Set(['--add', '--replace', '--gap', '--fetched']);
 const SINGLE = new Set(['--psl', '--coverage', '--sources', '--fixture']);
 // A flag of no value.
@@ -126,6 +127,15 @@ const SWITCH = new Set(['--partial']);
 export const READ_CONCURRENCY = 4;
 const PSL_TITLE = 'public_suffix_list.dat';
 const SHA_ANNOTATION = 'dev.pkgforge.domains.sha256';
+
+function parseAddition(word) {
+  const [ref, expectedDigest = null, ...extra] = word.split('@');
+  parsePackRef(ref);
+  if (expectedDigest !== null && (extra.length > 0 || !DIGEST.test(expectedDigest))) {
+    throw new UsageError(`--add ${JSON.stringify(word)} needs a digest pin sha256:<64 lowercase hex digits> after @`);
+  }
+  return { ref, expectedDigest };
+}
 
 // The plan from argv, or UsageError.
 export function parsePromoteArgs(argv) {
@@ -149,7 +159,7 @@ export function parsePromoteArgs(argv) {
     else o[key] = value;
   }
   if (o.fixture !== null && argv.length !== 2) throw new UsageError('--fixture NAME takes no other flag');
-  for (const ref of o.add) parsePackRef(ref);
+  const add = o.add.map(parseAddition);
   const replace = o.replace.map((r) => {
     const k = r.lastIndexOf('=');
     const old = k > 0 ? r.slice(0, k).split(',') : [];
@@ -171,7 +181,7 @@ export function parsePromoteArgs(argv) {
     fetched[m[1]] = m[2];
   }
   if (o.psl !== null && !/^psl-[0-9a-f]{12}$/.test(o.psl)) throw new UsageError(`--psl ${JSON.stringify(o.psl)} is not a tag psl-<12 hex> of the ref package`);
-  return { add: o.add, replace, gaps, fetched, psl: o.psl, coverage: o.coverage, sources: o.sources ?? DEFAULT_SOURCES, fixture: o.fixture, partial: o.partial };
+  return { add, replace, gaps, fetched, psl: o.psl, coverage: o.coverage, sources: o.sources ?? DEFAULT_SOURCES, fixture: o.fixture, partial: o.partial };
 }
 
 // PKG:TAG of a pack entry.
@@ -370,7 +380,7 @@ async function promoteIn(plan, deps) {
     out(live === null ? 'live none: root:latest does not exist; this is the first root' : `live root:latest ${live.digest} root_seq ${live.root.root_seq} as_of ${live.root.as_of ?? 'none'}`);
     const psl = plan.psl !== null ? await pinnedPsl(reader, plan.psl, deps) : (live?.root.psl ?? null);
     if (psl === null) throw new UsageError('the first root needs --psl psl-<sha12>, the list the ref package pins');
-    let add = await mapPool(plan.add, READ_CONCURRENCY, (ref) => packFacts(reader, ref, deps));
+    let add = await mapPool(plan.add, READ_CONCURRENCY, ({ ref, expectedDigest }) => packFacts(reader, ref, deps, expectedDigest));
     const news = await mapPool(plan.replace, READ_CONCURRENCY, (r) => packFacts(reader, r.new, deps));
     // An old pack is named by its repository and tag in the live root; one the
     // live root does not hold stays as its ref, and buildRoot refuses it.

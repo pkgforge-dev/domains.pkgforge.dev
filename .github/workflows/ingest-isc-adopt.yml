@@ -1,0 +1,149 @@
+# DOM-027: adopt the fully staged and promoted ISC prefix under root-writer.
+# Stage produces immutable evidence; root-promote publishes the segments.
+# This dispatch only moves state:latest. The feeds lane has its own change.
+name: Adopt indexed ISC cursor
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Last indexed UTC day to adopt, inclusive (YYYY-MM-DD)
+        required: true
+        type: string
+      expect_state:
+        description: Current public state manifest digest (sha256 followed by 64 hex digits)
+        required: true
+        type: string
+      expect_cursor:
+        description: Exact current isc-new cursor as JSON (null on first adoption)
+        required: true
+        type: string
+      stages:
+        description: Space-delimited successful stage run-attempt pairs, for example 123456789-1
+        required: true
+        type: string
+
+permissions: {}
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  push:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: root-writer
+      queue: max
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: Link the workspace packages
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Install oras
+        run: |
+          set -euo pipefail
+          scripts/install-oras "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Download the successful main stage attempts
+        id: evidence
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STAGES: ${{ inputs.stages }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$STAGES" =~ ^[1-9][0-9]*-[1-9][0-9]*(\ [1-9][0-9]*-[1-9][0-9]*)*$ ]]; then
+            echo '::error::stages must be space-delimited run-attempt pairs'
+            exit 2
+          fi
+          read -r -a stages <<< "$STAGES"
+          if (( ${#stages[@]} > 100 )); then
+            echo '::error::give at most 100 stage attempts'
+            exit 2
+          fi
+          declare -A seen=()
+          for stage in "${stages[@]}"; do
+            if [[ -v "seen[$stage]" ]]; then
+              echo "::error::stage attempt $stage was given twice"
+              exit 2
+            fi
+            seen[$stage]=1
+          done
+
+          dir="$RUNNER_TEMP/isc-stages"
+          mkdir "$dir"
+          for stage in "${stages[@]}"; do
+            run="${stage%-*}"
+            attempt="${stage#*-}"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/attempts/$attempt" > "$RUNNER_TEMP/isc-stage-run.json"
+            if ! jq -e --arg run "$run" --arg attempt "$attempt" --arg repo "$GITHUB_REPOSITORY" '
+                (.id | tostring) == $run and (.run_attempt | tostring) == $attempt and
+                .path == ".github/workflows/ingest-isc-stage.yml" and .event == "workflow_dispatch" and
+                .status == "completed" and .conclusion == "success" and .head_branch == "main" and
+                .head_repository.full_name == $repo
+              ' "$RUNNER_TEMP/isc-stage-run.json" > /dev/null; then
+              echo "::error::$stage is not a successful indexed ISC stage attempt from main in this repository"
+              exit 1
+            fi
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "isc-stage-$stage" --dir "$dir/$stage"
+            if [[ ! -f "$dir/$stage/stage.jsonl" ]]; then
+              echo "::error::isc-stage-$stage has no stage.jsonl"
+              exit 1
+            fi
+          done
+
+      - name: Prove the live ISC prefix against the current root and state
+        id: prove
+        timeout-minutes: 2
+        env:
+          TARGET: ${{ inputs.target }}
+          EXPECT_STATE: ${{ inputs.expect_state }}
+          EXPECT_CURSOR: ${{ inputs.expect_cursor }}
+        run: |
+          set -euo pipefail
+          rc=0
+          node scripts/ingest/isc-adopt.mjs --target "$TARGET" --expect-state "$EXPECT_STATE" --expect-cursor "$EXPECT_CURSOR" --evidence "$RUNNER_TEMP/isc-stages" --out "$RUNNER_TEMP/isc-adopt" || rc=$?
+          if [[ "$rc" -eq 3 ]]; then
+            echo 'move=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$rc" -ne 0 ]]; then
+            exit "$rc"
+          fi
+          if [[ ! -f "$RUNNER_TEMP/isc-adopt/next.json" ]]; then
+            echo '::error::the proof produced no state candidate'
+            exit 1
+          fi
+          echo 'move=true' >> "$GITHUB_OUTPUT"
+
+      - name: Move state:latest and read it back anonymously
+        id: move
+        if: steps.prove.outputs.move == 'true'
+        timeout-minutes: 4
+        env:
+          EXPECT_STATE: ${{ inputs.expect_state }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          next="$RUNNER_TEMP/isc-adopt/next.json"
+          rc=0
+          node scripts/state/move.mjs state --file "$next" --expect "$EXPECT_STATE" || rc=$?
+          exit "$rc"

@@ -236,10 +236,13 @@ export function parsePackRef(ref) {
 // credential, its index head read by range, and, when the manifest holds a
 // time copy (docs/format.md section 14), the head of its time.idx alike; each
 // fact held to the other (packFromManifest). RootError becomes a Fault naming
-// the pack.
-export async function packFacts(reader, ref, deps = {}) {
+// the pack. A digest pin holds the resolved manifest before any index read.
+export async function packFacts(reader, ref, deps = {}, expectedDigest = null) {
   const { repo, tag } = parsePackRef(ref);
   const m = await readPaused(`the manifest ${tag} of ${repo}`, () => reader.getManifest(repo, tag, { maxBytes: MANIFEST_LIMIT_BYTES }), pausing(deps));
+  if (expectedDigest !== null && m.digest !== expectedDigest) {
+    throw new Fault(`${REGISTRY_HOST}/${repo}:${tag} resolved to ${m.digest}, expected ${expectedDigest}`);
+  }
   const layer = (title) => (m.json.layers ?? []).find((l) => l.annotations?.[TITLE] === title);
   const headOf = async (desc, what) => {
     try {
