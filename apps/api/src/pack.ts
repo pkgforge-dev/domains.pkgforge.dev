@@ -15,18 +15,14 @@
 // - `recordsPerBlock` at most MAX_RECORDS_PER_BLOCK and `pageEntries` at most
 //   MAX_PAGE_ENTRIES, checked at open, before any block is read.
 //
-// A block's bytes go into their `body` entry only once the reader's checks hold
-// them (length, inflate, CRC-32), so bytes that fail are never kept. A block
-// whose bytes came from its entry and fail inflate or the CRC-32 is a miss: the
-// entry is logged, the block is read again from GHCR, which overwrites the
-// entry once the bytes hold, and a block that fails at GHCR too fails the read.
-// Each read names its tier in the request's reads, so the provenance says what
-// served the bytes.
-import type { PackRead, ReadTier } from "@domains/core";
+// The cache fills and provenance wait for the reader's block checks (length,
+// inflate, CRC-32). A corrupt block skips its cache tier once and can try the
+// remaining tiers. A block that fails at GHCR fails the read.
+import type { PackRead } from "@domains/core";
 import type { GhcrReader } from "@domains/ghcr";
 import { type BlockEntry, PackError, type PackRecord, PackReader, type RangeSource } from "@domains/pack";
 import type { ApiCache } from "./cache.ts";
-import { bodyName, readImmutable } from "./ghcr.ts";
+import { type ImmutableCacheTier, type ImmutableRead, keepImmutable, readImmutable } from "./ghcr.ts";
 
 // The largest raw block a pack read by this Worker may hold: 1 MiB. The largest
 // raw block of the 613 live pack copies was 164,536 B (domains-d-20261030;
@@ -67,16 +63,11 @@ export interface OpenOptions {
   readonly maxRawBlockBytes?: number;
 }
 
-// The block reads of one pack, held until the reader's checks pass on them.
 interface BlockReads {
   readonly cache: ApiCache;
-  // By blockAt: the tier, the bytes and the `body` entry of the last read.
-  readonly got: Map<string, { tier: ReadTier; bytes: Uint8Array; name: string }>;
-  // Blocks whose entry failed a check: their next read skips it.
-  readonly fresh: Set<string>;
+  readonly part: (part: number, offset: number, length: number, after?: ImmutableCacheTier) => Promise<ImmutableRead>;
+  readonly accept: (read: ImmutableRead) => void;
 }
-
-const blockAt = (part: number, offset: number, length: number): string => `${part}:${offset}:${length}`;
 
 // A pack reader whose block reads keep only checked bytes and heal a bad entry.
 class WorkerPackReader<R> extends PackReader<R> {
@@ -87,30 +78,34 @@ class WorkerPackReader<R> extends PackReader<R> {
     this.#blocks = blocks;
   }
 
-  // The checked bytes of GHCR go into their entry; an entry's own bytes stay.
-  #held(at: string, raw: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
-    const got = this.#blocks.got.get(at);
-    this.#blocks.got.delete(at);
-    if (got?.tier === "ghcr") this.#blocks.cache.putBytes(got.name, got.bytes);
-    return raw;
-  }
-
   override async readBlock(entry: BlockEntry): Promise<Uint8Array<ArrayBuffer>> {
-    const at = blockAt(entry.part, entry.offset, entry.packed);
     const b = this.#blocks;
-    try {
-      return this.#held(at, await super.readBlock(entry));
-    } catch (err) {
-      const first = b.got.get(at);
-      b.got.delete(at);
-      if (first?.tier !== "cache" || !(err instanceof PackError) || !BYTE_FAULTS.has(err.code)) throw err;
-      b.cache.refused(first.name, `block ${entry.index} fails its check: ${err.message}`);
-      b.fresh.add(at);
+    // One block operation can never reuse another operation's candidate,
+    // even when they concurrently read the same entry in this reader.
+    let after: ImmutableCacheTier | undefined;
+    // At most three reads: each bad cache tier is skipped from then on.
+    for (;;) {
+      const attempt: { read?: ImmutableRead } = {};
+      const parts: RangeSource = {
+        read: async (part, offset, length) => {
+          const read = await b.part(part, offset, length, after);
+          attempt.read = read;
+          return read.bytes;
+        },
+      };
+      const reader = new PackReader(this.index, parts, this.codec, this.maxRawBlockBytes);
       try {
-        return this.#held(at, await super.readBlock(entry));
-      } finally {
-        b.fresh.delete(at);
-        b.got.delete(at);
+        const raw = await reader.readBlock(entry);
+        if (attempt.read !== undefined) b.accept(attempt.read);
+        return raw;
+      } catch (err) {
+        const rejected = attempt.read;
+        if (rejected === undefined || !(err instanceof PackError) || !BYTE_FAULTS.has(err.code)) throw err;
+        const why = `block ${entry.index} fails its check: ${err.message}`;
+        if (rejected.tier === "cache") b.cache.refused(rejected.name, why);
+        else if (rejected.tier === "r2") b.cache.r2?.refused("blk", why);
+        else throw err;
+        after = rejected.tier;
       }
     }
   }
@@ -121,23 +116,21 @@ export async function openPack(g: GhcrReader, cache: ApiCache, pack: PackBlobs, 
   if (!Number.isSafeInteger(bound) || bound < 1 || bound > MAX_RAW_BLOCK_BYTES) throw new PackError("usage", `maxRawBlockBytes ${bound} is not 1 to ${MAX_RAW_BLOCK_BYTES}`);
   const size = pack.idx.size;
   if (!Number.isSafeInteger(size) || size < 1 || size > MAX_IDX_BYTES) throw new PackError("page", `the index of ${pack.tag} is ${size} B; this Worker reads an index of 1 to ${MAX_IDX_BYTES} B`);
-  const idx = await readImmutable(g, cache, pack.repo, pack.idx.digest, 0, size, { whole: size });
-  reads.push({ tier: idx.tier, pack: pack.tag, sources: pack.sources });
-  const blocks: BlockReads = { cache, got: new Map(), fresh: new Set() };
-  const parts: RangeSource = {
-    read: async (part, offset, length) => {
-      const blob = pack.parts[part];
-      if (blob === undefined) throw new PackError("short-read", `${pack.tag} has no part ${part}`);
-      const at = blockAt(part, offset, length);
-      const r = await readImmutable(g, cache, pack.repo, blob.digest, offset, offset + length, { whole: blob.size, fresh: blocks.fresh.has(at), keep: false });
-      reads.push({ tier: r.tier, pack: pack.tag, sources: pack.sources });
-      blocks.got.set(at, { tier: r.tier, bytes: r.bytes, name: bodyName(pack.repo, blob.digest, offset, offset + length) });
-      return r.bytes;
-    },
+  const idx = await readImmutable(g, cache, pack.repo, pack.idx.digest, 0, size, { kind: "idx", whole: size });
+  const accept = (read: ImmutableRead): void => {
+    keepImmutable(cache, read);
+    reads.push({ tier: read.tier, pack: pack.tag, sources: pack.sources });
   };
+  const part: BlockReads["part"] = async (i, offset, length, after) => {
+    const blob = pack.parts[i];
+    if (blob === undefined) throw new PackError("short-read", `${pack.tag} has no part ${i}`);
+    return readImmutable(g, cache, pack.repo, blob.digest, offset, offset + length, { kind: "blk", whole: blob.size, after });
+  };
+  const parts: RangeSource = { read: async (...range) => (await part(...range)).bytes };
   const base = await PackReader.open(idx.bytes, parts, undefined, { partSizes: pack.parts.map((p) => p.size), maxRawBlockBytes: bound, pageCache: PAGE_CACHE });
   const h = base.index.header;
   if (h.recordsPerBlock > MAX_RECORDS_PER_BLOCK) throw new PackError("page", `the index of ${pack.tag} holds ${h.recordsPerBlock} records a block; this Worker reads at most ${MAX_RECORDS_PER_BLOCK}`);
   if (h.pageEntries > MAX_PAGE_ENTRIES) throw new PackError("page", `the index of ${pack.tag} holds ${h.pageEntries} entries a page; this Worker reads at most ${MAX_PAGE_ENTRIES}`);
-  return new WorkerPackReader(base, blocks);
+  accept(idx);
+  return new WorkerPackReader(base, { cache, part, accept });
 }

@@ -6,12 +6,14 @@
 // blobs are served by the testkit's GHCR stand-in.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { GhcrError } from "@domains/ghcr";
 import { MemorySink, NAMES_CODEC, type NameRecord, PART_HEADER_BYTES, PackError, writePack } from "@domains/pack";
 import { nodeCompress } from "@domains/pack/node";
 import { BLOB_HOST, type World } from "@domains/testkit";
 import { ApiCache } from "../src/cache.ts";
 import { ImmutableError, readerOf } from "../src/ghcr.ts";
 import { MAX_IDX_BYTES, MAX_PAGE_ENTRIES, MAX_RAW_BLOCK_BYTES, MAX_RECORDS_PER_BLOCK, openPack, type PackBlobs } from "../src/pack.ts";
+import { type ImmutableRange, R2Cache, type R2CacheBucket } from "../src/r2cache.ts";
 import { apiWorld, type Blobs, sha256 } from "./helpers.ts";
 
 const REPO = "pkgforge-dev/domains.pkgforge.dev/names";
@@ -356,4 +358,81 @@ test("pack: a block whose bytes fail the CRC-32 at GHCR fails the read and is ne
       assert.equal(partReads(w, partDigest).filter((r) => r.url.startsWith(BLOB_HOST)).length, 2, "each read went to GHCR");
     },
   );
+});
+
+test("pack: bad Cache API and R2 blocks contribute no tier or fill before an accepted replacement", async () => {
+  for (const scenario of ["cache", "r2", "ghcr", "unavailable"] as const) {
+    await apiWorld(
+      () => undefined,
+      async (w, blobs) => {
+        const { pack } = await plantSmall(w, blobs, smallKeys.slice(0, 10), { recordsPerBlock: 4096 });
+        const part = pack.parts[0];
+        assert.ok(part);
+        const first = io(w);
+        assert.ok(await (await openPack(first.g, first.cache, pack, [])).get(smallKeys[1]!));
+        await Promise.all(first.waits);
+        const local = partEntry(w, part.digest);
+        const m = /\/(\d+)-(\d+)$/.exec(decodeURIComponent(local.url));
+        assert.ok(m);
+        const ref: ImmutableRange = { kind: "blk", repo: pack.repo, digest: part.digest, start: Number(m[1]), end: Number(m[2]) };
+        const good = local.entry.bytes.slice();
+        const bad = good.slice();
+        const middle = Math.floor(bad.length / 2);
+        bad[middle] = (bad[middle] ?? 0) ^ 0xff;
+        if (scenario !== "cache") local.entry.bytes = bad;
+
+        const stored = new Map<string, { bytes: ArrayBuffer; identity: Record<string, string> }>();
+        const now = () => 1_800_000_000_000;
+        let gets = 0;
+        let puts = 0;
+        const bucket: R2CacheBucket = {
+          async get(key) {
+            gets += 1;
+            const row = stored.get(key);
+            if (!row) return null;
+            const response = new Response(row.bytes.slice(0));
+            assert.ok(response.body);
+            return { key, size: row.bytes.byteLength, body: response.body, uploaded: new Date(now()), customMetadata: row.identity };
+          },
+          async put(key, bytes, options) {
+            puts += 1;
+            stored.set(key, { bytes, identity: options.customMetadata });
+          },
+        };
+        const waits: Promise<unknown>[] = [];
+        const waitUntil = (p: Promise<unknown>) => waits.push(p);
+        const messages: string[] = [];
+        const log = (s: string) => messages.push(s);
+        const seed = new R2Cache({ bucket, now, waitUntil, log });
+        seed.putVerified(ref, scenario === "r2" ? good : bad);
+        await Promise.all(waits);
+        const r2 = new R2Cache({ bucket, now, waitUntil, log });
+        const cache = new ApiCache({ host: "domains.example.test", ray: "-", waitUntil, cache: w.cache, r2 });
+        const reads: Parameters<typeof openPack>[3] = [];
+        const originStart = w.requests.length;
+        const reader = await openPack(readerOf(cache), cache, pack, reads);
+        if (scenario === "unavailable") {
+          blobs.delete(part.digest);
+          await assert.rejects(
+            () => reader.get(smallKeys[2]!),
+            (err: unknown) => err instanceof GhcrError && err.code === "missing",
+          );
+        } else {
+          assert.equal((await reader.get(smallKeys[2]!))?.key, smallKeys[2]);
+        }
+        await Promise.all(waits);
+        assert.deepEqual(
+          reads.map(({ tier }) => tier),
+          scenario === "unavailable" ? ["cache"] : ["cache", scenario],
+          scenario,
+        );
+        assert.equal(gets, scenario === "cache" ? 0 : 1, scenario);
+        assert.equal(puts, scenario === "ghcr" ? 2 : 1, scenario);
+        assert.equal(messages.length, scenario === "ghcr" || scenario === "unavailable" ? 1 : 0, scenario);
+        // The cold origin failure also refreshes a kept signed URL once.
+        assert.equal(partReads(w, part.digest, originStart).length, scenario === "unavailable" ? 3 : scenario === "ghcr" ? 1 : 0, scenario);
+        if (scenario !== "unavailable") assert.deepEqual(w.cache.entries.get(local.url)!.bytes, good, scenario);
+      },
+    );
+  }
 });

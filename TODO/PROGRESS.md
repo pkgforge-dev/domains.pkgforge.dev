@@ -5,10 +5,10 @@ the only one.
 
 ## State
 
-- **Tree:** `c0170e9` introduced the 2025 ISC archive workflow and the offline exact-history planner and builder on `main`. This increment adds the indexed ISC runner and local history collection.
+- **Tree:** `7167831` released the indexed ISC runner and verified replay input collection on `main`. The next candidate adds the bounded R2 cache.
 - **Session:** started 2026-11-27T07:59:17Z. This record includes the completed ISC archive and the September THC canary.
 - **Deployed:** Worker `domains-pkgforge-dev` version `c8a325ab`, build `9f4da663dc5a`, deployed 2026-11-03T15:22:17Z with wrangler 4.156.1 (DOM-030, done). No serving R2 cache bucket. The probe Worker and bucket remain for DOM-056. The `root`, `obs`, `state`, `names`, `feed`, `ref` and `probe` GHCR packages are public. THC run 46007734746 published the November 26 names and domains segments in root 1259. The September 12 canary published both OBS manifests and root promotion left them owed. The manual ISC archive workflow registered on November 27 at 13:55:57Z and published 67 verified 2025 raw artifacts. The indexed ISC `feeds` lane is inactive.
-- **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Hosted run [46011370453](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46011370453) passed on `c0170e9` with 2,257 tests in 202 files and zero skips.
+- **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Hosted run [46066739909](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46066739909) passed on `7167831` with 2,272 Linux tests and zero skips.
 
 ## Baseline
 
@@ -21,7 +21,7 @@ the only one.
 | candidate gate | 2026-11-27T08:41:43Z, exit 0 on `61ae27216cc4`, 2,226 tests passed, 3 Windows skips, 199 files |
 | reconciled gate | `npm run gate`, with Node v26.13.0 and the rebased lockfile. The exact passing tree is in `.tmp/gate-passes.jsonl`. |
 
-**63 items. 32 open, 3 partial, 0 blocked, 28 done.**
+**63 items. 31 open, 4 partial, 0 blocked, 28 done.**
 
 ## What this session did
 
@@ -31,6 +31,7 @@ the only one.
 - Corrected the README's description of public metadata and OCI artifacts and kept consumer route documentation in DOM-059, under ruling 26. Recorded the 60-run ingest sample under DOM-034. Three runs had state or root move failures with no common cause established by their public logs.
 - Archived 2025-10-26 through 2025-12-31 in 11 successful ISC windows. Public OBS enumeration matched one raw tag per UTC date, and independent manifest, gzip and member verification passed for October 26, November 16 and December 31. Ruling 28 starts indexed evidence on 2026-01-01. The indexed runner passed the production CLI fixture under `--no-push`. The independent admission exercise on root 1271 found that a continuous bridge to October 22 was needed for an oldest-first rollout. Production staging, promotion and adoption remain due (DOM-027).
 - Verified the original November 2–22 archive lineage for 21 days and 63 manifest digests. The history plan against root 1248 covers six domains and feed weeks and leaves 12 downstream feed packs unresolved. `history.mjs collect --preflight` verified 174 public manifests and counted 357 layer files holding 511,653,054 blob bytes across 434 logical ranges. Collection and candidate building were exercised with local inputs. Production blob verification, full historical replay and guarded publication remain open (DOM-029).
+- Integrated a bounded R2 read-through cache for the Worker, with a finite slot ceiling and exact accepted-tier provenance. The focused suite exercises a real local R2 binding. The private bucket and its undo are in the resource ledger, with release and live proof pending (DOM-031).
 
 ## What is in progress
 
@@ -39,6 +40,7 @@ the only one.
 | DOM-029 | replanned historical backfill, canary admission or re-adoption, daily and higher-tier checks, ledger timing and verified historical feed repair |
 | DOM-023 | its live compaction Prove after THC supplies the required day inputs |
 | DOM-027 | bounded indexed staging, edge-connected promotion, guarded cursor adoption, production run and indexed root proof |
+| DOM-031 | private bucket and lifecycle setup, pinned deployment, public GHCR fallback and accepted R2 proof, live operation counts |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 
@@ -48,7 +50,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 2. THC: L is November 26, verified in root 1259. Replan consecutive windows of at most 62 days, September 1 through November 1 (or L if earlier), then November 2 through L. Verify the canary's owed or archived identity in that plan. Dispatch only windows with work, after the morning compaction matrices finish and during 03:30–16:00 UTC, aiming to start by 12:00 UTC. After promotion, verify the no-work plan, both OBS manifest digests per day and full-day live coverage or verified replacement lineage. Run range compaction after the scheduled daily. Pin the actual post-backfill root for the history plan, collect the inputs, verify original-span replacements and resolve downstream feed days before closing. Then build the September weeks (September 7, 14 and 21) and the September and October months, and measure the first eligible ledger build. DOM-023's live Prove follows.
 3. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill and range compaction (item 2). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
 4. The feed's other adapters: DOM-027's 2025 raw archive is verified. Pin the current domains edge and state. Stage and verify dated indexed manifests from 2026-01-01, promote edge-connected groups and adopt only the live covered cursor. Keep the `feeds` lane inactive until the indexed handoff is verified. Verify the next ordinary run and its anonymous root separately. DOM-028 follows. DOM-012 supplies the publication measurements.
-5. The Worker and the first routes: DOM-030 done, DOM-031, DOM-032, DOM-033. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
+5. The Worker and the first routes: DOM-030 done. DOM-031 has local proof. Create the private cache with its lifecycle rules, deploy the `CACHE` binding and run the public cold-slot and accepted R2 checks in its Prove. DOM-032 and DOM-033 follow. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
 6. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
 7. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
 8. Authority sources and validation: DOM-047, DOM-048, DOM-049, DOM-050, DOM-051, DOM-052.

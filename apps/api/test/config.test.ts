@@ -25,7 +25,7 @@ test("compatibility: the compatibility_date of apps/api/wrangler.toml equals COM
   assert.deepEqual(quoted(setting("compatibility_flags")), [...COMPATIBILITY_FLAGS]);
 });
 
-test("config: wrangler.toml names the Worker, its entry, the custom domain alone, cpu_ms 50 and the observability block, with no account_id and no binding", () => {
+test("config: wrangler.toml keeps the custom domain, CPU and logs settings and binds only the private CACHE bucket", () => {
   assert.equal(setting("name"), '"domains-pkgforge-dev"');
   assert.equal(setting("main"), '"src/index.ts"');
   assert.equal(setting("workers_dev"), "false");
@@ -35,8 +35,12 @@ test("config: wrangler.toml names the Worker, its entry, the custom domain alone
   assert.match(toml, /^\[observability\]\nenabled = true\nhead_sampling_rate = 1$/m);
   assert.match(toml, /^\[observability\.logs\]\ninvocation_logs = false$/m);
   assert.doesNotMatch(toml, /^\s*account_id\s*=/m);
-  // The Worker holds no secret and binds nothing: DOM-031 adds the R2 binding.
-  assert.doesNotMatch(toml, /^\s*\[\[?(r2_buckets|kv_namespaces|d1_databases|durable_objects|vars|services|queues|triggers)/m);
+  assert.deepEqual(
+    [...toml.matchAll(/^\[\[?([\w.]+)\]\]?[ \t]*$/gm)].map((m) => m[1]),
+    ["r2_buckets", "limits", "observability", "observability.logs"],
+  );
+  assert.match(toml, /^\[\[r2_buckets\]\]\nbinding = "CACHE"\nbucket_name = "domains-pkgforge-cache"$/m);
+  assert.doesNotMatch(toml, /^\s*(remote|preview_bucket_name)\s*=/m);
   assert.doesNotMatch(toml, /^\s*crons\s*=/m);
 });
 

@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { type Outbound, withWorker } from "@domains/testkit";
+import { ORIGIN, type Outbound, withWorker } from "@domains/testkit";
+import { CACHE_PREFIX } from "../src/cache.ts";
+import { r2SlotKey } from "../src/r2cache.ts";
+import { ROOT_REPO } from "../src/root.ts";
 
 const ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
 const REG = "https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root";
@@ -86,6 +89,9 @@ test("workerd: the Worker answers /healthz and /v1/index/latest from its real en
     assert.ok(h.root_age_s >= 3599 && h.root_age_s <= 3700, `root_age_s ${h.root_age_s}`);
     assert.equal(health.headers.get("access-control-allow-origin"), "*");
     assert.equal(health.headers.get("x-domains-root"), p.digest);
+    assert.equal(health.headers.get("x-domains-root-tier"), "ghcr");
+    assert.equal(health.headers.get("x-domains-cache-tiers"), "ghcr");
+    assert.match(health.headers.get("access-control-expose-headers") ?? "", /\bx-domains-root-tier\b/);
     // The manifest GET, the blob 307 and the range read of the signed URL.
     assert.deepEqual(seen, [`${REG}/manifests/latest`, `${REG}/blobs/${p.layer}`, seen[2]]);
     assert.ok(seen[2]?.startsWith(`${BLOB_HOST}/`));
@@ -106,11 +112,75 @@ test("workerd: the Worker answers /healthz and /v1/index/latest from its real en
       const again = await w.fetch("/v1/index/latest");
       assert.equal(again.status, 200);
       cache = again.headers.get("x-domains-cache");
+      if (cache === "hit") assert.equal(again.headers.get("x-domains-cache-tiers"), "cache");
       await again.arrayBuffer();
     }
     assert.equal(cache, "hit");
     assert.equal(seen.length, before, "a hit makes no subrequest");
+
+    const caches = await w.miniflare.getCaches();
+    const manifestKey = `${ORIGIN}${CACHE_PREFIX}/man/${encodeURIComponent(`${ROOT_REPO}@latest`)}`;
+    assert.equal(await caches.default.delete(manifestKey), true);
+    const reused = await w.fetch("/v1/index/latest");
+    assert.equal(reused.status, 200);
+    assert.equal(reused.headers.get("x-domains-root"), p.digest);
+    assert.equal(reused.headers.get("x-domains-cache"), "ghcr");
+    assert.equal(reused.headers.get("x-domains-cache-tiers"), "ghcr");
+    assert.equal(reused.headers.get("x-domains-root-tier"), null);
+    assert.deepEqual(seen.slice(before), [`${REG}/manifests/latest`]);
+    await reused.arrayBuffer();
   });
+});
+
+test("workerd: a verified R2 root body is mixed with the GHCR selector, and a corrupt body falls through to GHCR", async () => {
+  const p = plant();
+  const key = await r2SlotKey({ kind: "root", repo: ROOT_REPO, digest: p.layer, start: 0, end: p.root.byteLength });
+  assert.ok(key);
+  const seen: string[] = [];
+  const saved = await withWorker({ scriptPath: ENTRY, r2Buckets: ["CACHE"], outbound: registry(p, seen) }, async (w) => {
+    const response = await w.fetch("/v1/index/latest");
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.headers.get("x-domains-cache"), "ghcr");
+    assert.equal(response.headers.get("x-domains-cache-tiers"), "ghcr");
+    assert.equal(response.headers.get("x-domains-root-tier"), "ghcr");
+    assert.equal(response.headers.get("x-domains-degraded"), null);
+    await response.arrayBuffer();
+    const bucket = await w.miniflare.getR2Bucket("CACHE");
+    for (let i = 0; i < 20; i += 1) {
+      const object = await bucket.get(key);
+      if (object === null) continue;
+      assert.equal(object.key, key);
+      assert.equal(object.size, p.root.byteLength);
+      assert.deepEqual(new Uint8Array(await object.arrayBuffer()), p.root);
+      assert.ok(object.customMetadata?.identity?.includes(p.layer));
+      assert.equal((await bucket.list()).objects.length, 1);
+      return object.customMetadata;
+    }
+    assert.fail("the verified GHCR root body was not written to R2");
+  });
+  assert.equal(seen.length, 3);
+
+  for (const corrupt of [false, true]) {
+    const observed: string[] = [];
+    await withWorker({ scriptPath: ENTRY, r2Buckets: ["CACHE"], outbound: registry(p, observed) }, async (w) => {
+      const bucket = await w.miniflare.getR2Bucket("CACHE");
+      const bytes = p.root.slice();
+      if (corrupt) bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+      // The new isolate and local Cache API have no root. Seed its binding
+      // with the previous object's exact slot and identity.
+      await bucket.put(key, bytes, { customMetadata: saved });
+      const response = await w.fetch("/v1/index/latest", { method: "HEAD" });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("x-domains-root"), p.digest);
+      assert.equal(response.headers.get("x-domains-cache"), corrupt ? "ghcr" : "mixed");
+      assert.equal(response.headers.get("x-domains-cache-tiers"), corrupt ? "ghcr" : "ghcr,r2");
+      assert.equal(response.headers.get("x-domains-root-tier"), corrupt ? "ghcr" : "r2");
+      assert.equal(response.headers.get("x-domains-degraded"), null);
+      assert.equal(await response.text(), "");
+      assert.equal(observed[0], `${REG}/manifests/latest`);
+      assert.equal(observed.length, corrupt ? 3 : 1);
+    });
+  }
 });
 
 // The status line of each answer carries the standard reason phrase. The client

@@ -182,8 +182,9 @@ test("router: x-domains-tiers-read equals the length of meta.tiers_read, cold, w
   );
 });
 
-test("router: every answer exposes the ten headers a page may read, a preflight is kept a day, and every body is nosniff", async () => {
-  const EXPOSED = "x-domains-root, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-body, x-domains-degraded, retry-after, allow";
+test("router: every answer exposes the response headers a page may read, a preflight is kept a day, and every body is nosniff", async () => {
+  const EXPOSED =
+    "x-domains-root, x-domains-root-tier, x-domains-as-of, x-domains-tiers-read, x-domains-sources-used, x-domains-sources-failed, x-domains-cache, x-domains-cache-tiers, x-domains-body, x-domains-degraded, retry-after, allow";
   await apiWorld(
     async (w, blobs) => {
       await plantRoot(w, blobs);
@@ -340,12 +341,15 @@ test("router: x-domains-cache says what served the bytes: ghcr cold, hit warm, m
       for (const p of w.cache.ofKind("body")) w.cache.entries.delete(p.url);
       const mixed = await w.get("/v1/index/latest");
       assert.equal(mixed.headers.get("x-domains-cache"), "mixed");
+      assert.equal(mixed.headers.get("x-domains-cache-tiers"), "cache,ghcr");
+      assert.equal(mixed.headers.get("x-domains-root-tier"), "ghcr");
       assert.equal(mixed.headers.get("x-domains-tiers-read"), "0");
       // A new isolate whose colo holds both: every read is a hit, with no subrequest.
       resetRoot();
       const from = w.requests.length;
       const hit = await w.get("/v1/index/latest");
       assert.equal(hit.headers.get("x-domains-cache"), "hit");
+      assert.equal(hit.headers.get("x-domains-root-tier"), "cache");
       assert.equal(w.since(from).length, 0);
     },
   );

@@ -34,7 +34,7 @@ export async function healthz(c: RequestContext): Promise<Response> {
     const age = ageOf(r.root, c.now());
     const ok = age <= ROOT_AGE_MAX_S;
     if (!ok) c.log(`the root ${r.root.digest} is ${age} s old, above ${ROOT_AGE_MAX_S} s`);
-    const headers = rootProvenance({ root: r.root.digest, asOf: r.root.head.as_of, reads: r.reads, stale: r.stale });
+    const headers = rootProvenance({ root: r.root.digest, asOf: r.root.head.as_of, reads: r.reads, bodyTier: ok ? r.bodyTier : null, stale: r.stale });
     return answer(ok ? 200 : 503, { ok, version, root_age_s: age }, headers);
   } catch (err) {
     if (!(err instanceof RootUnavailable)) throw err;

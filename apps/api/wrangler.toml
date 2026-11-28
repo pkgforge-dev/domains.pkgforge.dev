@@ -43,9 +43,15 @@ routes = [
   { pattern = "domains.pkgforge.dev", custom_domain = true },
 ]
 
+# Private, dedicated read-through cache. Wrangler dev uses simulated R2.
+[[r2_buckets]]
+binding = "CACHE"
+bucket_name = "domains-pkgforge-cache"
+
 # A request is at most one root manifest read (one cache lookup, or one GHCR
 # subrequest and the token flow on a refusal) and, when the root changed, one
-# root.json read (one cache lookup, or a blob redirect and a range read). Its
+# root.json read (one Cache API lookup, one optional R2 lookup, then the GHCR
+# blob redirect and range read on a miss). Its
 # CPU on Cloudflare is not measured (DOM-054 reads it from wrangler tail). As a
 # proxy, the parse of root.json took 0.9 to 7.6 ms in Node v26.7.0 on Windows 11
 # for the root of 435,492 B, in two readings of five runs, without its SHA-256

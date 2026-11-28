@@ -309,6 +309,8 @@ test("ghcr: GHCR down with a root kept in the isolate answers that root, degrade
       assert.equal(res.headers.get("x-domains-degraded"), "1");
       assert.equal(res.headers.get("x-domains-root"), planted.manifest);
       assert.equal(res.headers.get("x-domains-cache"), null, "a stale answer claims no tier");
+      assert.equal(res.headers.get("x-domains-cache-tiers"), null);
+      assert.equal(res.headers.get("x-domains-root-tier"), null);
       assert.equal(res.headers.get("x-domains-tiers-read"), "0");
       assert.equal(res.headers.get("cache-control"), "no-store");
       assert.ok(w.errors.some((e) => /answering from the kept root .* GHCR answered 500/.test(String(e[0]))));
@@ -316,6 +318,8 @@ test("ghcr: GHCR down with a root kept in the isolate answers that root, degrade
       assert.equal(health.status, 200);
       assert.equal(health.headers.get("x-domains-degraded"), "1");
       assert.equal(health.headers.get("x-domains-cache"), null);
+      assert.equal(health.headers.get("x-domains-cache-tiers"), null);
+      assert.equal(health.headers.get("x-domains-root-tier"), null);
     },
   );
 });
@@ -336,6 +340,7 @@ test("ghcr: a new root:latest that the Worker refuses, with a root kept, answers
       assert.equal(res.headers.get("x-domains-root"), first.manifest);
       assert.equal(res.headers.get("x-domains-degraded"), "1");
       assert.equal(res.headers.get("x-domains-cache"), null);
+      assert.equal(res.headers.get("x-domains-cache-tiers"), null);
       assert.ok(ghcrRequests(w, from).length >= 2, "the new manifest and its root.json were read from GHCR");
     },
   );

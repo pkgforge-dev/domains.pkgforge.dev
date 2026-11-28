@@ -1,11 +1,13 @@
 // apps/api/src/context.ts — what a route handler gets for one request.
 import type { GhcrReader } from "@domains/ghcr";
 import type { ApiCache } from "./cache.ts";
+import type { R2CacheBucket } from "./r2cache.ts";
 
-// The Worker's bindings: plain variables only. The Worker holds no secret.
+// The Worker's bindings. The cache is optional and the Worker holds no secret.
 export interface Env {
   // The commit the deploy names with --var BUILD:<12 hex>; /healthz's version.
   BUILD?: string;
+  CACHE?: R2CacheBucket;
 }
 
 // The part of the Workers ExecutionContext this Worker uses.

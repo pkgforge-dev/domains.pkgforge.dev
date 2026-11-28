@@ -43,6 +43,7 @@ test("healthz: a root older than 6 hours answers 503 with ok false; one of exact
       const res = await w.get("/healthz");
       assert.equal(res.status, 503);
       assert.deepEqual(await body(res), { ok: false, version: BUILD, root_age_s: 21_601 });
+      assert.equal(res.headers.get("x-domains-root-tier"), null);
       assert.ok(w.errors.some((e) => /21601 s old, above 21600 s/.test(String(e[0]))));
     },
   );

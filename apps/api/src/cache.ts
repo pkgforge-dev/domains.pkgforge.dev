@@ -20,10 +20,11 @@
 // signed URL against its host and its `se`. `body` is read back through
 // readImmutable of ghcr.ts, which checks every entry's length and a whole
 // blob's digest; a pack block's entry is written only once its CRC-32 held,
-// and one that later fails it is read again from GHCR (pack.ts).
+// and one that later fails it is read from a lower tier (pack.ts).
 // No `token` entry: a pull token stays in the isolate (packages/ghcr). No `loc`
 // entry: no route of DOM-030 answers a location.
 import { DIGEST, type GhcrCache, SIGNED_MARGIN_S } from "@domains/ghcr";
+import type { R2Cache } from "./r2cache.ts";
 
 export const CACHE_PREFIX = "/__cache/v1";
 const YEAR_S = 365 * 24 * 60 * 60;
@@ -71,11 +72,13 @@ export interface ApiCacheOptions {
   ray: string;
   waitUntil: (p: Promise<unknown>) => void;
   cache?: CacheLike;
+  r2?: R2Cache;
 }
 
 // The Cache API entries of one request: the GhcrCache of its reader, and the
 // `body` entries.
 export class ApiCache implements GhcrCache {
+  readonly r2: R2Cache | undefined;
   readonly #host: string;
   readonly #ray: string;
   readonly #waitUntil: (p: Promise<unknown>) => void;
@@ -85,6 +88,7 @@ export class ApiCache implements GhcrCache {
     this.#host = options.host;
     this.#ray = options.ray;
     this.#waitUntil = options.waitUntil;
+    this.r2 = options.r2;
     let cache: CacheLike | null = options.cache ?? null;
     if (cache === null) {
       try {
@@ -163,7 +167,7 @@ export class ApiCache implements GhcrCache {
   }
 
   // A `body` entry that did not hold the bytes its name promises: logged as a
-  // failed read, so the caller reads GHCR instead.
+  // failed read, so the caller tries a lower tier.
   refused(name: string, why: string): void {
     this.#fail(`read of body ${name}`, new Error(why));
   }

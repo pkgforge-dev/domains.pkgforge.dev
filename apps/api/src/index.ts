@@ -24,6 +24,7 @@ import type { Env, RequestContext, WaitContext } from "./context.ts";
 import { readerOf } from "./ghcr.ts";
 import { GUIDE_STUB, INDEX_STUB } from "./guide.ts";
 import { healthz } from "./health.ts";
+import { R2Cache } from "./r2cache.ts";
 import { ROOT_REPO, RootUnavailable, rootOf } from "./root.ts";
 
 export type { Env } from "./context.ts";
@@ -39,7 +40,7 @@ const RETRY_AFTER_S = "30";
 async function indexLatest(c: RequestContext): Promise<Response> {
   try {
     const r = await rootOf(c.g, c.cache, c.log);
-    const a = { root: r.root.digest, asOf: r.root.head.as_of, reads: r.reads, stale: r.stale };
+    const a = { root: r.root.digest, asOf: r.root.head.as_of, reads: r.reads, bodyTier: r.bodyTier, stale: r.stale };
     const data = {
       format: r.root.head.format,
       root_seq: r.root.head.root_seq,
@@ -82,7 +83,9 @@ export async function handle(request: Request, env: Env, ctx: WaitContext): Prom
   // the 500 problem with CORS, never a platform error.
   try {
     ray = request.headers.get("cf-ray") ?? "-";
-    const cache = new ApiCache({ host: url.host, ray, waitUntil: (p) => ctx.waitUntil(p) });
+    const waitUntil = (p: Promise<unknown>): void => ctx.waitUntil(p);
+    const r2 = env.CACHE === undefined ? undefined : new R2Cache({ bucket: env.CACHE, waitUntil, log });
+    const cache = new ApiCache({ host: url.host, ray, waitUntil, r2 });
     const c: RequestContext = { env, g: readerOf(cache), cache, ray, now: () => Date.now(), log };
     return await route(c);
   } catch (err) {

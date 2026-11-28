@@ -7,18 +7,20 @@
 // and gives HEAD the answer of GET with no body. A JSON answer's provenance
 // comes only from provenanceHeaders of packages/core, which refuses a claim
 // its reads do not support (AGENTS.md absolute 11).
-import { cacheOf, type PackRead, problem, provenanceHeaders } from "@domains/core";
+import { cacheOf, type PackRead, problem, provenanceHeaders, type ReadTier } from "@domains/core";
 import type { Reason } from "./guide.ts";
 
 export const ALLOW = "GET, HEAD, OPTIONS";
 // The headers a page in a browser may read beside the safelisted ones.
 const EXPOSE = [
   "x-domains-root",
+  "x-domains-root-tier",
   "x-domains-as-of",
   "x-domains-tiers-read",
   "x-domains-sources-used",
   "x-domains-sources-failed",
   "x-domains-cache",
+  "x-domains-cache-tiers",
   "x-domains-body",
   "x-domains-degraded",
   "retry-after",
@@ -74,15 +76,18 @@ export interface Answered {
   readonly root: string;
   readonly asOf: string | null;
   readonly reads: readonly PackRead[];
+  readonly bodyTier: ReadTier | null;
   readonly stale: boolean;
 }
 
-// The provenance of an answer from the root alone: the tiers its root reads
-// used in `x-domains-cache` (none on a stale answer, whose request read
-// nothing that served it), no pack, so `x-domains-tiers-read: 0`, no source, a
-// derived body, and degraded when the root is stale.
+// The provenance of an answer from the root alone: the accepted read tiers
+// and their aggregate. A stale isolate fallback reports neither, since no
+// current read served it. Root reads count as zero packs and zero sources.
 export function rootProvenance(a: Answered): Record<string, string> {
-  return provenanceHeaders({ root: a.root, asOf: a.asOf, reads: a.reads, cache: cacheOf(a.reads), sourcesUsed: [], body: "derived", stale: a.stale });
+  const headers = provenanceHeaders({ root: a.root, asOf: a.asOf, reads: a.reads, cache: cacheOf(a.reads), sourcesUsed: [], body: "derived", stale: a.stale });
+  if (a.reads.length > 0) headers["x-domains-cache-tiers"] = [...new Set(a.reads.map((read) => read.tier))].sort().join(",");
+  if (a.bodyTier !== null) headers["x-domains-root-tier"] = a.bodyTier;
+  return headers;
 }
 
 // The envelope of section 7.1 for an answer that reads the root alone: no

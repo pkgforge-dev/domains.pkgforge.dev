@@ -415,19 +415,21 @@ A static check refuses them (entry DOM-014).
 
 ### 4.9 R2
 
-R2 holds a cache and a hot copy. It holds nothing else. R2 has no per-bucket size cap, so the Worker enforces the 5 GB limit itself.
+`apps/api/src/r2cache.ts` gives the private `domains-pkgforge-cache` bucket a finite set of slots. The API Worker is its sole writer. Each slot holds one verified immutable root body, pack index or compressed block range. Roots and indexes have a read age limit of 365 days. The block limit is 14 days. `root:latest` is selected through GHCR or its Cache API manifest entry (§7.5).
 
-| Prefix | Purpose | Budget |
-| --- | --- | --- |
-| `root/` | copies of the root and `sources.json` | 0.05 GB |
-| `idx/` | indexes of live packs | 0.5 GB |
-| `hot/` | the newest segments, hour packs and feed packs, copied from GHCR after each promotion | 0.8 GB |
-| `blk/` | blocks by `digest/offset-length`, immutable, read through | 2.7 GB |
-| headroom | | 0.45 GB |
+| Prefix | Slots | Max body bytes per slot | Max total body bytes |
+| --- | ---: | ---: | ---: |
+| `root/` | 5 | 8,388,608 | 41,943,040 |
+| `idx/` | 476 | 1,048,576 | 499,122,176 |
+| `hot/` (reserved) | 760 | 1,048,576 | 796,917,760 |
+| `blk/s/` | 65,536 | 32,768 | 2,147,483,648 |
+| `blk/m/` | 4,096 | 131,072 | 536,870,912 |
+| `blk/l/` | 14 | 1,048,576 | 14,680,064 |
+| **Total** | **70,887** | | **4,037,017,600** |
 
-The planned total is 4.5 GB. The Worker keeps a size counter and stops writing `blk/` objects at 4.3 GB. A scheduled job recomputes the counter from a listing.
-A lifecycle rule expires `blk/` after 14 days and `hot/` after 7 days. The Cache API sits in front of R2.
-R2 writes stay under 25,000 a day (class A) [E]. Only Workers write R2. Actions holds no Cloudflare credential.
+The slot address is a hash of the versioned kind, repository, digest and exclusive byte range. The complete identity travels with the object's bytes. A slot collision replaces one object and an identity mismatch on read is a miss. From an empty dedicated bucket, every single-object put either replaces a slot with a size-checked object or leaves the committed state as it was. Concurrent writes and retries have the same ceiling. Allowing the provider's full 1,024 key bytes and 8,192 metadata bytes per slot gives 4,690,312,192 bytes with the reserved pool, 3,886,390,272 bytes for the active write paths, below 5,000,000,000 bytes. A layout change must check the union of old and new slot keys and their larger per-key caps, or drain the old layout before admitting the new one. [R2 limits](https://developers.cloudflare.com/r2/platform/limits/), [R2 consistency](https://developers.cloudflare.com/r2/reference/consistency/)
+
+The lifecycle rules expire `blk/` after 14 days and reserve a 7-day rule for `hot/` (`docs/resources.md`). Expiration can lag. The slot table enforces the storage bound at every committed write. The Worker writes through the binding only after a verified GHCR read. `hot/` has no writer. A warmer requires a separate measured benefit and bounded work plan. Class A and B operation volume is measured separately from capacity. Actions holds no Cloudflare credential. [R2 lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
 
 ## 5. Ingestion
 
@@ -438,7 +440,7 @@ R2 writes stay under 25,000 a day (class A) [E]. Only Workers write R2. Actions 
 | Adapters: THC dump, Kafka, tiles, feeds | GitHub Actions | Free for public repositories. A runner has 4 vCPU, 16 GB RAM and a real network. Kafka needs a client with offsets. |
 | Compaction and verification | Actions, with a matrix when a pack is large | A job lasts up to 6 h. A matrix has up to 256 jobs and 20 run at once for the organisation. |
 | Root and state promotion | Actions: the job `push` moves `state`, in the group `root-writer`; the job `promote` calls `root-promote.yml`, which holds the group | One writer moves the root forward (§4.7). |
-| Serving, caching, R2 housekeeping | Workers | They read only. They hold no secret. |
+| Serving and read-through caching | Workers | They read GHCR anonymously and write verified cache bytes through the private R2 binding. They hold no secret. |
 | Watchdog, status, keepalive | Actions, then the Worker shows the age | A Worker cannot dispatch a workflow without a token, and no credential crosses (ruling 6). |
 
 READ for the Actions limits: standard runners are free on public repositories with 4 vCPU, 16 GB RAM and 14 GB SSD.
@@ -766,7 +768,9 @@ Provenance headers say what answered, and nothing the path did not use.
 | `x-domains-tiers-read` | the number of packs read, which is the length of `meta.tiers_read`. The root is not a pack, so an answer from the root alone says `0` |
 | `x-domains-sources-used` | the source ids that contributed |
 | `x-domains-sources-failed` | the source ids that failed; absent when none |
-| `x-domains-cache` | `hit` (Cache API), `r2`, `ghcr` or `mixed`, from every read of the request, the root's among them. Absent on a stale answer that no read of its request served, such as a root kept in the isolate while GHCR fails |
+| `x-domains-cache` | `hit` (Cache API), `r2`, `ghcr` or `mixed`, from reads that served the answer, the root's among them. Absent on a stale answer that no read of its request served, such as a root kept in the isolate while GHCR fails |
+| `x-domains-cache-tiers` | Distinct accepted read tiers in lexical order, comma-separated, from `cache`, `ghcr`, `r2`. Emitted by the root metadata routes, and absent when no read served the answer. |
+| `x-domains-root-tier` | `cache`, `ghcr` or `r2` when a successful metadata request read and validated `root.json`. A request that reused the parsed isolate copy omits this header. |
 | `x-domains-body` | `derived`, or `verbatim` for a dump served as stored |
 | `x-domains-degraded` | `1`, only when an answer used stale data or lacked a source |
 
@@ -837,7 +841,9 @@ A page of 1,000 rows with no filter read 1 or 2 blocks of a day pack of 500,000 
 | Signed blob URLs | until the URL's `se` minus 120 s, at most 600 s |
 | Query answers | the minimum of the cache times of their inputs |
 
-The Cache API is per data centre. Inside one isolate the Worker keeps the parsed root by its digest. No promise is shared between two requests, so two requests that meet a new root at once each read and parse it, and one request's reads never wait on the I/O of another (DOM-030's Decision). One query fans out over at most 6 concurrent subrequests.
+The Cache API is per data centre. An immutable body read checks the Cache API, an eligible R2 slot and then anonymous GHCR. A verified R2 hit can fill the Cache API. Verified GHCR bytes can fill both tiers. R2 lookup or validation failures fall through. Roots and indexes are checked by SHA-256 and parsed before acceptance. A compressed block is checked by range length, inflate and CRC before it contributes a tier. The manifest and signed URL caches stay in the Cache API. [Workers R2 API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+
+Inside one isolate the Worker keeps the parsed root by its digest. No promise is shared between two requests, so two requests that meet a new root at once each read and parse it, and one request's reads never wait on the I/O of another (DOM-030's Decision). One query fans out over at most 6 concurrent subrequests. `docs/worker.md` records the metadata path's R2 budgets. Dataset query limits are set with the routes that use them (§7.6).
 
 ### 7.6 Limits, and no gating
 
@@ -944,7 +950,7 @@ Each resource is created by the entry named. The undo of each goes in `docs/reso
 | Probe Worker `domains-probe` (on workers.dev) and R2 bucket `domains-probe`, temporary | DOM-061 | `wrangler delete`; delete the bucket. DOM-056 deletes both when DOM-002, DOM-005, DOM-007 and DOM-008 have closed. |
 | Drill Worker `domains-drill` (on workers.dev) and R2 bucket `domains-drill`, temporary | DOM-053 | `wrangler delete`; delete the bucket. The drill deletes both when it ends. |
 | Worker `domains-pkgforge-dev` and custom domain `domains.pkgforge.dev` on the `pkgforge.dev` zone | DOM-030 | `wrangler delete`; remove the custom domain |
-| R2 bucket `domains-pkgforge-cache` with a lifecycle rule: the one cache bucket, at most 5 GB | DOM-031 | delete the bucket |
+| Private R2 bucket `domains-pkgforge-cache`, `CACHE` binding and prefix lifecycle rules | DOM-031 | remove the binding and writer, then empty and delete the cache bucket (`docs/resources.md`) |
 | GHCR packages of §4.1 | the first push of a workflow | none. Nothing is ever deleted (ruling 5). |
 
 The `pkgforge.dev` zone's own Cloudflare account hosts the Worker, because a custom domain needs the zone in the same account.

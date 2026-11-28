@@ -5,7 +5,7 @@
 // or GHCR, so the answer names the root a read of this request gave. When its
 // digest is the kept root's, the kept root answers with no other read.
 // Otherwise the request reads `root.json` by its digest, through the `body`
-// entry (1 year) or GHCR, holds the bytes to the digest, parses them, checks
+// entry (1 year), R2 or GHCR, holds the bytes to the digest, parses them, checks
 // the head fields below, and keeps the root for the next request, unless the
 // isolate keeps a root of a higher root_seq. The manifest is at most
 // LIMITS.manifestBytes.
@@ -36,7 +36,7 @@ import type { PackRead, ReadTier } from "@domains/core";
 import { artifactType, DIGEST, GhcrError, type GhcrReader, repoOf, TITLE } from "@domains/ghcr";
 import { msOf, ROOT_FORMAT, RootError, type RootJson, validateRoot } from "@domains/root";
 import type { ApiCache } from "./cache.ts";
-import { ImmutableError, LIMITS, readImmutable } from "./ghcr.ts";
+import { ImmutableError, keepImmutable, LIMITS, readImmutable } from "./ghcr.ts";
 
 export const ROOT_REPO = repoOf("root");
 export const ROOT_TAG = "latest";
@@ -89,6 +89,8 @@ export class LoadedRoot {
 export interface RootAnswer {
   readonly root: LoadedRoot;
   readonly reads: readonly PackRead[];
+  // The accepted root.json read of this request, when it loaded those bytes.
+  readonly bodyTier: ReadTier | null;
   readonly stale: boolean;
 }
 
@@ -130,17 +132,16 @@ export function headOf(json: unknown): RootHead {
   return { format: ROOT_FORMAT, root_seq: j.root_seq as number, as_of: j.as_of as string | null, created: j.created as string, previous: j.previous as string | null };
 }
 
-async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[]): Promise<LoadedRoot> {
+async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[]): Promise<Pick<RootAnswer, "root" | "bodyTier">> {
   const m = await g.getManifest(ROOT_REPO, ROOT_TAG, { maxBytes: LIMITS.manifestBytes });
   reads.push({ tier: tierOf(m.from), pack: m.digest, sources: [], root: true });
-  if (kept !== null && kept.digest === m.digest) return kept;
+  if (kept !== null && kept.digest === m.digest) return { root: kept, bodyTier: null };
   if (m.json.artifactType !== ROOT_TYPE) refuse(`root:${ROOT_TAG} is ${JSON.stringify(m.json.artifactType ?? null)}, not ${ROOT_TYPE}`);
   const layers = (m.json.layers ?? []).filter((l) => l.annotations?.[TITLE] === ROOT_LAYER);
   const layer = layers[0];
   if (layer === undefined || layers.length !== 1) refuse(`root:${ROOT_TAG} holds ${layers.length} layers titled ${ROOT_LAYER}, not 1`);
   if (layer.size < 1 || layer.size > ROOT_LAYER_MAX_BYTES) refuse(`the layer ${ROOT_LAYER} is ${layer.size} B; this Worker reads 1 to ${ROOT_LAYER_MAX_BYTES} B`);
-  const body = await readImmutable(g, cache, ROOT_REPO, layer.digest, 0, layer.size, { whole: layer.size });
-  reads.push({ tier: body.tier, pack: m.digest, sources: [], root: true });
+  const body = await readImmutable(g, cache, ROOT_REPO, layer.digest, 0, layer.size, { kind: "root", whole: layer.size });
   let json: unknown;
   try {
     json = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body.bytes));
@@ -148,6 +149,8 @@ async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[]): Promi
     refuse(`the layer ${ROOT_LAYER} of ${m.digest} is not UTF-8 JSON`);
   }
   const head = headOf(json);
+  keepImmutable(cache, body);
+  reads.push({ tier: body.tier, pack: m.digest, sources: [], root: true });
   const root = new LoadedRoot(m.digest, { digest: layer.digest, size: layer.size }, head, { json: json as Record<string, unknown>, validated: null });
   // root:latest moves forward in root_seq: buildRoot and rollbackRoot of
   // packages/root each promote the live root_seq plus 1. A root of a lower
@@ -155,7 +158,7 @@ async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[]): Promi
   // another request loaded the newer root: it answers its own request, and the
   // newer root stays kept.
   if (kept === null || root.head.root_seq >= kept.head.root_seq) kept = root;
-  return root;
+  return { root, bodyTier: body.tier };
 }
 
 // A failure of GHCR, or a root this Worker refuses; anything else is the
@@ -175,14 +178,14 @@ export async function rootOf(g: GhcrReader, cache: ApiCache, log: (message: stri
   // A read that ends after the deadline settles no answer.
   work.catch(() => undefined);
   try {
-    const root = await Promise.race([work, late]);
-    return { root, reads, stale: false };
+    const result = await Promise.race([work, late]);
+    return { ...result, reads, stale: false };
   } catch (err) {
     if (!sourceFault(err)) throw err;
     const missing = err instanceof GhcrError && err.code === "missing" && reads.length === 0;
     if (kept === null) throw new RootUnavailable(missing ? `GHCR holds no root:${ROOT_TAG}` : err.message, missing);
     log(`answering from the kept root ${kept.digest} (root_seq ${kept.head.root_seq}): ${err.message}`);
-    return { root: kept, reads: [], stale: true };
+    return { root: kept, reads: [], bodyTier: null, stale: true };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }

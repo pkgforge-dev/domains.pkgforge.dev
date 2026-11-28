@@ -25,7 +25,7 @@ configuration may carry the `account_id` a custom domain needs
 | Worker | hostname | created | owner | delete |
 | --- | --- | --- | --- | --- |
 | `domains-probe` (`probes/worker/`) | its workers.dev URL, which `wrangler deploy` prints; `preview_urls = false`, no route. No cron: `crons = []` from the deploy of 2026-10-30T18:30:46Z (DOM-002). The crons `* * * * *` and `*/5 * * * *` ran from 2026-10-28T15:23:24Z, and the last tick was scheduled at 2026-10-30T18:34:24Z. Routes `/`, `/gaps`, `/range` and `/decode`; DOM-005 took out `/kafka` (2026-10-30T19:51:58Z). R2 binding `PROBE` to the bucket `domains-probe`. | 2026-10-28T15:13:54Z, deployed by the agent under ruling 14 with `npx wrangler@4.150.0 deploy` (DOM-061) | DOM-061; DOM-056 deletes it | `npx wrangler@4.156.1 delete --name domains-probe` |
-| `domains-pkgforge-dev` (`apps/api/`) | the custom domain `domains.pkgforge.dev` (row below); `workers_dev = false`, `preview_urls = false`, no cron, no resource binding, no secret. Its one binding is the variable `BUILD`, the commit, which each deploy sets with `--var BUILD:<12 hex>` (`docs/worker.md`) | 2026-11-02T07:57:49Z, deployed by the agent under ruling 14 with `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)` (DOM-030) | DOM-030 | remove the custom domain first (its row below), then `cd apps/api && npx wrangler@4.156.1 delete` |
+| `domains-pkgforge-dev` (`apps/api/`) | the custom domain `domains.pkgforge.dev` (row below), with `workers_dev = false`, `preview_urls = false`, no cron and no secret. Each deploy sets `BUILD` with `--var BUILD:<12 hex>`. DOM-031 adds the pending `CACHE` binding to the private bucket below. | 2026-11-02T07:57:49Z, deployed by the agent under ruling 14 with `cd apps/api && npx wrangler@4.150.0 deploy --var BUILD:$(git rev-parse --short=12 HEAD)` (DOM-030) | DOM-030, DOM-031 for `CACHE` | to undo only `CACHE`, follow the bucket row below. To remove the Worker, remove the custom domain first (its row below), then `cd apps/api && npx wrangler@4.156.1 delete` |
 
 A Worker row names its hostname, its cron triggers and every binding it holds
 (R2, service, rate limit). The delete column is `npx wrangler delete --name <worker>`. It removes the Worker and its cron triggers. That it also removes the Worker's custom domain and its DNS record is assumed, not measured. The delete of wrangler 4.156.1 sends one DELETE of the Worker's service and makes no call on its domains. So a row removes the custom domain first.
@@ -45,16 +45,32 @@ expiry of its certificates under Expiries.
 
 ## R2
 
-At most 5 GB, as a cache (the operator's ruling of 2026-10-27, `TODO/RULES.md`
-§5). A bucket row records the lifecycle rule or the clock that holds that bound.
-The one cache bucket is `domains-pkgforge-cache`. The temporary buckets of the
-probe and the drill (`domains-probe`, `domains-drill`) hold measurement data only,
-each with the lifecycle rule or the deletion that keeps it small, and are deleted
-with their Workers.
+The cache's finite slot table holds it under 5 GB (`docs/architecture.md` §4.9,
+`TODO/RULES.md` §5). The temporary probe and drill buckets (`domains-probe`,
+`domains-drill`) hold measurement data and are deleted with their Workers.
 
 | bucket | bound by | created | rules | delete |
 | --- | --- | --- | --- | --- |
+| `domains-pkgforge-cache` | `domains-pkgforge-dev`, binding `CACHE`, the only writer (DOM-031) | pending. Use the local Wrangler login to create a dedicated empty Standard bucket with public access disabled. | `expire-blocks` expires `blk/` after 14 days. `expire-hot` expires the reserved `hot/` prefix after 7 days. Single-object writes use the finite slots of `apps/api/src/r2cache.ts`. | Roll back to the recorded version without `CACHE`, or deploy a version that removes the writer and binding. Verify it serves and no deployed version uses the bucket. Empty only this bucket, using `npx wrangler@4.156.1 r2 object delete domains-pkgforge-cache/<key> --remote` or the R2 dashboard. Then run `npx wrangler@4.156.1 r2 bucket delete domains-pkgforge-cache`. |
 | `domains-probe` | the Worker `domains-probe`, binding `PROBE` | 2026-10-28, created by the agent under ruling 14 with `npx wrangler@4.150.0 r2 bucket create domains-probe`, and the rule added with `r2 bucket lifecycle add` (DOM-061) | lifecycle rule `expire-hot`: objects under `hot/` (1 MiB each, one every 5 minutes) expire after 3 days; the tick records (about 200 B each) and `heartbeat.json` stay. DOM-008's sample packs `sample/v1/per-1024.pack`, `per-4096.pack` and `per-16384.pack` (put 2026-10-28T23:41:46Z to 23:42:05Z with `r2 object put --remote`) have no rule and go with the bucket | expire or delete every object (the lifecycle rule with `--expire-days 1` and a wait, or `npx wrangler@4.156.1 r2 object delete domains-probe/<key>`), then `npx wrangler@4.156.1 r2 bucket delete domains-probe` |
+
+After `whoami` confirms the account holding `pkgforge.dev`, check that the
+cache bucket is absent or is the expected empty dedicated bucket. With R2
+enabled on the account, create it if absent and install the two planned rules
+before deploying the writer. Check the lifecycle list and private bucket
+settings before binding it.
+
+```bash
+npx wrangler@4.156.1 r2 bucket create domains-pkgforge-cache
+npx wrangler@4.156.1 r2 bucket lifecycle add domains-pkgforge-cache expire-blocks 'blk/' --expire-days 14
+npx wrangler@4.156.1 r2 bucket lifecycle add domains-pkgforge-cache expire-hot 'hot/' --expire-days 7
+npx wrangler@4.156.1 r2 bucket lifecycle list domains-pkgforge-cache
+```
+
+To undo a lifecycle rule while retaining the bucket, use
+`npx wrangler@4.156.1 r2 bucket lifecycle remove domains-pkgforge-cache --name <rule>`.
+Record the creation time and Worker deployment version when these operations
+run. Future deploys reuse the same bucket and slot layout.
 
 ## GHCR packages
 

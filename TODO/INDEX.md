@@ -104,15 +104,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**63 items. 32 open, 3 partial, 0 blocked, 28 done.**
+**63 items. 31 open, 4 partial, 0 blocked, 28 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 15 | 3 | 0 | 27 | 45 |
+| P1 | 14 | 4 | 0 | 27 | 45 |
 | P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 32 | 3 | 0 | 28 | 63 |
+| **All** | 31 | 4 | 0 | 28 | 63 |
 
 ## Entries
 
@@ -148,7 +148,7 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-028](ingest.md) | P2 | ingest | open | whoisds, cenk-nrd and hagezi-nrd: the daily lists |
 | [DOM-029](ingest.md) | P1 | ingest | partial | thc-ct: THC's daily dumps and the 54-day backfill |
 | [DOM-030](serve.md) | P1 | serve | **done** | The Worker: custom domain, GHCR reads, root cache and healthz |
-| [DOM-031](storage.md) | P1 | storage | open | The R2 cache with a 5 GB guard |
+| [DOM-031](storage.md) | P1 | storage | partial | The R2 cache with a 5 GB guard |
 | [DOM-032](serve.md) | P1 | serve | open | GET /v1/new for registrable domains |
 | [DOM-033](serve.md) | P1 | serve | open | /v1/domain, /v1/sources, /v1/status and /v1/coverage |
 | [DOM-034](ops.md) | P1 | ops | open | Watchdogs: keepalive, overdue dispatch and issues |
