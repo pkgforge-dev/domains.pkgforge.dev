@@ -55,7 +55,7 @@ export {
   tierTag,
   WORKFLOW_RUN_ID,
 } from "./layout.ts";
-export type { Descriptor, Dialer, Fetcher, GhcrCache, GhcrErrorCode, GhcrReader, Manifest, ManifestHead, ManifestJson, RangeRead, ReaderOptions, TagList } from "./reader.ts";
+export type { Descriptor, Dialer, Fetcher, GhcrCache, GhcrErrorCode, GhcrReader, Manifest, ManifestHead, ManifestJson, RangeOptions, RangeRead, ReaderOptions, TagList } from "./reader.ts";
 export {
   BLOB_HOST_SUFFIX,
   bearerRealm,

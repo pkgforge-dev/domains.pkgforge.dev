@@ -16,7 +16,7 @@
 //   start, end) reads [start, end): `end` is exclusive.
 // - The reader reads only `pkgforge-dev/domains.pkgforge.dev/<package>`.
 import { type ReadTier, USER_AGENT } from "@domains/core";
-import { type GhcrReader, ghcrReader, MANIFEST_MAX_BYTES, sha256Digest } from "@domains/ghcr";
+import { type GhcrReader, ghcrReader, MANIFEST_MAX_BYTES, type RangeOptions, sha256Digest } from "@domains/ghcr";
 import type { ApiCache } from "./cache.ts";
 import type { ImmutableKind, ImmutableRange } from "./r2cache.ts";
 
@@ -57,6 +57,7 @@ export interface ImmutableOptions {
   readonly kind?: ImmutableKind;
   // A block whose bytes failed verification starts at the next tier on retry.
   readonly after?: ImmutableCacheTier;
+  readonly range?: RangeOptions;
 }
 
 // The name of the `body` entry of the bytes [start, end) of a blob.
@@ -69,6 +70,15 @@ export function keepImmutable(cache: ApiCache, read: ImmutableRead): void {
   if (read.tier === "ghcr" && read.ref !== null) cache.r2?.putVerified(read.ref, read.bytes);
 }
 
+export async function readCachedImmutable(cache: ApiCache, name: string, length: number, wholeDigest?: string): Promise<Uint8Array | null> {
+  const hit = await cache.getBytes(name);
+  if (hit === null) return null;
+  if (hit.byteLength !== length) cache.refused(name, `it holds ${hit.byteLength} bytes, not ${length}`);
+  else if (wholeDigest !== undefined && (await sha256Digest(hit)) !== wholeDigest) cache.refused(name, "its bytes do not hash to the digest");
+  else return hit;
+  return null;
+}
+
 // The bytes [start, end) of `digest`: Cache API, admissible R2 slot, or
 // GHCR. A whole blob is held to its digest at every tier. A cached entry
 // that fails length or digest is a logged miss. The caller confirms any
@@ -79,12 +89,8 @@ export async function readImmutable(g: GhcrReader, cache: ApiCache, repo: string
   const kind = options.kind;
   const ref: ImmutableRange | null = kind === undefined ? null : { kind, repo, digest, start, end };
   const found = (bytes: Uint8Array, tier: ReadTier): ImmutableRead => ({ bytes, tier, name, ref });
-  const hit = options.after === undefined ? await cache.getBytes(name) : null;
-  if (hit !== null) {
-    if (hit.byteLength !== end - start) cache.refused(name, `it holds ${hit.byteLength} bytes, not ${end - start}`);
-    else if (isWhole && (await sha256Digest(hit)) !== digest) cache.refused(name, "its bytes do not hash to the digest");
-    else return found(hit, "cache");
-  }
+  const hit = options.after === undefined ? await readCachedImmutable(cache, name, end - start, isWhole ? digest : undefined) : null;
+  if (hit !== null) return found(hit, "cache");
   if (ref !== null && cache.r2 !== undefined && options.after !== "r2") {
     const cached = await cache.r2.get(ref);
     if (cached !== null) {
@@ -92,7 +98,7 @@ export async function readImmutable(g: GhcrReader, cache: ApiCache, repo: string
       else return found(cached, "r2");
     }
   }
-  const read = await g.readRange(repo, digest, start, end);
+  const read = await g.readRange(repo, digest, start, end, options.range);
   if (isWhole) {
     const got = await sha256Digest(read.bytes);
     if (got !== digest) throw new ImmutableError(`the blob ${digest} of ${repo} hashes to ${got}`);

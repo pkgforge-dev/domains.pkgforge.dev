@@ -174,18 +174,27 @@ async function discard(res: Response): Promise<void> {
   await res.body?.cancel().catch(() => undefined);
 }
 
+function checkRangeSignal(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new GhcrError("timeout", "the GHCR read was canceled");
+}
+
 // One request: `authorization` (none when null), the User-Agent, no redirect
 // followed, and the answer's head within the dial's time. The time ends when
 // the head arrives; a body is bounded by readCapped.
-export async function send(d: Dialer, url: string, authorization: string | null, headers: Record<string, string> = {}, method: "GET" | "HEAD" = "GET"): Promise<Response> {
+export async function send(d: Dialer, url: string, authorization: string | null, headers: Record<string, string> = {}, method: "GET" | "HEAD" = "GET", signal?: AbortSignal): Promise<Response> {
+  checkRangeSignal(signal);
   const h: Record<string, string> = { ...headers, "user-agent": d.userAgent };
   if (authorization !== null) h.authorization = authorization;
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), d.timeoutMs);
   d.count += 1;
   try {
-    return await d.fetcher(url, { method, headers: h, redirect: "manual", signal: stop.signal });
+    const res = await d.fetcher(url, { method, headers: h, redirect: "manual", signal: signal === undefined ? stop.signal : AbortSignal.any([stop.signal, signal]) });
+    if (signal?.aborted) await discard(res);
+    checkRangeSignal(signal);
+    return res;
   } catch (err) {
+    checkRangeSignal(signal);
     const name = (err as { name?: string } | null)?.name;
     if (stop.signal.aborted || name === "AbortError" || name === "TimeoutError") throw new GhcrError("timeout", `${new URL(url).host} did not answer within ${d.timeoutMs / 1000} s`);
     throw new GhcrError("unreachable", `${new URL(url).host} could not be reached: ${(err as Error)?.message ?? String(err)}`);
@@ -196,14 +205,19 @@ export async function send(d: Dialer, url: string, authorization: string | null,
 
 // A body read whole, or null when it is over `max` bytes (the rest cancelled).
 // The read must end within `timeoutMs`, or GhcrError timeout.
-export async function readCapped(res: Response, max: number, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Uint8Array | null> {
+export async function readCapped(res: Response, max: number, timeoutMs = REQUEST_TIMEOUT_MS, signal?: AbortSignal): Promise<Uint8Array | null> {
+  if (signal?.aborted) await discard(res);
+  checkRangeSignal(signal);
   if (!res.body) return new Uint8Array(0);
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: (() => void) | undefined;
   const late = new Promise<never>((_, fail) => {
     timer = setTimeout(() => fail(new GhcrError("timeout", `a body did not arrive within ${timeoutMs / 1000} s`)), timeoutMs);
+    cancel = () => fail(new GhcrError("timeout", "the GHCR read was canceled"));
+    signal?.addEventListener("abort", cancel, { once: true });
   });
   try {
     for (;;) {
@@ -222,6 +236,7 @@ export async function readCapped(res: Response, max: number, timeoutMs = REQUEST
     throw new GhcrError("unreachable", `a body broke off after ${total} bytes: ${(err as Error)?.message ?? String(err)}`);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    if (cancel !== undefined) signal?.removeEventListener("abort", cancel);
   }
   const out = new Uint8Array(total);
   let at = 0;
@@ -250,12 +265,12 @@ export function tokenKept(repo: string, now = Date.now()): string | null {
 // `refused` is the status that refused the token sent and `www` its challenge.
 // A realm that is not TOKEN_REALM (https, ghcr.io, the default port, the path
 // /token) is refused, so no request goes elsewhere.
-export async function tokenNew(d: Dialer, repo: string, url: string, refused: number, www: string | null): Promise<string> {
+export async function tokenNew(d: Dialer, repo: string, url: string, refused: number, www: string | null, signal?: AbortSignal): Promise<string> {
   const why = `GHCR answered ${refused} for an anonymous pull of ${repo}`;
   let realm = bearerRealm(www);
   if (realm === null && refused === 403) {
     // GHCR answers 403 with no challenge; a request with no authorization gets 401 with one.
-    const bare = await send(d, url, null);
+    const bare = await send(d, url, null, {}, "GET", signal);
     realm = bearerRealm(bare.headers.get("www-authenticate"));
     await discard(bare);
   }
@@ -271,12 +286,13 @@ export async function tokenNew(d: Dialer, repo: string, url: string, refused: nu
   u.searchParams.set("service", REGISTRY_HOST);
   u.searchParams.set("scope", `repository:${repo}:pull`);
   d.tokenRequests += 1;
-  const res = await send(d, u.href, null);
+  const res = await send(d, u.href, null, {}, "GET", signal);
   if (res.status !== 200) {
     await discard(res);
     throw new GhcrError("refused", `${why}, and its token request answered ${res.status}`, res.status === 401 || res.status === 403 ? refused : res.status);
   }
-  const bytes = await readCapped(res, TOKEN_MAX_BYTES, d.timeoutMs);
+  const bytes = await readCapped(res, TOKEN_MAX_BYTES, d.timeoutMs, signal);
+  checkRangeSignal(signal);
   type TokenAnswer = { token?: unknown; access_token?: unknown; expires_in?: unknown };
   let body: TokenAnswer | null = null;
   try {
@@ -299,7 +315,7 @@ export async function tokenNew(d: Dialer, repo: string, url: string, refused: nu
 // or a 403 is asked again once with a new pull token. A kept token GHCR refused
 // is not used again. A URL that is not on REGISTRY is refused before any
 // request: the token this sends goes to GHCR and nowhere else.
-export async function ghcr(d: Dialer, repo: string, url: string, headers: Record<string, string> = {}, method: "GET" | "HEAD" = "GET"): Promise<Response> {
+export async function ghcr(d: Dialer, repo: string, url: string, headers: Record<string, string> = {}, method: "GET" | "HEAD" = "GET", signal?: AbortSignal): Promise<Response> {
   let origin: string | null = null;
   try {
     origin = new URL(url).origin;
@@ -308,13 +324,14 @@ export async function ghcr(d: Dialer, repo: string, url: string, headers: Record
   }
   if (origin !== REGISTRY) throw new GhcrError("usage", `${JSON.stringify(url)} is not a URL on ${REGISTRY}; a GHCR token goes nowhere else`);
   const kept = tokenKept(repo);
-  const first = await send(d, url, kept === null ? DUMMY : `Bearer ${kept}`, headers, method);
+  const first = await send(d, url, kept === null ? DUMMY : `Bearer ${kept}`, headers, method, signal);
   if (first.status !== 401 && first.status !== 403) return first;
   const www = first.headers.get("www-authenticate");
   await discard(first);
+  checkRangeSignal(signal);
   if (kept !== null) tokens.delete(repo);
-  const token = await tokenNew(d, repo, url, first.status, www);
-  return send(d, url, `Bearer ${token}`, headers, method);
+  const token = await tokenNew(d, repo, url, first.status, www, signal);
+  return send(d, url, `Bearer ${token}`, headers, method, signal);
 }
 
 // ---------------------------------------------------------------- the checks
@@ -561,7 +578,14 @@ export interface GhcrReader {
   headManifest(repo: string, ref: string): Promise<ManifestHead>;
   listTags(repo: string, options?: { maxPages?: number }): Promise<TagList>;
   // The bytes [start, end) of the blob `digest`: `end` is exclusive.
-  readRange(repo: string, digest: string, start: number, end: number): Promise<RangeRead>;
+  readRange(repo: string, digest: string, start: number, end: number, options?: RangeOptions): Promise<RangeRead>;
+}
+
+export interface RangeOptions {
+  readonly signal?: AbortSignal;
+  // A caller racing this range against another source can retain the signed URL
+  // only when it accepts the range. Ordinary reads write it during the redirect.
+  readonly deferSignedUrl?: (write: () => Promise<void>) => void;
 }
 
 export function ghcrReader(options: ReaderOptions): GhcrReader {
@@ -684,10 +708,18 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
   // The signed URL of a blob: the cache's while its se is ahead by the margin
   // and its host is one a 307 may name, else a new 307 from the registry. A 2xx
   // from the registry itself is handed back as `direct`.
-  async function signedUrl(repo: string, digest: string, rangeHeader: string, fresh: boolean): Promise<{ signed: Signed; from: "cache" | "registry" } | { direct: Response }> {
+  async function signedUrl(
+    repo: string,
+    digest: string,
+    rangeHeader: string,
+    fresh: boolean,
+    { signal, deferSignedUrl }: RangeOptions,
+  ): Promise<{ signed: Signed; from: "cache" | "registry" } | { direct: Response }> {
+    checkRangeSignal(signal);
     const key = `ghcr:u:${repo}@${digest}`;
     if (!fresh) {
       const hit = await cacheGet(key);
+      checkRangeSignal(signal);
       if (hit !== null) {
         try {
           const v = JSON.parse(hit) as { url?: unknown; se?: unknown };
@@ -702,10 +734,11 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
         }
       }
     }
-    const res = await ghcr(d, repo, `${REGISTRY}/v2/${repo}/blobs/${digest}`, { range: rangeHeader });
+    const res = await ghcr(d, repo, `${REGISTRY}/v2/${repo}/blobs/${digest}`, { range: rangeHeader }, "GET", signal);
     if (res.status === 200 || res.status === 206) return { direct: res };
     if (res.status < 300 || res.status >= 400) throw await statusError(res, `blob ${digest} of ${repo}`);
     await discard(res);
+    checkRangeSignal(signal);
     const location = res.headers.get("location");
     let u: URL | null = null;
     try {
@@ -717,12 +750,17 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
     if (!blobHostOk(u)) throw new GhcrError("redirect", `GHCR redirected the blob ${digest} of ${repo} to ${u.host}, which is not on *${BLOB_HOST_SUFFIX} nor a host this reader allows`, res.status);
     const se = signedExpiry(u);
     // With no se, the URL is used once and not kept; with one, at most SIGNED_MAX_S.
-    if (se !== null) await cachePut(key, JSON.stringify({ url: u.href, se }), Math.min(se - Date.now(), SIGNED_MAX_S * 1000) / 1000 - SIGNED_MARGIN_S);
+    if (se !== null) {
+      const value = JSON.stringify({ url: u.href, se });
+      const write = () => cachePut(key, value, Math.min(se - Date.now(), SIGNED_MAX_S * 1000) / 1000 - SIGNED_MARGIN_S);
+      if (deferSignedUrl === undefined) await write();
+      else deferSignedUrl(write);
+    }
     return { signed: { url: u.href, se }, from: "registry" };
   }
 
   // The range answer checked: exactly the bytes [start, end).
-  async function rangeBytes(res: Response, start: number, end: number, what: string, who: string): Promise<{ bytes: Uint8Array; size: number | null }> {
+  async function rangeBytes(res: Response, start: number, end: number, what: string, who: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; size: number | null }> {
     const want = end - start;
     if (res.status === 416) {
       await discard(res);
@@ -735,7 +773,7 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
         await discard(res);
         throw new GhcrError("upstream", `${what}: the host answered 200 to a Range of bytes ${start} to ${end - 1}, so it ignored the range`, 200);
       }
-      const bytes = await readCapped(res, want, d.timeoutMs);
+      const bytes = await readCapped(res, want, d.timeoutMs, signal);
       if (bytes === null || bytes.byteLength !== want) throw new GhcrError("integrity", `${what}: the body is ${bytes === null ? "longer" : bytes.byteLength} bytes, not ${want}`, 200);
       return { bytes, size: want };
     }
@@ -745,13 +783,14 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
       await discard(res);
       throw new GhcrError("integrity", `${what}: the 206 answer's Content-Range is ${JSON.stringify(res.headers.get("content-range"))}, not bytes ${start}-${end - 1}`, 206);
     }
-    const bytes = await readCapped(res, want, d.timeoutMs);
+    const bytes = await readCapped(res, want, d.timeoutMs, signal);
     if (bytes === null) throw new GhcrError("integrity", `${what}: the body is longer than the ${want} bytes asked for`, 206);
     if (bytes.byteLength !== want) throw new GhcrError("integrity", `${what}: the body is ${bytes.byteLength} bytes, not ${want}`, 206);
     return { bytes, size: cr.total };
   }
 
-  async function readRange(repo: string, digest: string, start: number, end: number): Promise<RangeRead> {
+  async function readRange(repo: string, digest: string, start: number, end: number, options: RangeOptions = {}): Promise<RangeRead> {
+    const { signal } = options;
     checkRepo(repo, namespace);
     checkDigest(digest);
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start)
@@ -760,20 +799,20 @@ export function ghcrReader(options: ReaderOptions): GhcrReader {
     const what = `bytes ${start} to ${end - 1} of the blob ${digest} of ${repo}`;
     const rangeHeader = `bytes=${start}-${end - 1}`;
     for (const fresh of [false, true]) {
-      const s = await signedUrl(repo, digest, rangeHeader, fresh);
+      const s = await signedUrl(repo, digest, rangeHeader, fresh, options);
       if ("direct" in s) {
-        const { bytes, size } = await rangeBytes(s.direct, start, end, what, "GHCR");
+        const { bytes, size } = await rangeBytes(s.direct, start, end, what, "GHCR", signal);
         return { bytes, size, host: REGISTRY_HOST, unexpected: false, se: null, signed: "registry" };
       }
       const u = new URL(s.signed.url);
       // The signed URL carries its own authority: no Authorization goes there.
-      const res = await send(d, u.href, null, { range: rangeHeader });
+      const res = await send(d, u.href, null, { range: rangeHeader }, "GET", signal);
       if (s.from === "cache" && !fresh && (res.status === 401 || res.status === 403 || res.status === 404)) {
         // A kept URL the host no longer honours: ask the registry for a new one, once.
         await discard(res);
         continue;
       }
-      const { bytes, size } = await rangeBytes(res, start, end, what, u.host);
+      const { bytes, size } = await rangeBytes(res, start, end, what, u.host, signal);
       return { bytes, size, host: u.host, unexpected: !u.hostname.endsWith(BLOB_HOST_SUFFIX), se: s.signed.se, signed: s.from };
     }
     // The loop returns or throws on its second pass, which asks the registry.

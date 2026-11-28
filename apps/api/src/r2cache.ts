@@ -12,7 +12,9 @@ const DAY_MS = 86_400_000;
 const MIB = 1_048_576;
 const ROOT_REPO = repoOf("root");
 const PACK_REPOS = new Set([repoOf("obs"), ...Object.values(TIER_DATASETS).map(repoOf)]);
-const LOOKUP_MS = 250;
+export const R2_LOOKUP_MS = 250;
+// A root alone can keep its existing GET eligible after GHCR starts.
+export const R2_ROOT_HARD_MS = 1_000;
 const MAX_LOOKUPS = 8;
 const IDENTITY_VERSION = 1;
 const IDENTITY_MAX_BYTES = 256;
@@ -145,23 +147,37 @@ export class R2Cache {
   }
 
   async get(ref: ImmutableRange): Promise<Uint8Array<ArrayBuffer> | null> {
+    return this.#lookup(ref, this.#options.lookupMs ?? R2_LOOKUP_MS, (bytes) => bytes);
+  }
+
+  async getRoot<T>(ref: Omit<ImmutableRange, "kind">, signal: AbortSignal, check: (bytes: Uint8Array, signal: AbortSignal) => Promise<T | null>): Promise<T | null> {
+    return this.#lookup({ ...ref, kind: "root" }, R2_ROOT_HARD_MS, check, signal);
+  }
+
+  async #lookup<T>(ref: ImmutableRange, lookupMs: number, check: (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal) => T | null | Promise<T | null>, signal?: AbortSignal): Promise<T | null> {
     const candidate = candidateOf(ref);
-    if (candidate === null || this.#reading || this.#lookups >= MAX_LOOKUPS) return null;
+    if (candidate === null || this.#reading || this.#lookups >= MAX_LOOKUPS || signal?.aborted) return null;
     this.#reading = true;
     this.#lookups += 1;
     const cancel = new AbortController();
-    const lookupMs = this.#options.lookupMs ?? LOOKUP_MS;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop: (() => void) | undefined;
     const timeout = new Promise<null>((resolve) => {
-      timer = setTimeout(() => {
-        cancel.abort();
-        this.#options.log(`R2 ${candidate.kind} lookup exceeded ${lookupMs} ms`);
+      stop = () => {
         resolve(null);
+        cancel.abort();
+      };
+      signal?.addEventListener("abort", stop, { once: true });
+      timer = setTimeout(() => {
+        stop?.();
+        this.#options.log(`R2 ${candidate.kind} lookup exceeded ${lookupMs} ms`);
       }, lookupMs);
     });
+    const read = this.#get(candidate, cancel.signal).then((bytes) => (bytes === null || cancel.signal.aborted ? null : check(bytes, cancel.signal)));
     try {
-      return await Promise.race([this.#get(candidate, cancel.signal), timeout]);
+      return await Promise.race([read, timeout]);
     } finally {
+      if (stop !== undefined) signal?.removeEventListener("abort", stop);
       if (timer !== undefined) clearTimeout(timer);
     }
   }

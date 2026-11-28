@@ -20,6 +20,7 @@ import { r2SlotKey } from "../src/r2cache.ts";
 import { ROOT_REPO } from "../src/root.ts";
 
 const ENTRY = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+const DELAYED_R2_ENTRY = fileURLToPath(new URL("./delayed-r2-worker.ts", import.meta.url));
 const REG = "https://ghcr.io/v2/pkgforge-dev/domains.pkgforge.dev/root";
 const BLOB_HOST = "https://pkg-containers.githubusercontent.com";
 const sha = (bytes: Uint8Array | string): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -181,6 +182,49 @@ test("workerd: a verified R2 root body is mixed with the GHCR selector, and a co
       assert.equal(observed.length, corrupt ? 3 : 1);
     });
   }
+});
+
+test("workerd: native R2 can supply a verified root after 250 ms if the GHCR range is unavailable", async () => {
+  const p = plant();
+  const key = await r2SlotKey({ kind: "root", repo: ROOT_REPO, digest: p.layer, start: 0, end: p.root.byteLength });
+  assert.ok(key);
+  const seen: string[] = [];
+  const reply = registry(p, seen);
+  await withWorker(
+    {
+      scriptPath: DELAYED_R2_ENTRY,
+      r2Buckets: ["CACHE"],
+      outbound: (request) => {
+        if (new URL(request.url).origin === BLOB_HOST) {
+          seen.push(request.url);
+          return new Response(null, { status: 503 });
+        }
+        return reply(request);
+      },
+    },
+    async (w) => {
+      const bucket = await w.miniflare.getR2Bucket("CACHE");
+      const identity = JSON.stringify([1, "root", ROOT_REPO, p.layer, 0, p.root.byteLength]);
+      const planted = await bucket.put(key, p.root, { customMetadata: { identity, fixture: "seed" } });
+      const response = await w.fetch("/v1/index/latest", { method: "HEAD" });
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), "");
+      assert.equal(response.headers.get("x-domains-root"), p.digest);
+      assert.equal(response.headers.get("x-domains-root-tier"), "r2");
+      assert.equal(response.headers.get("x-domains-cache-tiers"), "ghcr,r2");
+      assert.equal(response.headers.get("x-domains-degraded"), null);
+      assert.equal(seen.length, 3);
+      assert.equal(seen[0], `${REG}/manifests/latest`);
+      assert.equal(seen[1], `${REG}/blobs/${p.layer}`);
+      assert.ok(seen[2]?.startsWith(`${BLOB_HOST}/`));
+      const current = await bucket.head(key);
+      assert.equal(current?.uploaded.getTime(), planted.uploaded.getTime());
+      assert.equal(current?.customMetadata?.fixture, "seed");
+      const caches = await w.miniflare.getCaches();
+      const signedKey = `${ORIGIN}${CACHE_PREFIX}/blob/${encodeURIComponent(`${ROOT_REPO}@${p.layer}`)}`;
+      assert.equal(await caches.default.match(signedKey), undefined);
+    },
+  );
 });
 
 // The status line of each answer carries the standard reason phrase. The client

@@ -110,7 +110,7 @@ The Worker has no `loc` entry: no route of DOM-030 answers a location. DOM-040's
 
 1. It reads the manifest of `root:latest` through the `man` entry or GHCR. A new `root:latest` shows within 30 s.
 2. When that digest is the digest of the root the isolate keeps, the kept root answers, with no other read.
-3. Otherwise it reads `root.json` by its digest through the `body` entry, an eligible R2 slot or GHCR, and holds the bytes to the digest. It parses and checks `format`, `root_seq`, `created`, `as_of` and `previous` before recording the body read.
+3. Otherwise it reads `root.json` by its digest. On a `body` entry miss, it tries one eligible R2 slot. A settled miss starts GHCR immediately. A pending R2 lookup starts GHCR at the soft deadline while R2 remains eligible through the root-only hard deadline. The first body that passes SHA-256 and the checks of `format`, `root_seq`, `created`, `as_of` and `previous` supplies the recorded body tier. A GHCR source failure leaves R2 eligible through the hard deadline.
 4. The isolate keeps the root for the next request, unless it keeps a root of a higher `root_seq`. A request that met the older manifest while another request loaded the newer root answers from the older root, and the newer root stays kept. `root:latest` only moves forward in `root_seq`: a promotion and a rollback each give the live `root_seq` plus 1 (`packages/root/src/build.ts`).
 
 `validateRoot` of `packages/root`, in the reader's form, runs once for each root and isolate, when a route first reads the datasets. On the root of 435,492 B of `root_seq` 73 it took 10 to 28 ms in one reading and 5 to 10 ms in another. Each reading was five runs in Node v26.7.0 on Windows 11 (MEASURED 2026-11-02, DOM-030). The `cpu_ms` is 50. No reading gives the CPU of the same work on Cloudflare, and DOM-054 measures it.
@@ -153,14 +153,18 @@ The Worker logs response and cache failures and stale roots with the request's `
 | manifest size | 64 KiB |
 | `root.json` size | 8 MiB |
 | reads of one request's root | 25 s in all |
-| R2 lookup and body | 250 ms, one active binding GET, up to eight eligible lookups per request and one bounded background PUT |
+| R2 root lookup, body and checks | start GHCR after 250 ms if R2 is pending, accept R2 within 1,000 ms |
+| R2 index and block lookup and body | 250 ms |
+| R2 operations | one active binding GET, up to eight eligible lookups per request and one bounded background PUT |
 | raw block of a pack | 1 MiB |
 | index of a pack | 1 MiB, read whole |
 | records a block, entries an index page | 8,192 and 256 |
 
-An ordinary cold metadata request uses at most three Cache API matches and three puts, a GHCR manifest request, a blob redirect and a signed range GET, and one R2 GET and one PUT. An R2 root hit with a cold selector uses at most two Cache API matches and two puts, one manifest request and one R2 GET. The longest retry path plans for 18 operations including fills. Each of the two GHCR registry operations can take four sends, and the signed range can take two when a kept URL must be renewed. The 250 ms R2 timeout falls through while any pending binding GET still occupies its single read slot. These are code bounds. Live latency and Class A/B volume still need measurements.
+An ordinary cold metadata request uses at most three Cache API matches and three puts, a GHCR manifest request, a blob redirect and a signed range GET, and one R2 GET and one PUT. With a cold selector, an R2 root accepted before GHCR starts uses at most two Cache API matches and two puts, one manifest request and one R2 GET. The longest retry path plans for 18 operations including fills. Each of the two GHCR registry operations can take four sends, and the signed range can take two when a kept URL must be renewed. These are code bounds. DOM-031 tracks live root latency and the dedicated bucket's Class A and Class B operation measurements.
 
-Each subrequest has 10 s for its head and 10 s for its body. The reads of the root stop at 25 s in all. So a caller waits at most about 25 s for an answer that reads the root. The Worker does not remember a failure. While GHCR stalls, each request waits until its reads fail or the 25 s pass, and then answers from the kept root. No reading gives the CPU of a root load on Cloudflare, and DOM-054 measures it with the waits.
+An R2 root winner aborts the losing GHCR read. The Worker cancels an unused R2 body when it has the stream. The binding GET has no abort option and occupies the single read slot until it settles. An expired or losing GET's late body is canceled if the request is still active. Only a verified GHCR winner can fill R2 or keep a fresh signed URL. [Workers R2 API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+
+Each subrequest has 10 s for its head and 10 s for its body. The reads of the root have a 25 s outer deadline. If no current root can be accepted, the Worker answers from the kept root when available. DOM-054 measures root load CPU on Cloudflare.
 
 The test `compatibility` of `apps/api/test/config.test.ts` holds the date and the flags equal to the harness's.
 

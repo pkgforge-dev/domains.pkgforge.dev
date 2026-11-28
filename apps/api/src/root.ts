@@ -33,10 +33,11 @@
 // No promise is shared between requests: one request's reads never wait on
 // another's I/O. Two requests that meet a new root at once each read it.
 import type { PackRead, ReadTier } from "@domains/core";
-import { artifactType, DIGEST, GhcrError, type GhcrReader, repoOf, TITLE } from "@domains/ghcr";
+import { artifactType, DIGEST, GhcrError, type GhcrReader, repoOf, sha256Digest, TITLE } from "@domains/ghcr";
 import { msOf, ROOT_FORMAT, RootError, type RootJson, validateRoot } from "@domains/root";
 import type { ApiCache } from "./cache.ts";
-import { ImmutableError, keepImmutable, LIMITS, readImmutable } from "./ghcr.ts";
+import { bodyName, ImmutableError, type ImmutableRead, keepImmutable, LIMITS, readCachedImmutable, readImmutable } from "./ghcr.ts";
+import { R2_LOOKUP_MS } from "./r2cache.ts";
 
 export const ROOT_REPO = repoOf("root");
 export const ROOT_TAG = "latest";
@@ -132,33 +133,108 @@ export function headOf(json: unknown): RootHead {
   return { format: ROOT_FORMAT, root_seq: j.root_seq as number, as_of: j.as_of as string | null, created: j.created as string, previous: j.previous as string | null };
 }
 
-async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[]): Promise<Pick<RootAnswer, "root" | "bodyTier">> {
+function checkRootBody(manifest: string, layer: LoadedRoot["layer"], body: ImmutableRead): LoadedRoot {
+  let json: unknown;
+  try {
+    json = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body.bytes));
+  } catch {
+    refuse(`the layer ${ROOT_LAYER} of ${manifest} is not UTF-8 JSON`);
+  }
+  const head = headOf(json);
+  return new LoadedRoot(manifest, { digest: layer.digest, size: layer.size }, head, { json: json as Record<string, unknown>, validated: null });
+}
+
+interface RootRead {
+  readonly root: LoadedRoot;
+  readonly body: ImmutableRead | null;
+  readonly keepSignedUrl?: () => Promise<void>;
+}
+
+async function readRootBody(g: GhcrReader, cache: ApiCache, manifest: string, layer: LoadedRoot["layer"], signal: AbortSignal): Promise<RootRead> {
+  const { digest, size } = layer;
+  const name = bodyName(ROOT_REPO, digest, 0, size);
+  const ref = { kind: "root", repo: ROOT_REPO, digest, start: 0, end: size } as const;
+  const checked = (body: ImmutableRead): RootRead => ({ body, root: checkRootBody(manifest, layer, body) });
+  const hit = await readCachedImmutable(cache, name, size, digest);
+  signal.throwIfAborted();
+  if (hit !== null) return checked({ bytes: hit, tier: "cache", name, ref });
+
+  const ghcr = async (signal: AbortSignal): Promise<RootRead> => {
+    let keepSignedUrl: RootRead["keepSignedUrl"];
+    const body = await readImmutable(g, cache, ROOT_REPO, digest, 0, size, {
+      kind: "root",
+      whole: size,
+      after: "r2",
+      range: {
+        signal,
+        deferSignedUrl: (write) => {
+          keepSignedUrl = write;
+        },
+      },
+    });
+    signal.throwIfAborted();
+    return { ...checked(body), keepSignedUrl };
+  };
+  const r2 = cache.r2;
+  if (r2 === undefined) return ghcr(signal);
+
+  const r2Stop = new AbortController();
+  const ghcrStop = new AbortController();
+  const r2Signal = AbortSignal.any([signal, r2Stop.signal]);
+  const ghcrSignal = AbortSignal.any([signal, ghcrStop.signal]);
+  const r2Read = r2.getRoot(ref, r2Signal, async (bytes, lookupSignal) => {
+    if ((await sha256Digest(bytes)) !== digest) {
+      if (!lookupSignal.aborted) r2.refused("root", "its bytes do not hash to the digest");
+      return null;
+    }
+    if (lookupSignal.aborted) return null;
+    try {
+      return checked({ bytes, tier: "r2", name, ref });
+    } catch (err) {
+      if (!(err instanceof RootError)) throw err;
+      r2.refused("root", "its bytes do not hold a supported root head");
+      return null;
+    }
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const soft = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), R2_LOOKUP_MS);
+  });
+  try {
+    const early = await Promise.race([r2Read, soft]);
+    if (early !== null) return early;
+
+    signal.throwIfAborted();
+    const ghcrRead = ghcr(ghcrSignal);
+    // A miss waits for GHCR. A GHCR source fault waits for the bounded R2
+    // result and is preserved if that result is also a miss.
+    return await Promise.race([
+      r2Read.then((body) => body ?? ghcrRead),
+      ghcrRead.catch(async (err: unknown) => {
+        if (!sourceFault(err)) throw err;
+        const body = await r2Read;
+        if (body === null) throw err;
+        return body;
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    r2Stop.abort();
+    ghcrStop.abort();
+  }
+}
+
+async function readNew(g: GhcrReader, cache: ApiCache, reads: PackRead[], signal: AbortSignal): Promise<RootRead> {
   const m = await g.getManifest(ROOT_REPO, ROOT_TAG, { maxBytes: LIMITS.manifestBytes });
+  signal.throwIfAborted();
   reads.push({ tier: tierOf(m.from), pack: m.digest, sources: [], root: true });
-  if (kept !== null && kept.digest === m.digest) return { root: kept, bodyTier: null };
+  if (kept !== null && kept.digest === m.digest) return { root: kept, body: null };
   if (m.json.artifactType !== ROOT_TYPE) refuse(`root:${ROOT_TAG} is ${JSON.stringify(m.json.artifactType ?? null)}, not ${ROOT_TYPE}`);
   const layers = (m.json.layers ?? []).filter((l) => l.annotations?.[TITLE] === ROOT_LAYER);
   const layer = layers[0];
   if (layer === undefined || layers.length !== 1) refuse(`root:${ROOT_TAG} holds ${layers.length} layers titled ${ROOT_LAYER}, not 1`);
   if (layer.size < 1 || layer.size > ROOT_LAYER_MAX_BYTES) refuse(`the layer ${ROOT_LAYER} is ${layer.size} B; this Worker reads 1 to ${ROOT_LAYER_MAX_BYTES} B`);
-  const body = await readImmutable(g, cache, ROOT_REPO, layer.digest, 0, layer.size, { kind: "root", whole: layer.size });
-  let json: unknown;
-  try {
-    json = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body.bytes));
-  } catch {
-    refuse(`the layer ${ROOT_LAYER} of ${m.digest} is not UTF-8 JSON`);
-  }
-  const head = headOf(json);
-  keepImmutable(cache, body);
-  reads.push({ tier: body.tier, pack: m.digest, sources: [], root: true });
-  const root = new LoadedRoot(m.digest, { digest: layer.digest, size: layer.size }, head, { json: json as Record<string, unknown>, validated: null });
-  // root:latest moves forward in root_seq: buildRoot and rollbackRoot of
-  // packages/root each promote the live root_seq plus 1. A root of a lower
-  // root_seq than the kept one is a read that met the older manifest while
-  // another request loaded the newer root: it answers its own request, and the
-  // newer root stays kept.
-  if (kept === null || root.head.root_seq >= kept.head.root_seq) kept = root;
-  return { root, bodyTier: body.tier };
+  return readRootBody(g, cache, m.digest, layer, signal);
 }
 
 // A failure of GHCR, or a root this Worker refuses; anything else is the
@@ -170,16 +246,26 @@ const sourceFault = (err: unknown): err is Error => (err instanceof GhcrError &&
 // answer's, and the request answers as GHCR failed.
 export async function rootOf(g: GhcrReader, cache: ApiCache, log: (message: string) => void, deadlineMs: number = LIMITS.rootMs): Promise<RootAnswer> {
   const reads: PackRead[] = [];
+  const stop = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, fail) => {
-    timer = setTimeout(() => fail(new GhcrError("timeout", `GHCR did not give the root within ${deadlineMs / 1000} s`)), deadlineMs);
+    timer = setTimeout(() => {
+      const timeout = new GhcrError("timeout", `GHCR did not give the root within ${deadlineMs / 1000} s`);
+      fail(timeout);
+      stop.abort(timeout);
+    }, deadlineMs);
   });
-  const work = readNew(g, cache, reads);
-  // A read that ends after the deadline settles no answer.
-  work.catch(() => undefined);
   try {
-    const result = await Promise.race([work, late]);
-    return { ...result, reads, stale: false };
+    const { root, body, keepSignedUrl } = await Promise.race([readNew(g, cache, reads, stop.signal), late]);
+    if (body !== null) {
+      keepImmutable(cache, body);
+      reads.push({ tier: body.tier, pack: root.digest, sources: [], root: true });
+      // A concurrent older read can answer its own request without replacing
+      // the newer root already kept by this isolate.
+      if (kept === null || root.head.root_seq >= kept.head.root_seq) kept = root;
+      await keepSignedUrl?.();
+    }
+    return { root, bodyTier: body?.tier ?? null, reads, stale: false };
   } catch (err) {
     if (!sourceFault(err)) throw err;
     const missing = err instanceof GhcrError && err.code === "missing" && reads.length === 0;
