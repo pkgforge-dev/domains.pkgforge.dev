@@ -101,6 +101,53 @@ test('adoption requires every day from the DPK1 epoch and refuses overlapping st
   assert.equal(provePrefix([staged(), staged()], root(), SECOND).length, 2);
 });
 
+test('adoption crosses the verified ISC empty day only with its unique exact live manifest and declares no gap', () => {
+  const day = '2026-07-18';
+  const next = '2026-07-19';
+  const empty = {
+    ...segment(day, 4),
+    ref: 'obs:isc-new.20260718.c96244e446a3-d',
+    digest: `sha256:${'7'.repeat(64)}`,
+    rawSha256: 'c96244e446a3a9694d801e62b63d778b9c0ae32e51c103592a0c3bfeafcdf3f3',
+    rawBytes: 55,
+    count: 0,
+  };
+  const emptyWindow = { start: day, end: next };
+  const parsed = staged(lines([empty], emptyWindow));
+  assert.equal(parsed[0].count, 0);
+  assert.throws(() => staged(lines([{ ...empty, count: 1 }], emptyWindow)), /record count/);
+  assert.throws(() => staged(lines([{ ...empty, rawBytes: 54 }], emptyWindow)), /record count/);
+  assert.throws(() => staged(lines([{ ...empty, rawSha256: `${empty.rawSha256.slice(0, -1)}0` }], emptyWindow)), /record count/);
+  assert.throws(() => staged(lines([{ ...first, count: 0 }], { end: SECOND })), /record count/);
+
+  const stages = [];
+  const entries = [];
+  const prefix = [];
+  const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const dayMs = 86_400_000;
+  for (let ms = Date.parse(at(FIRST)); ms < Date.parse(at(day)); ms += dayMs) {
+    const prior = segment(dayOf(ms), 4);
+    const end = dayOf(ms + dayMs);
+    prefix.push(prior);
+    entries.push(pack(prior, end));
+    if (prefix.length === 7 || end === day) {
+      stages.push(staged(lines(prefix, { start: prefix[0].day, end })));
+      prefix.length = 0;
+    }
+  }
+  stages.push(parsed);
+  const latest = pack(empty, next);
+  const args = { ...options(), stages, target: day, now: at('2026-07-24'), root: root([...entries, latest]) };
+  const r = adopt(args);
+  assert.deepEqual(r.proposal.after, after(next));
+  assert.equal(r.state.gaps, undefined);
+  assert.deepEqual(r.proposal.segments.at(-1), { ref: empty.ref, digest: empty.digest, source: 'isc-new', dataset: 'domains', start: at(day), end: at(next), count: 0, quarantined: false });
+  assert.deepEqual(r.state.history['isc-new'].at(-1), { day, count: 55, quarantined: false });
+  for (const replacement of [[], [{ ...latest, count: 1 }], [{ ...latest, manifest: first.digest }], [latest, { ...latest, manifest: first.digest }]]) {
+    assert.throws(() => adopt({ ...args, root: root([...entries, ...replacement]) }), /2026-07-18.*no unique exact live ISC segment/);
+  }
+});
+
 test('adoption refuses a missing or conflicting live digest despite a source through date, gaps, and a covering day pack', () => {
   for (const days of [
     [packs[0]],

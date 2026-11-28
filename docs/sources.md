@@ -60,8 +60,11 @@ normalized registrable domains. Its day is an ISC observation date. The
 registry defines source bit 8. The indexed bridge stages dated candidates
 in `obs`, then the root writer promotes the proved digests. The separate
 cursor move checks every day through its target against the public root.
-At the 2026-11-28 reading, production staging, promotion and cursor adoption
-were pending and the ordinary `feeds` lane was inactive. Indexed
+Historical staging recognizes the 2026-07-18 dated gzip by its recorded
+SHA-256. The publisher served zero rows. Its zero-record segment retains
+the exact gzip and represents that source snapshot only. At the 2026-11-28
+reading, production staging, promotion and cursor adoption were pending and
+the ordinary `feeds` lane was inactive. Indexed
 `corpus_since`, source `through` and derived coverage are measured from
 indexed root entries. [DOM-027](../TODO/ingest.md#dom-027--isc-new-the-isc-new-domain-feed)
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { canonicalJson, jsonEqual } from '@domains/adapter';
 import { fileTag, repoOf } from '@domains/ghcr';
 import { DAY_MS } from '../../adapters/isc-new/src/cursor.ts';
-import { datedUrl, SOURCE } from '../../adapters/isc-new/src/index.ts';
+import { datedUrl, isVerifiedEmptyDay, SOURCE } from '../../adapters/isc-new/src/snapshot.ts';
 import { writeOut } from '../compact/plan.mjs';
 import { TITLE } from '../ghcr/push.mjs';
 import { readPaused } from '../ghcr/rate.mjs';
@@ -53,6 +53,7 @@ function candidateOf(day, candidate) {
   const segment = w?.segment;
   const raw = segment?.raw;
   const start = `${day}T00:00:00Z`;
+  const verifiedEmpty = raw !== undefined && isVerifiedEmptyDay(day, raw.bytes, raw.sha256);
   if (
     segment?.source !== SOURCE ||
     segment.dataset !== 'domains' ||
@@ -61,6 +62,8 @@ function candidateOf(day, candidate) {
     Date.parse(segment.window.end) - Date.parse(start) !== DAY_MS ||
     raw === undefined ||
     raw.bytes < 1 ||
+    (segment.count === 0) !== verifiedEmpty ||
+    (verifiedEmpty && candidate.verdict !== 'ok') ||
     w.tag !== fileTag(SOURCE, start, raw.sha256, 'd') ||
     w.manifest.annotations[`${P}url`] !== datedUrl(day)
   ) {
@@ -131,6 +134,7 @@ export async function prepareIscStage({ args, days, stateDigest, list, file, ver
     if (tagged.digest !== digest || immutable.digest !== digest) throw new Fault(`obs:${tag} does not read anonymously at the expected manifest digest ${digest}`);
     checkManifest(candidate, immutable);
     const raw = immutable.json.layers.find((layer) => layer.annotations?.[TITLE] === RAW_TITLE);
+    if (raw?.digest !== `sha256:${row.rawSha256}` || raw.size !== row.rawBytes) throw new Fault(`obs:${tag} does not describe the verified dated gzip bytes at ${digest}`);
     const source = blobSource(d.reader, OBS, raw, d);
     const hash = createHash('sha256');
     for (let at = 0; at < raw.size; at += BLOCK) hash.update(await source.read(at, Math.min(BLOCK, raw.size - at)));

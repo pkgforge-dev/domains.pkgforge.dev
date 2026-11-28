@@ -89,6 +89,33 @@ test("isc snapshot: sandboxed replay holds raw bytes and the dated segment to th
   assert.deepEqual([replay.first.connections, replay.next.written, replay.next.requests], [[], [], []]);
 });
 
+test("isc snapshot: even an audited historical empty response holds the ordinary live cursor", async () => {
+  const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
+  const day = "2026-07-18";
+  const replay = await runSandboxed({
+    module: path("../src/index.ts"),
+    sourceFile: path("../source.json"),
+    recordings: path("../fixtures/"),
+    psl: path("../../../packages/names/test/fixtures/psl-2026-10-27.dat"),
+    cursor: { ...parseCursor(null), next: day },
+    now: "2026-11-28T08:06:00Z",
+  });
+  assert.equal(parseCursor(replay.first.result.cursor).next, day);
+  assert.deepEqual(replay.first.written, []);
+  assert.equal(replay.first.result.gaps, undefined);
+  assert.deepEqual(
+    replay.first.result.errors.map(({ code }) => code),
+    ["dated-pending"],
+  );
+  assert.deepEqual(
+    replay.first.requests.map(({ method, url }) => [method, url]),
+    [
+      ["HEAD", ALIAS],
+      ["GET", datedUrl(day)],
+    ],
+  );
+});
+
 test("isc snapshot: DPK1 rows are registrable reversed keys with ISC day precision and T2 list evidence", async () => {
   const day = DPK1_EPOCH_DAY;
   const file = await fileOf(document(row("Staff.Example.COM.", day), row("*.other.example.com", day), row("bücher.example", day), row("co.uk", day)), null);

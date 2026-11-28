@@ -201,6 +201,7 @@ writes this table.
 
 | when | Worker | version | commit |
 | --- | --- | --- | --- |
+| 2026-11-28T13:07:13.061774Z | `domains-pkgforge-dev` | `f00944ae-4503-4697-b771-f8e4c3a79db4` | 43280f97307b |
 | 2026-11-28T00:42:58Z | `domains-pkgforge-dev` | `f31df752-4470-42e6-b86b-cd383b4eae44` | d6269cbf318f |
 | 2026-11-03T15:22:17Z | `domains-pkgforge-dev` | `c8a325ab-0650-4109-bdbc-a7ec4be85fb9` | 9f4da663dc5a |
 | 2026-11-02T07:57:49Z | `domains-pkgforge-dev` | `ee2d30ae-d08c-44af-a004-9a7cab4364fe` | c0c7cd58f19e |

@@ -2,7 +2,7 @@ import { type AdapterContext, ContractError, isIsoUtc, type RunResult, type Segm
 import { DAY_MS } from "./cursor.ts";
 import { datedUrl, fetchSnapshot, IscFault } from "./http.ts";
 import { INDEX_GRACE_DAYS } from "./run.ts";
-import { DPK1_EPOCH_DAY, parseSnapshot, writeIndexedSnapshot } from "./snapshot.ts";
+import { DPK1_EPOCH_DAY, parseSnapshot, writeIndexedSnapshot, writeVerifiedEmptyDay } from "./snapshot.ts";
 
 export const MAX_STAGE_DAYS = 7;
 
@@ -34,10 +34,9 @@ export async function backfill(window: Window, ctx: AdapterContext): Promise<Run
       const file = await fetchSnapshot(ctx, { day });
       if (file.kind !== "file") throw new IscFault("date", `${datedUrl(day)}: the dated snapshot is ${file.kind}`);
       const parsed = await parseSnapshot(file, ctx.psl);
-      if (parsed.index === null) throw new IscFault("format", `${file.url}: the dated snapshot has no indexed rows`);
-      segments.push(await writeIndexedSnapshot(parsed, ctx.writer));
+      segments.push(parsed.index === null ? await writeVerifiedEmptyDay(parsed, ctx.writer) : await writeIndexedSnapshot(parsed, ctx.writer));
       rows += parsed.rows;
-      refused += parsed.index.refused;
+      refused += parsed.index?.refused ?? 0;
     } catch (error) {
       // A thrown backfill fails the whole batch before the CLI can write it to GHCR.
       if (!(error instanceof IscFault)) throw error;

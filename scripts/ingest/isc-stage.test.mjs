@@ -3,11 +3,15 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { artifactType, fileTag } from '@domains/ghcr';
 import { emptyState, encodeState } from '@domains/state';
 import { datedUrl, SOURCE } from '../../adapters/isc-new/src/index.ts';
+import { anonymousReader } from '../ghcr/check-public.mjs';
+import { readRootJson } from '../root/lib.mjs';
+import { main as promote } from '../root/promote.mjs';
 import { call, copied, inRegistry, PSL, seedRoot } from './fixture.mjs';
+import { parseStage } from './isc-adopt.mjs';
 import { ISC_STAGE_FILE } from './isc-stage.mjs';
 import { EXIT, main } from './run.mjs';
 
@@ -17,6 +21,9 @@ const END = '2026-01-03';
 const NOW = '2026-01-07T00:00:00Z';
 const LATER = '2026-01-07T00:05:00Z';
 const RUN = '41000000002';
+const EMPTY_DAY = '2026-07-18';
+const EMPTY_SHA = 'c96244e446a3a9694d801e62b63d778b9c0ae32e51c103592a0c3bfeafcdf3f3';
+const EMPTY_RECORDING = readFileSync(new URL('../../adapters/isc-new/fixtures/2026-07-18-empty.http.json', import.meta.url));
 const midnight = (day) => `${day}T00:00:00Z`;
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const tagOf = (day, raw) => fileTag(SOURCE, midnight(day), sha(raw), 'd');
@@ -112,6 +119,103 @@ test('ISC staging pins public root, state and PSL and an unchanged second run re
     assert.equal(existsSync(join(retryOut, 'proposals')), false);
     assert.equal(`sha256:${sha(reg.w.manifests.get('state:latest'))}`, stateDigest);
     assert.equal(`sha256:${sha(reg.w.manifests.get('root:latest'))}`, rootDigest);
+  }));
+
+test('ISC stages the exact historical empty gzip between observed days and promotes all three by immutable digest', () =>
+  inRegistry(async (reg, tmp) => {
+    seed(reg);
+    const start = '2026-07-17';
+    const next = '2026-07-19';
+    const end = '2026-07-20';
+    const now = '2026-11-28T08:06:00Z';
+    const records = fixtures(tmp, [
+      [start, start],
+      [next, next],
+    ]);
+    writeFileSync(join(records.dir, `${EMPTY_DAY}.http.json`), EMPTY_RECORDING);
+    const raw = Buffer.from(JSON.parse(EMPTY_RECORDING).response.body_base64, 'base64');
+    assert.deepEqual(gunzipSync(raw), Buffer.from('[]'));
+    const out = join(tmp, 'observed-span');
+    const staged = await stage(reg, out, records.dir, { start, end, now });
+    assert.equal(staged.code, EXIT.ok, staged.text);
+    const text = readFileSync(join(out, ISC_STAGE_FILE), 'utf8');
+    const rows = parseStage(text, { run: RUN, attempt: 1 });
+    assert.deepEqual(
+      rows.map(({ day, count }) => [day, count]),
+      [
+        [start, 1],
+        [EMPTY_DAY, 0],
+        [next, 1],
+      ],
+    );
+    const receipt = rows[1];
+    assert.equal(receipt.ref, 'obs:isc-new.20260718.c96244e446a3-d');
+    assert.equal(receipt.rawSha256, EMPTY_SHA);
+    assert.equal(receipt.rawBytes, 55);
+    assert.deepEqual(reg.bytes.get(`sha256:${EMPTY_SHA}`), new Uint8Array(raw));
+    assert.equal(existsSync(join(out, 'proposals')), false);
+
+    const promoted = await call(
+      promote,
+      rows.flatMap(({ ref, digest }) => ['--add', `${ref}@${digest}`]),
+      { reg, now },
+    );
+    assert.equal(promoted.code, 0, promoted.text);
+    const { root } = await readRootJson(anonymousReader(), 'latest');
+    assert.equal(root.corpus_since.domains, midnight(start));
+    assert.equal(root.through[SOURCE], midnight(end));
+    assert.equal(root.gaps?.[SOURCE], undefined);
+    assert.deepEqual(
+      root.datasets.domains.map((p) => [p.span.start, p.manifest, p.count]),
+      rows.map((row) => [midnight(row.day), row.digest, row.count]),
+    );
+    assert.deepEqual([root.datasets.domains[1].key_min, root.datasets.domains[1].key_max], [null, null]);
+  }));
+
+test('ISC staging holds a different empty response, a nonempty refused snapshot, malformed gzip, a missing date and an alias redirect', () =>
+  inRegistry(async (reg, tmp) => {
+    seed(reg);
+    const end = '2026-07-19';
+    const now = '2026-07-23T00:00:00Z';
+    const { format, request, response } = JSON.parse(EMPTY_RECORDING);
+    const alias = 'https://isc.sans.edu/feeds/domaindata.json.gz';
+    const changedEmpty = Buffer.from(response.body_base64, 'base64');
+    changedEmpty[4] ^= 1; // gzip mtime only; the body still inflates to [].
+    const badResponse = (body, status = 200, headers = {}) => ({
+      format,
+      request,
+      origin: 'synthetic',
+      response: {
+        status,
+        headers: { 'content-length': String(body.length), ...headers },
+        body_base64: body.toString('base64'),
+      },
+    });
+    const cases = [
+      [badResponse(changedEmpty), /no indexed rows or verified empty-day receipt/],
+      [badResponse(gzipSync(JSON.stringify([{ domainname: 'co.uk', firstseen: EMPTY_DAY }]))), /none of the 1 rows has a registrable domain/],
+      [badResponse(Buffer.from('not gzip')), /do not form a complete gzip file/],
+      [badResponse(Buffer.alloc(0), 404), /dated snapshot is missing/],
+      [badResponse(Buffer.alloc(0), 302, { location: alias }), /the request or body read failed/],
+    ];
+    for (const [i, [recording, error]] of cases.entries()) {
+      const dir = join(tmp, `refused-input-${i}`);
+      const out = join(tmp, `refused-output-${i}`);
+      mkdirSync(dir);
+      writeFileSync(join(dir, `${EMPTY_DAY}.http.json`), JSON.stringify(recording));
+      writeFileSync(join(dir, 'alias.http.json'), JSON.stringify({ format, origin: 'synthetic', request: { ...request, url: alias }, response }));
+      const staged = await stage(reg, out, dir, { start: EMPTY_DAY, end, now });
+      assert.equal(staged.code, EXIT.fault, staged.text);
+      assert.match(staged.text, error);
+      assert.equal(existsSync(join(out, ISC_STAGE_FILE)), false);
+    }
+    const wrongDate = join(tmp, 'empty-on-another-date');
+    mkdirSync(wrongDate);
+    writeFileSync(join(wrongDate, `${end}.http.json`), JSON.stringify({ format, origin: 'synthetic', request: { ...request, url: datedUrl(end) }, response }));
+    const misplaced = await stage(reg, join(tmp, 'misplaced'), wrongDate, { start: end, end: '2026-07-20', now: '2026-07-24T00:00:00Z' });
+    assert.equal(misplaced.code, EXIT.fault, misplaced.text);
+    assert.match(misplaced.text, /no indexed rows or verified empty-day receipt/);
+    assert.deepEqual(copied(reg), []);
   }));
 
 test('ISC staging refuses a wrong UTC day in the second snapshot before writing any registry object', () =>

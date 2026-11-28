@@ -4,7 +4,7 @@ import { type Segment, type SegmentRecord, type SegmentWriter, type Window, isIs
 import { key, normalise, type Psl, split } from "@domains/names";
 import { BASIS, BASIS_TIER } from "@domains/pack";
 import { jsonRows } from "./array.ts";
-import { isDay, IscFault, type SnapshotFile } from "./http.ts";
+import { datedUrl, isDay, IscFault, type SnapshotFile } from "./http.ts";
 
 export { datedUrl, fetchSnapshot, ISC_FEEDS, IscFault, isDay, MAX_GZIP_BYTES, type Snapshot, type SnapshotFile, type SnapshotRequest, type Validators } from "./http.ts";
 
@@ -16,6 +16,12 @@ const DAY_MS = 86_400_000;
 const EPOCH_MS = Date.parse(`${DPK1_EPOCH_DAY}T00:00:00Z`);
 const NRD_LIST = BASIS["nrd-list"];
 const MAX_ROWS = 4_000_000;
+
+// DOM-027 verified this historical dated response as a 55-byte gzip of [].
+// Match the full raw identity. Other empty responses can change or be incomplete.
+export function isVerifiedEmptyDay(day: string, bytes: number, sha256: string): boolean {
+  return day === "2026-07-18" && bytes === 55 && sha256 === "c96244e446a3a9694d801e62b63d778b9c0ae32e51c103592a0c3bfeafcdf3f3";
+}
 
 export interface SnapshotIndex {
   readonly window: Window;
@@ -96,6 +102,21 @@ export async function writeIndexedSnapshot(snapshot: ParsedSnapshot, writer: Seg
   const { day, file, index } = snapshot;
   if (day === null || index === null) throw new IscFault("date", `${file.url}: no DPK1 day was prepared for this snapshot`);
   if (index.count === 0) throw new IscFault("format", `${file.url}: none of the ${snapshot.rows} rows has a registrable domain`);
+  return writeDay(file, day, index, writer);
+}
+
+// Historical backfill alone can index an audited empty day. The live adapter
+// still holds on both dated and alias responses with no publisher rows.
+export function writeVerifiedEmptyDay(snapshot: ParsedSnapshot, writer: SegmentWriter): Promise<Segment> {
+  const { file, rows } = snapshot;
+  const day = file.pathDay;
+  if (rows !== 0 || day === null || file.url !== datedUrl(day) || !isVerifiedEmptyDay(day, file.raw.byteLength, file.sha256)) {
+    throw new IscFault("format", `${file.url}: the dated snapshot has no indexed rows or verified empty-day receipt`);
+  }
+  return writeDay(file, day, indexOf(day, new Set(), 0), writer);
+}
+
+function writeDay(file: SnapshotFile, day: string, index: SnapshotIndex, writer: SegmentWriter): Promise<Segment> {
   return writer.write(
     { source: SOURCE, dataset: "domains", precision: "day", window: index.window, cursorBefore: { day }, cursorAfter: { day: index.window.end.slice(0, 10) }, url: file.url },
     index.records,

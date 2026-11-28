@@ -1,0 +1,17 @@
+{
+  "format": "domains.http-recording.v1",
+  "origin": "recorded",
+  "recorded_at": "2026-11-28T08:05:45Z",
+  "request": {
+    "method": "GET",
+    "url": "https://isc.sans.edu/feeds/domaindata.2026-07-18.json.gz"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/x-gzip",
+      "content-length": "55"
+    },
+    "body_base64": "H4sICLNGYWoC/2RvbWFpbmRhdGEuMjAyNi0wNy0xOC5qc29uAIqOBQAAAP//AwApu0wNAgAAAA=="
+  }
+}

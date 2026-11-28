@@ -11,7 +11,7 @@ import { advance, cursorOf, encodeProposal, encodeState, HISTORY_DAYS, isSecond,
 import { DAY_MS, parseCursor } from '../../adapters/isc-new/src/cursor.ts';
 import { datedUrl, isDay, MAX_GZIP_BYTES } from '../../adapters/isc-new/src/http.ts';
 import { INDEX_GRACE_DAYS } from '../../adapters/isc-new/src/run.ts';
-import { DPK1_EPOCH_DAY } from '../../adapters/isc-new/src/snapshot.ts';
+import { DPK1_EPOCH_DAY, isVerifiedEmptyDay } from '../../adapters/isc-new/src/snapshot.ts';
 import { anonymousReader, isNotPublic, PRIVATE_LINE } from '../ghcr/check-public.mjs';
 import { RateLimitError } from '../ghcr/rate.mjs';
 import { parseArgs, repeatedFlag } from '../lib/args.mjs';
@@ -67,7 +67,8 @@ export function parseStage(text, { run, attempt }) {
     if (r?.type !== 'segment' || r.day !== day || midnight(day) >= end) throw new Fault(`${at} needs the next segment for ${day} in its window`);
     if (r.verdict !== 'ok') throw new Fault(`${at} ${day} requires an ok segment, got ${JSON.stringify(r.verdict ?? null)}`);
     if (!hash(r.rawSha256) || !whole(r.rawBytes, MAX_GZIP_BYTES) || r.ref !== `obs:${tagOf(day, r.rawSha256)}`) throw new Fault(`${at} ${day} has an invalid raw identity`);
-    if (!digest(r.digest) || !whole(r.count, Number.MAX_SAFE_INTEGER)) throw new Fault(`${at} ${day} has an invalid manifest digest or record count`);
+    const verifiedEmpty = isVerifiedEmptyDay(day, r.rawBytes, r.rawSha256);
+    if (!digest(r.digest) || (verifiedEmpty ? r.count !== 0 : !whole(r.count, Number.MAX_SAFE_INTEGER))) throw new Fault(`${at} ${day} has an invalid manifest digest or record count`);
     if (r.url !== datedUrl(day)) throw new Fault(`${at} ${day} does not name the dated URL`);
     day = dayAfter(day);
     const { ref, digest: manifest, rawSha256, rawBytes, count } = r;

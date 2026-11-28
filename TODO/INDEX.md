@@ -71,7 +71,8 @@ record guard refuses an order that lists an entry before an open dependency.
    follow in the order of their freshness: OpenINTEL's claims (DOM-026), ISC
    (DOM-027), the lists (DOM-028), then THC's daily dump (DOM-029), which is
    the largest and seeds the ledger's horizon of 2026-09-01. ISC stages dated
-   segments before digest-pinned promotion and cursor adoption. The ordinary
+   segments, including the verified July 18 empty receipt, before digest-pinned
+   promotion and cursor adoption. The ordinary
    lane follows that verified handoff (DOM-027). The Worker
    (DOM-030), `/v1/new` (DOM-032) and the dossier (DOM-033) give an operator
    checkpoint: queries for `.com.np`, `.com` and `co.uk` over windows of 1 h to
