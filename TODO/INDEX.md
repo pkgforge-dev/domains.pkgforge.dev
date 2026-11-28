@@ -70,8 +70,9 @@ record guard refuses an order that lists an entry before an open dependency.
    feed packs (DOM-022) and compaction (DOM-023) make it queryable. The adapters
    follow in the order of their freshness: OpenINTEL's claims (DOM-026), ISC
    (DOM-027), the lists (DOM-028), then THC's daily dump (DOM-029), which is
-   the largest and seeds the ledger's horizon of 2026-09-01. The ordinary ISC
-   lane follows the verified historical root and cursor handoff in DOM-027. The Worker
+   the largest and seeds the ledger's horizon of 2026-09-01. ISC stages dated
+   segments before digest-pinned promotion and cursor adoption. The ordinary
+   lane follows that verified handoff (DOM-027). The Worker
    (DOM-030), `/v1/new` (DOM-032) and the dossier (DOM-033) give an operator
    checkpoint: queries for `.com.np`, `.com` and `co.uk` over windows of 1 h to
    7 d. The R2 cache (DOM-031) is an optimisation and does not block the
@@ -105,15 +106,15 @@ record guard refuses an order that lists an entry before an open dependency.
 
 ## Counts
 
-**63 items. 31 open, 4 partial, 0 blocked, 28 done.**
+**63 items. 30 open, 4 partial, 0 blocked, 29 done.**
 
 | priority | open | partial | blocked | done | total |
 | --- | --- | --- | --- | --- | --- |
 | P0 | 0 | 0 | 0 | 0 | 0 |
-| P1 | 14 | 4 | 0 | 27 | 45 |
+| P1 | 13 | 4 | 0 | 28 | 45 |
 | P2 | 14 | 0 | 0 | 1 | 15 |
 | P3 | 3 | 0 | 0 | 0 | 3 |
-| **All** | 31 | 4 | 0 | 28 | 63 |
+| **All** | 30 | 4 | 0 | 29 | 63 |
 
 ## Entries
 
@@ -180,5 +181,5 @@ record guard refuses an order that lists an entry before an open dependency.
 | [DOM-059](serve.md) | P1 | serve | open | The route registry and the root documents |
 | [DOM-060](serve.md) | P1 | serve | open | The consumer contract and the reference reader |
 | [DOM-061](ops.md) | P1 | ops | **done** | Deploy the probe Worker and its R2 bucket |
-| [DOM-062](serve.md) | P1 | serve | open | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |
+| [DOM-062](serve.md) | P1 | serve | **done** | Confirm that no rate-limit rule of the pkgforge.dev zone covers domains.pkgforge.dev |
 | [DOM-063](ingest.md) | P1 | ingest | **done** | An owed segment that a compaction replaced settles as held |

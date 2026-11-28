@@ -5,10 +5,10 @@ the only one.
 
 ## State
 
-- **Tree:** `d6269cb` added the bounded R2 cache code on `main`. This candidate adds the indexed ISC bridge workflows and digest-pinned root additions.
+- **Tree:** `866d3b6` released the indexed ISC bridge and digest-pinned root additions on `main`. The hosted stage batch uses that revision.
 - **Session:** started 2026-11-27T07:59:17Z. This record includes the completed ISC archive and the September THC canary.
 - **Deployed:** Worker `domains-pkgforge-dev` version `f31df752`, build `d6269cbf318f`, deployed 2026-11-28T00:42:58Z with Wrangler 4.156.1 and the private `CACHE` binding (DOM-031). The probe Worker and bucket remain for DOM-056. The `root`, `obs`, `state`, `names`, `feed`, `ref` and `probe` GHCR packages are public. THC run 46007734746 published the November 26 names and domains segments in root 1259. The September 12 canary published both OBS manifests and root promotion left them owed. The manual ISC archive workflow registered on November 27 at 13:55:57Z and published 67 verified 2025 raw artifacts. The indexed ISC `feeds` lane is inactive.
-- **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Hosted run [46088713984](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46088713984) passed on `d6269cb` with 2,284 Linux tests in 206 files and zero skips.
+- **CI:** `ci.yml` runs the gate on each push to `main` (DOM-013). Hosted run [46089942741](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46089942741) passed on `866d3b6`, tree `309c39513924`, with 2,305 Linux tests and zero skips.
 
 ## Baseline
 
@@ -21,7 +21,7 @@ the only one.
 | candidate gate | 2026-11-27T08:41:43Z, exit 0 on `61ae27216cc4`, 2,226 tests passed, 3 Windows skips, 199 files |
 | reconciled gate | `npm run gate`, with Node v26.13.0 and the rebased lockfile. The exact passing tree is in `.tmp/gate-passes.jsonl`. |
 
-**63 items. 31 open, 4 partial, 0 blocked, 28 done.**
+**63 items. 30 open, 4 partial, 0 blocked, 29 done.**
 
 ## What this session did
 
@@ -29,9 +29,10 @@ the only one.
 - Planned the two historical ingest windows against anonymous root 1248. September 1 through November 1 gave 60 run legs and two gaps. November 2 through November 26 gave 24 legs and a November 18 gap. The November 19 file was quarantined in the dry plan. These readings precede any live THC run. September 12 canary 46009749305 succeeded in 25m 32s and both OBS manifest hashes match its logs. Both refs stayed owed across the hole to the live spans. Bulk dispatch remains due.
 - Recovered DOM-012's 32 hosted poll artifacts. The committed-evidence replay passed with seven observed days for all four feeds, 1,037 polls from 31 runs in the sample and an 11.1-minute maximum gap. The deployed Worker and anonymous root were checked separately. The hosted proof, offline replay and both review and mechanical gate evidence close DOM-012.
 - Corrected the README's description of public metadata and OCI artifacts and kept consumer route documentation in DOM-059, under ruling 26. Recorded the 60-run ingest sample under DOM-034. Three runs had state or root move failures with no common cause established by their public logs.
-- Archived 2025-10-26 through 2025-12-31 in 11 successful ISC windows. Public OBS enumeration matched one raw tag per UTC date, and independent manifest, gzip and member verification passed for October 26, November 16 and December 31. Ruling 28 starts indexed evidence on 2026-01-01. The indexed runner passed the production CLI fixture under `--no-push`. The independent admission exercise on root 1271 found that a continuous bridge to October 22 was needed for an oldest-first rollout. The indexed bridge candidate adds verified staging, full digest pins for the existing promotion workflow and guarded cursor adoption. The registry double exercised all three together. Production staging, promotion and adoption remain due (DOM-027).
+- Archived 2025-10-26 through 2025-12-31 in 11 successful ISC windows. Public OBS enumeration matched one raw tag per UTC date, and independent manifest, gzip and member verification passed for October 26, November 16 and December 31. Ruling 28 starts indexed evidence on 2026-01-01. The indexed runner passed the production CLI fixture under `--no-push`. The independent admission exercise on root 1271 found that a continuous bridge to October 22 was needed for an oldest-first rollout. The indexed bridge candidate adds verified staging, full digest pins for the existing promotion workflow and guarded cursor adoption. The registry double exercised all three together. The hosted stage canary independently verified seven OBS tags, immutable manifests and full gzip hashes for October 22–28. It staged 2,455,440 records across seven packs. Promotion and adoption remain due (DOM-027). [Canary 46090343664](https://github.com/pkgforge-dev/domains.pkgforge.dev/actions/runs/46090343664/attempts/1)
 - Verified the original November 2–22 archive lineage for 21 days and 63 manifest digests. The history plan against root 1248 covers six domains and feed weeks and leaves 12 downstream feed packs unresolved. `history.mjs collect --preflight` verified 174 public manifests and counted 357 layer files holding 511,653,054 blob bytes across 434 logical ranges. Collection and candidate building were exercised with local inputs. Production blob verification, full historical replay and guarded publication remain open (DOM-029).
 - Deployed the bounded R2 cache. Public metadata for root 1280 accepted `root.json` from anonymous GHCR. Independent R2 reads observed its slot empty before deploy and verified its stored bytes afterward. The actual accepted R2 read and 24-hour usage measurements remain due (DOM-031).
+- Rechecked the zone's version 24 rate-limit ruleset and confirmed the operator's host exclusion. DOM-062's public warm proof returned 6,000 healthy HTTP 200s at 100 requests per second, zero 429s or missed slots, and p95 latency of 15 ms. The read-only preflight verified Worker root 1281 against anonymous GHCR.
 
 ## What is in progress
 
@@ -39,7 +40,7 @@ the only one.
 | --- | --- |
 | DOM-029 | replanned historical backfill, canary admission or re-adoption, daily and higher-tier checks, ledger timing and verified historical feed repair |
 | DOM-023 | its live compaction Prove after THC supplies the required day inputs |
-| DOM-027 | hosted stage canary and complete 323-day ledger inventory, digest-pinned promotion and cursor adoption, ordinary indexed run and affected feed proof |
+| DOM-027 | remaining 46 stage windows, digest-pinned promotion of the verified 323-day prefix, cursor adoption, ordinary indexed run and affected feed proof |
 | DOM-031 | an anonymous response with accepted `root.json` bytes from R2 and 24-hour R2 operations and stored bytes |
 
 DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
@@ -49,7 +50,7 @@ DOM-046 is open and waits on DOM-047 and DOM-058 (ruling 10).
 1. Close the partial entries as each Waiting line comes due. Each Waiting line names the run or the reading that closes it.
 2. THC: L is November 26, verified in root 1259. Replan consecutive windows of at most 62 days, September 1 through November 1 (or L if earlier), then November 2 through L. Verify the canary's owed or archived identity in that plan. Dispatch only windows with work, after the morning compaction matrices finish and during 03:30–16:00 UTC, aiming to start by 12:00 UTC. After promotion, verify the no-work plan, both OBS manifest digests per day and full-day live coverage or verified replacement lineage. Run range compaction after the scheduled daily. Pin the actual post-backfill root for the history plan, collect the inputs, verify original-span replacements and resolve downstream feed days before closing. Then build the September weeks (September 7, 14 and 21) and the September and October months, and measure the first eligible ledger build. DOM-023's live Prove follows.
 3. Compaction: DOM-023 is partial, built and gated. The chain's step `due` and DOM-026's dispatched day built its first day packs (runs 41266798719 and 41275690155), and its live Prove waits on DOM-029's THC backfill and range compaction (item 2). Its Waiting line names what closes it. The cron's late run 41287131429 built the days 2026-10-29 to 2026-10-31, so the live `feed` has no hole (DOM-026's Correction of 2026-11-01T10:40Z).
-4. For DOM-027, repin the public domains edge and state. Run and verify the seven-day indexed stage canary for October 22–28 if it still connects to the live edge. Stage the gap-free January 1–November 19 prefix in 47 bounded windows, including that canary. Promote whole edge-connected groups pinned to the staged digests and verify per-day anonymous root membership before guarded adoption. Defer overlapping historical compaction through adoption. Leave `feeds` empty until the state readback and stage queue are verified. Prove the first ordinary indexed run and reconcile affected feeds. DOM-028 follows. DOM-012 supplies the publication measurements.
+4. For DOM-027, continue the 46 remaining stage windows on `866d3b6` after the verified October 22–28 canary. The January 1–7 window was attached to run 46090677155 at 00:58:01Z. Hold `main` at the pinned revision through the stage batch. After verifying all 323 dates, repin the public domains edge and state. Promote whole edge-connected groups pinned to the staged digests and verify per-day anonymous root membership before guarded adoption. Defer overlapping historical compaction through adoption. Leave `feeds` empty until the state readback and stage queue are verified. Prove the first ordinary indexed run and reconcile affected feeds. DOM-028 follows. DOM-012 supplies the publication measurements.
 5. The Worker and the first routes: DOM-030 done. DOM-031 is deployed with verified GHCR fallback and R2 fill. Observe a public response with `x-domains-root-tier: r2`, verify its root anonymously and take the 24-hour usage reading in its Prove. DOM-032 and DOM-033 follow. Then the watchdogs and the coverage table: DOM-034, DOM-035. Then run the operator checkpoint (`.com.np`, `.com` and `co.uk` windows from 1 h to 7 d through `https://domains.pkgforge.dev/v1/new`), record it in DOM-032 and continue (ruling 16).
 6. Names: DOM-036, DOM-037, DOM-038, DOM-039, DOM-040, DOM-041.
 7. THC's monthly database and the reverse routes: DOM-042, DOM-043, DOM-044, DOM-045.
@@ -68,9 +69,8 @@ Known limits:
 
 ## Open questions
 
-No operator action is pending. DOM-062's zone-rule exclusion remains settled.
-Its deployed load proof is still due. Historical feed repair remains work in
-DOM-029, with the verified input inventory before any promotion.
+No operator action is pending. Historical feed repair remains work in DOM-029,
+with the verified input inventory before any promotion.
 
 ## Settled
 

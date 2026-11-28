@@ -41,7 +41,7 @@ Every answer of the Worker carries `access-control-allow-origin: *`. Its `access
 
 The Worker answers 502 to these, among others:
 
-- a refusal of `Bearer QQ==` with no Bearer challenge, a realm that is not `https://ghcr.io/token`, or a token request that fails;
+- a registry refusal for which the anonymous pull flow cannot obtain a Bearer challenge, a realm that is not `https://ghcr.io/token`, or a token request that fails;
 - a manifest over 64 KiB, or one that is not an OCI manifest;
 - a `root:latest` whose artifact type is not `application/vnd.pkgforge.domains.root.v1`, or that holds no layer `root.json` or two;
 - a layer `root.json` over 8 MiB, bytes that miss its digest, text that is not UTF-8 JSON, or a `format` other than `domains.root.v1`;
@@ -71,9 +71,11 @@ A request that reuses the checked isolate root reports the tier of its manifest 
 
 ## GHCR tokens
 
-The Worker reads GHCR through `ghcrReader` of `packages/ghcr/src/reader.ts`, the one port of mirror-archlinux's token flow in this project. Every GHCR subrequest sends the dummy token `Bearer QQ==` first, which GHCR accepts for every public package.
+The Worker reads GHCR through `ghcrReader` of `packages/ghcr/src/reader.ts`, the one port of mirror-archlinux's token flow in this project. A registry request starts with a valid cached pull token for its repository when available, or the public placeholder `Bearer QQ==`.
 
-When GHCR answers 401 or 403 to the dummy token:
+A bare registry request can return a 401 Bearer challenge for a public package. GHCR issues a short-lived pull token for public reads without an account or stored credentials.
+
+When GHCR answers 401 or 403 to a registry request:
 
 1. The reader reads the Bearer challenge in `www-authenticate`. After a 403 with no challenge, it sends one request with no authorization, which gets the challenge.
 2. It accepts the realm only when it is `https://ghcr.io/token`.

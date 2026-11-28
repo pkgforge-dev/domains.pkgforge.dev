@@ -667,9 +667,18 @@ test('plan cli: absorb: a live day pack with a late segment is ready, and the ra
     assert.equal(x.code, 0, x.text);
     // The span's tag is in the package: the absorb takes the next tag of the day (ruling 25).
     writeFileSync(join(dir, 'tags.json'), JSON.stringify(['names-d-20261025']));
-    const a = await call(assembleMain, ['--plan', planPath, '--dir', ranges, '--out', join(dir, 'asm'), '--tags', join(dir, 'tags.json'), '--run', '7', '--inputs', inDir, '--rebuild']);
-    assert.equal(a.code, 0, a.text);
-    assert.match(a.text, /^assembled names:names-d-20261025-r2 /m);
+    const reg = registry();
+    try {
+      // Assembly compares the prior build's manifest even with a local tag list and local packs.
+      const layers = readdirSync(dayPack.dir).map((title) => ({ title, bytes: readFileSync(join(dayPack.dir, title)) }));
+      reg.seed('names', dayPack.tag, artifactType('pack'), dayPack.manifest.annotations, layers);
+      const a = await call(assembleMain, ['--plan', planPath, '--dir', ranges, '--out', join(dir, 'asm'), '--tags', join(dir, 'tags.json'), '--run', '7', '--inputs', inDir, '--rebuild']);
+      assert.equal(a.code, 0, a.text);
+      assert.match(a.text, /^assembled names:names-d-20261025-r2 /m);
+      assert.equal(reg.w.requests.filter(({ url }) => url.endsWith(`/names/manifests/${dayPack.tag}`)).length, 1);
+    } finally {
+      reg.close();
+    }
     const manifest = JSON.parse(readFileSync(join(dir, 'asm', 'manifest.json'), 'utf8'));
     assert.equal(manifest.annotations['dev.pkgforge.domains.source'], 'oi-cs,oi-nrd,thc-ct');
     assert.equal(manifest.annotations['dev.pkgforge.domains.count'], String(new Set([...dayPack.keys, ...seg.keys]).size));
